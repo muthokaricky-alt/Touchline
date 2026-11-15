@@ -31,6 +31,7 @@ export function DashboardScreen({ summary }: DashboardScreenProps) {
         clubForm={summary.form}
         match={summary.nextMatch}
         onViewFixtures={() => router.navigate('/fixtures')}
+        onPlayMatch={() => router.push('/match')}
       />
       <LeagueSnapshotCard leagueName={summary.club.leagueName} table={summary.table} clubId={summary.club.id} />
     </>

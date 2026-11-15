@@ -22,6 +22,7 @@ export default function RootLayout() {
           }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="player/[id]" />
+          <Stack.Screen name="match" />
           <Stack.Screen name="select-player" options={{ presentation: 'modal' }} />
         </Stack>
       </ThemeProvider>

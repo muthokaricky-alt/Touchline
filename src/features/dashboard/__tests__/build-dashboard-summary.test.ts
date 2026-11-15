@@ -31,6 +31,7 @@ describe('buildDashboardSummary', () => {
     expect(opponent).toBeDefined();
     expect(opponent!.clubId).not.toBe(CLUB);
     expect(summary.nextMatch.opponentPosition).toBe(opponent!.position);
+    expect(summary.nextMatch.opponentId).toBe(opponent!.clubId);
   });
 
   it('uses real squad size and finances', () => {

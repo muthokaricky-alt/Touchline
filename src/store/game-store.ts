@@ -12,6 +12,9 @@ import {
   removeFromLineup,
   type Lineup,
 } from '@/game/lineup';
+import { simulateMatch } from '@/engine/simulate';
+import type { MatchResult } from '@/engine/types';
+import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES, type PlayingStyleId } from '@/game/tactics/presets';
 import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from '@/game/tactics/tactics';
@@ -42,6 +45,8 @@ export type GameState = {
   currentDate: string;
   lineup: Lineup;
   tactics: Tactics;
+  /** The most recent friendly, kept until the user starts another. Not saved. */
+  lastMatch: MatchResult | null;
 };
 
 export type GameActions = {
@@ -53,6 +58,9 @@ export type GameActions = {
   autoPick: () => void;
   setInstruction: <K extends Instruction>(key: K, value: Tactics[K]) => void;
   applyPlayingStyle: (styleId: PlayingStyleId) => void;
+  /** Simulates a friendly with the current lineup and tactics. `seed` is for tests; normally from the clock. */
+  playFriendly: (opponentId: ClubId, venue: MatchVenue, seed?: number) => MatchResult;
+  clearMatch: () => void;
 };
 
 export function createInitialGameState(): GameState {
@@ -64,10 +72,11 @@ export function createInitialGameState(): GameState {
     currentDate: FICTIONAL_REFERENCE_DATE,
     lineup: autoPickLineup(selectSquadCandidates(database, userClubId), DEFAULT_FORMATION_ID),
     tactics: DEFAULT_TACTICS,
+    lastMatch: null,
   };
 }
 
-export const useGameStore = create<GameState & GameActions>()((set) => ({
+export const useGameStore = create<GameState & GameActions>()((set, get) => ({
   ...createInitialGameState(),
 
   changeFormation: (formationId) =>
@@ -80,4 +89,11 @@ export const useGameStore = create<GameState & GameActions>()((set) => ({
     set((s) => ({ lineup: autoPickLineup(selectSquadCandidates(s.database, s.userClubId), s.lineup.formationId) })),
   setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
   applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
+  playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
+    const { database, userClubId, lineup, tactics } = get();
+    const result = simulateMatch(prepareFriendly({ db: database, userClubId, lineup, tactics, opponentId, venue, seed }));
+    set({ lastMatch: result });
+    return result;
+  },
+  clearMatch: () => set({ lastMatch: null }),
 }));

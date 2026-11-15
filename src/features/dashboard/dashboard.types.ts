@@ -20,6 +20,8 @@ export type DashboardSummary = {
 };
 
 export type NextMatchSummary = {
+  /** Real club id when the opponent comes from game data (used to start a match). */
+  opponentId?: string;
   opponentName: string;
   venue: 'home' | 'away';
   competition: string;

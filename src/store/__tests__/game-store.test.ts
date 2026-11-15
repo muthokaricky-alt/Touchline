@@ -59,6 +59,18 @@ describe('game store', () => {
     expect(state().tactics.passing).toBe(PLAYING_STYLES.counter.tactics.passing);
   });
 
+  it('plays a friendly with the current team, stores it, and clears it', () => {
+    expect(state().lastMatch).toBeNull();
+    const result = state().playFriendly('club_kestrel_bay', 'away', 123);
+    expect(state().lastMatch).toBe(result);
+    expect(result.away.clubId).toBe(DEFAULT_USER_CLUB_ID);
+    expect(result.seed).toBe(123);
+    // Same seed and team → same match.
+    expect(state().playFriendly('club_kestrel_bay', 'away', 123)).toEqual(result);
+    state().clearMatch();
+    expect(state().lastMatch).toBeNull();
+  });
+
   it('replaces the lineup object on change (so React re-renders)', () => {
     const before = state().lineup;
     state().clearSlot('LM');

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 5 step 5a (match engine, no UI) complete; 5b (match screen) next._
+_Last updated: 15 Nov 2026 — Milestone 5 (Match engine + match screen) complete._
 
 ---
 
@@ -33,6 +33,7 @@ src/
                          Instructions views), fixtures, club
     player/[id].tsx      player profile (exports generateStaticParams for web)
     select-player.tsx    modal picker: ?target=<slotId>|bench
+    match.tsx            friendly: setup → live replay → report (state in store)
   components/
     ui/                  design-system primitives (AppText, Card, Button, ListRow,
                          RatingBadge, PositionBadge, ChoiceChips, PageHeader…)
@@ -43,6 +44,8 @@ src/
     player/
     team/                TeamSelectionPanel, Pitch, player picker
     tactics/             TacticsScreen shell, InstructionsPanel, option labels
+    match/               MatchSetupScreen, MatchCentreScreen, timeline.ts (pure:
+                         feed items, stat rows, rating rows), useReplay
   game/                GAME SYSTEMS: pure TS, no React imports
     positions.ts         position groups and names
     ratings.ts           positionRating(): weighted 1–20 suitability per position
@@ -51,7 +54,7 @@ src/
     squad/               positionFit/effectiveRating, view-model selectors
     tactics/             Tactics schema, playing-style presets, assistant analysis
     ai/opponent.ts       AI club setup: best formation + style for the strength gap
-    match/               buildMatchTeam (store state → engine input), lineupStrength
+    match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
     simulate.ts          minute loop: possession → fouls → chance/shot → fatigue → subs
     team-state.ts        on-pitch players, energy, unit strengths, replacements
@@ -245,6 +248,25 @@ call pure functions from `src/game` and save the result.
 - **Performance:** ~3–4 ms per match. The full test suite takes ~25 s, mostly
   calibration.
 
+### Match screen (Milestone 5b)
+
+- **Simulate instantly, replay visually.** `playFriendly` runs the engine and
+  stores `lastMatch`; the screen reveals the finished timeline item by item
+  (`useReplay`, one `setTimeout` per step so pause/skip/unmount never leak a
+  timer). The engine knows nothing about the replay.
+- **Seeds come from the clock in the store action** (`newMatchSeed`), never
+  inside the engine. Tests pass an explicit seed.
+- **Route state:** `/match` has no params. No `lastMatch` → setup; otherwise
+  match centre (keyed by seed + clubs so a new match restarts the replay).
+  Opponent/venue choice lives in the route so "Play another" remembers it.
+- **Feed filtering** (`buildTimeline`): goals, cards, subs, whistles, and
+  shots that were on target, blocked or a decent chance (xG ≥ 0.15). Tackles
+  and plain fouls (~50 a match) are left out.
+- **AI preview:** setup shows how the opponent will line up
+  (`buildAiTeam` against the user's current XI strength).
+- **Kick-off is blocked** while the lineup has errors (empty slots etc.).
+- Friendlies aren't recorded anywhere until fixtures exist (M6).
+
 ## 3. Commands
 
 ```
@@ -322,15 +344,27 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   headless Chrome at 412px and 1280px (style apply, instruction change →
   Custom + warnings, view switching). Zero console errors, no overflow.
 
-### Milestone 5 — Match engine (in progress)
-**5a — Engine ✅** (no UI yet)
+### Milestone 5 — Match engine ✅
+**5a — Engine ✅**
 - `src/engine`: simulation, team state/fatigue/subs, tactical effects,
   summary/ratings, commentary. `src/game/ai/opponent.ts`, `src/game/match`.
 - `rng.pickWeighted` added to the seeded RNG.
 - Tests: 318 total (61 new): invariants over 150 matches, determinism, input
   guard, module tests, AI tests, statistical calibration incl. tactics.
 
-**5b — Match screen (next):** see section 5.
+**5b — Match screen ✅**
+- Dashboard "Play match" → `/match`: choose opponent (default: dashboard's
+  next opponent) and venue, see the AI's expected setup, kick off.
+- Match centre: scoreboard (live/paused/half-time/full-time, screen-reader
+  live region), live commentary feed with pause/resume and skip, then report
+  tabs: timeline, stats bars, ratings (POTM). "Play another" / "Done".
+- Store: `lastMatch`, `playFriendly`, `clearMatch`. Hooks:
+  `useLeagueOpponents`, `useOpponentPreview`, `usePlayerNames`.
+- Tests: 338 total (20 new).
+- Verified: `tsc` clean, tests pass, Android + web export, full flow driven
+  in headless Chrome at 412px and 1280px (setup → kick off → live → pause →
+  skip → stats/ratings → play another remembers choice → done; direct load
+  of `/match`). Zero console errors, no overflow.
 
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
@@ -348,20 +382,19 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 5 step 5b: Match screen
+## 5. Next steps — Milestone 6: Competitions
 
-Agreed with the user (all recommendations accepted):
-- Friendly vs any league club (default: dashboard's next opponent), user
-  picks home/away. Nothing recorded (fixtures/table are M6).
-- Engine runs instantly; the screen **replays** it as a live feed (events
-  minute by minute with commentary and running score, skip to full time).
-  Replay is pure UI over the finished `MatchResult`.
-- Store: `lastMatch` + `playMatch(opponentId, venue)` (seed from time; AI
-  opponent via `buildAiTeam(db, id, lineupStrength(userLineup))`).
-- Route `src/app/match.tsx` (static, no params → no hydration issue; state
-  in store), `src/features/match/`: pre-match, live feed, result (score,
-  timeline, stats bars, player ratings, player of the match).
-- Wire the dashboard "Play match" button. Block kick-off if the lineup has
-  errors (`isLineupPlayable`).
-- Open questions for later: user substitutions during a match (interactive
-  mode), injuries (M8).
+Agree the plan with the user before coding. Likely shape:
+
+1. Season model: fixtures (double round-robin from `League.rules`,
+   home/away balanced, dated matchdays) as pure TS with tests.
+2. Results + league table: points from `rules.points`, tiebreakers (GD,
+   goals scored, head-to-head?), recorded `MatchResult` summaries.
+3. Simulate the other matches of a matchday with AI v AI (`buildAiTeam`);
+   the user's match via the existing match screen.
+4. Replace dashboard preview data with real next fixture, table, form.
+   Fixtures tab: list by matchday with results.
+5. Cups and promotion/relegation: decide scope with the user (the fictional
+   DB has one league, so promotion/relegation needs a second division).
+6. Consider: separate `npm run test:calibration` if the suite gets slow;
+   user substitutions during a match (interactive mode); injuries (M8).

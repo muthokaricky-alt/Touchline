@@ -47,6 +47,7 @@ export function buildDashboardSummary(db: GameDatabase, clubId: ClubId, preview:
     club: { id: club.id, name: club.name, shortName: club.shortName, leagueName },
     nextMatch: {
       ...preview.nextMatch,
+      opponentId: opponentRow?.clubId,
       opponentName: opponentRow?.clubName ?? preview.nextMatch.opponentName,
       opponentPosition: opponentRow?.position ?? preview.nextMatch.opponentPosition,
       competition: leagueName,

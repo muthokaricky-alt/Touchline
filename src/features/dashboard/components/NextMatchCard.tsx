@@ -11,9 +11,10 @@ type NextMatchCardProps = {
   clubForm: DashboardSummary['form'];
   match: DashboardSummary['nextMatch'];
   onViewFixtures: () => void;
+  onPlayMatch: () => void;
 };
 
-export function NextMatchCard({ club, clubForm, match, onViewFixtures }: NextMatchCardProps) {
+export function NextMatchCard({ club, clubForm, match, onViewFixtures, onPlayMatch }: NextMatchCardProps) {
   const isHome = match.venue === 'home';
   const home = isHome ? { name: club.name, form: clubForm } : { name: match.opponentName, form: match.opponentForm };
   const away = isHome ? { name: match.opponentName, form: match.opponentForm } : { name: club.name, form: clubForm };
@@ -49,8 +50,8 @@ export function NextMatchCard({ club, clubForm, match, onViewFixtures }: NextMat
           <Button
             label="Play match"
             icon="match"
-            disabled
-            accessibilityHint="Match simulation arrives in Milestone 5"
+            onPress={onPlayMatch}
+            accessibilityHint="Opens match day to play a friendly"
           />
         </View>
       </View>
