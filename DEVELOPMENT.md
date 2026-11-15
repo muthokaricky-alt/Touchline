@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 1 (Foundation) complete._
+_Last updated: 15 Nov 2026 — Milestone 2 (Football data) complete._
 
 ---
 
@@ -17,7 +17,7 @@ _Last updated: 15 Nov 2026 — Milestone 1 (Foundation) complete._
 | Language | TypeScript, `strict: true` | 6.0 |
 | State | Zustand (installed, not used yet) | 5 |
 | Persistence | expo-sqlite (installed, not used yet) | 58 |
-| Validation | Zod (installed, not used yet) | 4 |
+| Validation | Zod (schemas in `src/data/schemas`) | 4 |
 | Icons | expo-symbols (SF Symbols on iOS, Material Symbols on Android/web) | 58 |
 | Tests | Jest + jest-expo preset | Jest 30 |
 
@@ -36,9 +36,16 @@ src/
   features/
     dashboard/           a feature = its screen, components, view-model types,
                          and pure helpers (+ tests)
+  data/                DATA: pure TS, no React imports
+    schemas/             Zod schemas + inferred types (Player, PlayerAttributes,
+                         Contract, Club, League, GameDatabase)
+    integrity.ts         cross-record checks (references, duplicates)
+    load.ts              parseDatabase(unknown) → result; entry point for outside data
+    fictional/           hand-written clubs/league + seeded squad generator
   theme/               design tokens (colours, spacing, radii, typography, layout)
-  types/               shared football primitives (grows in Milestone 2)
-  utils/               pure helpers with no React imports (formatting, maths)
+  types/               small shared primitives (MatchOutcome)
+  utils/               pure helpers with no React imports (formatting, maths,
+                       dates, seeded RNG)
 ```
 
 Planned (not created yet; don't create empty folders):
@@ -46,7 +53,6 @@ Planned (not created yet; don't create empty folders):
 ```
   engine/              SIMULATION ENGINE: pure TS, no React/RN imports (Milestone 5)
   game/                GAME SYSTEMS: squad, tactics, transfers, competitions (M3+)
-  data/                DATA: schemas (Zod), fictional test DB, importers (M2)
   persistence/         PERSISTENCE: SQLite repositories behind interfaces (M10, earlier if needed)
   store/               Zustand stores: thin glue between game state and UI
 ```
@@ -84,6 +90,36 @@ Planned (not created yet; don't create empty folders):
 - **Jest via jest-expo.** It's Expo's supported test setup, and it will also let
   us test components later. Pure-logic tests run fast (<1s).
 
+### Data model (Milestone 2)
+
+- **Zod schema is the source of truth; types come from `z.infer`.** Never
+  hand-write a type that duplicates a schema. Zod guards data coming from
+  outside (imports, saves); TypeScript guards our own code.
+- **`z.strictObject` everywhere** so unknown keys (typos in imported data) fail.
+  No `.transform()`, so a schema's input and output types are identical.
+- **A player is three records linked by `playerId`:** `Player` (identity),
+  `PlayerAttributes` (1–20, grouped technical/mental/physical/goalkeeping) and
+  `Contract` (club, squad number, wage, dates). Each system only writes its
+  own record; each maps to its own SQLite table later.
+- **No `clubId` on Player.** A player's club comes from their contract; no
+  contract = free agent. Squad number lives on the contract too.
+- **Derived, not stored:** age (`ageOn(dob, gameDate)`), market value (M7),
+  career stats (M5/M6, own record type).
+- **Goalkeeping attributes** (handling, reflexes, aerialReach, oneOnOnes,
+  kicking) added beyond the brief's list; every player has them, outfielders low.
+- **Two-stage validation:** Zod per record, then `checkIntegrity()` for
+  cross-record rules. `parseDatabase(raw: unknown)` runs both and returns
+  `{ ok, database } | { ok: false, errors }` rather than throwing.
+- **Database is flat arrays + a `version` field**, the same layout as future
+  SQLite tables; bump `DATABASE_VERSION` on shape changes.
+- **Fictional players are generated, not hand-written**, by a seeded RNG
+  (`utils/random.ts`, mulberry32). Same seed → identical database (tested).
+  Attributes = club level (from reputation) + position profile + noise.
+  Changing the generator reshuffles players; that's fine until careers
+  snapshot the database into a save (M10).
+- **Competition is a league only.** `CompetitionSchema` becomes a
+  discriminated union on `type` when cups arrive (M6).
+
 ## 3. Commands
 
 ```
@@ -112,6 +148,19 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   web build rendered and checked in a headless browser at phone and desktop widths
   with zero console errors.
 
+### Milestone 2 — Football data ✅
+- Zod schemas + inferred types: Player, PlayerAttributes (22 attributes in 4
+  groups), Contract, Club, League, GameDatabase (`src/data/schemas`).
+- `checkIntegrity()` (8 cross-record rules) and `parseDatabase()` loader.
+- Fictional database: 8 invented clubs (reputation 9–16), 1 league
+  ("First Division", 2 rounds, 3/1/0 points, 2 relegated), 176 generated
+  players from a fixed seed. `buildFictionalDatabase(seed?)` in `src/data/fictional`.
+- Utils: seeded RNG (`createRng`), ISO date helpers (`ageOn`, `parseIsoDate`, `toIsoDate`).
+- Tests: 111 total (80 new): schema accept/reject cases, each integrity rule,
+  fictional DB validity/determinism/realism, RNG, dates.
+- No UI changes. Dashboard still uses `dashboard.preview.ts` (selector deferred
+  to M3, when the squad screen needs real data).
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -122,14 +171,21 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   Touchline navy). Replace with real Touchline artwork later.
 - Fonts are system fonts. A custom typeface can be added via `expo-font` later.
 
-## 5. Next steps — Milestone 2: Football data
+## 5. Next steps — Milestone 3: Squad management
 
-1. Define Zod schemas + inferred TS types in `src/data/` for Player (identity,
-   attributes 1–20, contract kept separate), Club and Competition.
-2. Create a small fictional test database (e.g. 8 clubs × 22 players) as typed
-   data, validated by the schemas in a test.
-3. Add tests that check every generated/imported record passes validation.
-4. Optionally: a `buildDashboardSummary()` selector that feeds the dashboard from
-   this data instead of `dashboard.preview.ts`.
+Agree the plan with the user before coding. Likely shape:
 
-Do **not** start the match engine until Milestones 2–4 are done.
+1. Decide how the UI gets data: a Zustand store holding the loaded
+   `GameDatabase` + the user's club ID (loaded from `buildFictionalDatabase()`
+   for now; SQLite later).
+2. Pure selectors in `src/game/squad/` (e.g. `selectSquad(db, clubId)`) that
+   join Player + PlayerAttributes + Contract into view models. Screens never
+   join raw records themselves.
+3. Squad screen (list, sort/filter by position) and player profile route
+   (`src/app/player/[id].tsx`) showing attribute groups.
+4. Formation definitions + starting XI / substitutes selection and position
+   assignment, as pure TS with tests.
+5. `buildDashboardSummary()` for the parts that real data can now supply
+   (club, squad count).
+
+Do **not** start the match engine until Milestones 3–4 are done.

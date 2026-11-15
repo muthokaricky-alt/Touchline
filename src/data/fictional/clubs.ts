@@ -1,0 +1,123 @@
+import type { Club, League } from '../schemas';
+
+/**
+ * Hand-written fictional clubs. Every name, town and stadium is invented;
+ * resemblance to real clubs is unintentional.
+ *
+ * `reputation` (1–20) controls how strong the generated squad is, so the
+ * league has a clear spread from title contenders to strugglers.
+ */
+export const FICTIONAL_CLUBS: readonly Club[] = [
+  {
+    id: 'club_kestrel_bay',
+    name: 'Kestrel Bay',
+    shortName: 'KBY',
+    city: 'Kestrel Bay',
+    country: 'ENG',
+    founded: 1889,
+    reputation: 16,
+    stadium: { name: 'The Lighthouse Ground', capacity: 41200 },
+    colours: { primary: '#1E4FA3', secondary: '#FFFFFF' },
+    finances: { balance: 48_000_000, transferBudget: 22_000_000, weeklyWageBudget: 320_000 },
+  },
+  {
+    id: 'club_northmere_rovers',
+    name: 'Northmere Rovers',
+    shortName: 'NMR',
+    city: 'Northmere',
+    country: 'ENG',
+    founded: 1878,
+    reputation: 15,
+    stadium: { name: 'Fellside Park', capacity: 36800 },
+    colours: { primary: '#C8102E', secondary: '#111111' },
+    finances: { balance: 31_500_000, transferBudget: 15_000_000, weeklyWageBudget: 290_000 },
+  },
+  {
+    id: 'club_saltmarsh_athletic',
+    name: 'Saltmarsh Athletic',
+    shortName: 'SAL',
+    city: 'Saltmarsh',
+    country: 'ENG',
+    founded: 1902,
+    reputation: 14,
+    stadium: { name: 'Tideway Stadium', capacity: 29500 },
+    colours: { primary: '#0B7A5C', secondary: '#F2C94C' },
+    finances: { balance: 18_200_000, transferBudget: 9_000_000, weeklyWageBudget: 250_000 },
+  },
+  {
+    id: 'club_greywater_town',
+    name: 'Greywater Town',
+    shortName: 'GRW',
+    city: 'Greywater',
+    country: 'ENG',
+    founded: 1884,
+    reputation: 13,
+    stadium: { name: 'Millrace Road', capacity: 24100 },
+    colours: { primary: '#6B7C8F', secondary: '#FFFFFF' },
+    finances: { balance: 9_800_000, transferBudget: 5_500_000, weeklyWageBudget: 220_000 },
+  },
+  {
+    id: 'club_hollin_park',
+    name: 'Hollin Park',
+    shortName: 'HOP',
+    city: 'Hollinford',
+    country: 'ENG',
+    founded: 1910,
+    reputation: 12,
+    stadium: { name: 'The Hollin', capacity: 21700 },
+    colours: { primary: '#5B2A86', secondary: '#E8E8E8' },
+    finances: { balance: 6_400_000, transferBudget: 4_000_000, weeklyWageBudget: 200_000 },
+  },
+  {
+    id: 'club_redcliff_united',
+    name: 'Redcliff United',
+    shortName: 'RCU',
+    city: 'Redcliff',
+    country: 'ENG',
+    founded: 1895,
+    reputation: 11,
+    stadium: { name: 'Quarry Lane', capacity: 18300 },
+    colours: { primary: '#B5462F', secondary: '#1B1B1B' },
+    finances: { balance: 3_100_000, transferBudget: 2_500_000, weeklyWageBudget: 180_000 },
+  },
+  {
+    id: 'club_larkspur_city',
+    name: 'Larkspur City',
+    shortName: 'LKC',
+    city: 'Larkspur',
+    country: 'ENG',
+    founded: 1921,
+    reputation: 10,
+    stadium: { name: 'Meadowgate', capacity: 15600 },
+    colours: { primary: '#4A90D9', secondary: '#0D2340' },
+    finances: { balance: 1_200_000, transferBudget: 1_500_000, weeklyWageBudget: 160_000 },
+  },
+  {
+    id: 'club_westhaven_albion',
+    name: 'Westhaven Albion',
+    shortName: 'WHA',
+    city: 'Westhaven',
+    country: 'ENG',
+    founded: 1899,
+    reputation: 9,
+    stadium: { name: 'Harbour Street', capacity: 12900 },
+    colours: { primary: '#F28C28', secondary: '#1D2A35' },
+    finances: { balance: -750_000, transferBudget: 800_000, weeklyWageBudget: 140_000 },
+  },
+];
+
+export const FICTIONAL_LEAGUE: League = {
+  id: 'comp_first_division',
+  type: 'league',
+  name: 'First Division',
+  shortName: 'First Div',
+  country: 'ENG',
+  tier: 1,
+  clubIds: FICTIONAL_CLUBS.map((club) => club.id),
+  rules: {
+    roundsPerOpponent: 2,
+    points: { win: 3, draw: 1, loss: 0 },
+    promotionPlaces: 0,
+    relegationPlaces: 2,
+  },
+};

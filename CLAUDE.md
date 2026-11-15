@@ -6,7 +6,7 @@ Read these before doing anything:
 @DEVELOPMENT.md
 @AGENTS.md
 
-Current state: Milestone 1 (Foundation) is complete. Next is Milestone 2 (Football data),
+Current state: Milestones 1 (Foundation) and 2 (Football data) are complete. Next is Milestone 3 (Squad management),
 following the plan in DEVELOPMENT.md section 5. Work one milestone at a time, explain decisions
 (the user is a CS student who wants to understand the code), and run `npm run typecheck` and
 `npm test` before claiming anything works. Keep DEVELOPMENT.md updated at the end of each session.
