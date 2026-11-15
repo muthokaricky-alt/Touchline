@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — Milestone 8 complete (8a condition, 8b development and training; save v5); Milestone 9 next._
+_Last updated: 16 Nov 2026 — Milestone 9 step 9a (retirement, youth intakes; save v6) complete; 9b (manager career) next._
 
 ---
 
@@ -70,6 +70,9 @@ src/
     development/         potential (assignPotential, ranges), monthly development
                          and training, monthly orchestration + coaching report,
                          training view (prospects)
+    world/               renewal: youth intakes (regenerated from the seed),
+                         worldFor(startYear), retirement, leaving football;
+                         renewal-career (user side + inbox)
     match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
     season/              Season/Fixture schemas, fixture generator, table, cup
                          (draws, rounds, ties), running player stats, season flow
@@ -597,6 +600,46 @@ the Squad tab.
   changed player values; it now lists four players so it tests the rule,
   not one outcome.
 
+### Career mode (Milestone 9)
+
+Decisions (user): youth intakes regenerated from the seed (not saved);
+9a world renewal before 9b manager career; the user may start at any of
+the 40 clubs; the user can be sacked, with warnings.
+
+#### 9a: retirement and youth intakes
+
+- **Intakes are regenerated, not saved.** `generatedIntake(clubs, seed,
+  year)` depends only on (world seed, year, club index); each club gets
+  2–4 youngsters aged 16–17 (`generateYouthIntake` in the data layer,
+  better at bigger clubs) with potential (`assignPotential`). Ids are
+  `plr_<100000 + (year−2000)·1000 + club·10 + k>`: numeric (seeds use the
+  number) and disjoint from the base world's 1…~1000.
+- **`worldFor(base, seed, startYear)`** = base world + every intake up to
+  that season (no contracts). It's what saves are diffed against, so a
+  save stores only contracts, finances, attribute changes and **`retired`**
+  ids (save v6). `checkSave` takes `baseFor(startYear)`. A store test plays
+  a full season, rolls over, reloads, and gets the identical world.
+- **Summer order** (store `startNextSeason`): monthly development →
+  retirements (30 June) → contract expiries, AI refills (1 July) → youth
+  intake → new fixtures. Retirement before expiries, so AI clubs refill
+  the gaps the same summer.
+- **Retirement:** from 33 (8%) rising to 95% at 38+; ×1.4 for weak
+  players, ×0.6 for strong ones. Free agents also **leave football**
+  (weak ones 50–70% a year, decent ones 20%: moved abroad / lower
+  leagues). Leavers are removed from the world entirely (players,
+  attributes, contracts, condition records); the Club tab shows
+  "Retired player" for old deals.
+- **Intake decisions:** the user signs every youngster there's room for
+  (3-year youth contract at 40% of the normal wage; release any from the
+  profile, cheaply); AI clubs keep their best 2 by potential while below 26.
+- **Ten-summer stability test** (`world/__tests__/renewal.test.ts`) caught
+  two problems: AI clubs renewing every under-30 let squads creep to 30
+  (now: key players, then the best under-30s while below
+  `AI_TARGET_SQUAD` = 24), and released youngsters piled up in free agency
+  (world 940 → 1,471, pool 358). With smaller intakes and the
+  leave-football rule: 940 → ~1,180 levelling off, pool ~150, AI squads
+  18–30.
+
 ## 3. Commands
 
 ```
@@ -804,6 +847,21 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   reports ("Improving: … +0.3"), training knocks reported. Zero console
   errors, no overflow.
 
+### Milestone 9 — Career mode (in progress)
+**9a — Retirement and youth intakes ✅**
+- `src/game/world` (renewal, renewal-career); `generateYouthIntake`;
+  `addContract`; AI target squad size in expiries; save v6 (`retired`,
+  base = `worldFor`).
+- Inbox: youth intake (with potential ranges), retirements.
+- Tests: 655 total (17 new) incl. ten-summer stability, intake determinism,
+  save round-trip with retirements and an intake, v5 → v6, a full season
+  rollover + reload in the store.
+- Verified: `tsc` clean, tests pass, Android + web export; headless Chrome
+  at 412px and 1280px: a full 2026/27 season (39 matches) → 2027/28 with
+  "Youth intake: 4 academy players" and expiries in the inbox; squad
+  22 → 17 (9 expired, 4 youngsters) kept after reload. Zero console
+  errors, no overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -829,22 +887,25 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 9 (Career mode)
+## 5. Next steps — Milestone 9 step 9b (manager career)
 
-Brief: multiple seasons, manager reputation, job offers, club changes,
-youth academies, retirement and player generation. Plan with the user
-first (likely split 9a/9b). Things to decide / known constraints:
-1. **Retirement + regens together** (deferred from 8b): players ~34+
-   retire at season end; new youth players (with potential) are generated
-   so the pool doesn't shrink. New players can't be rebuilt from the seed
-   alone, so the save must store generated players (save v6).
-2. **Youth academy:** each club gets a yearly intake (quality by
-   reputation / facilities); the user's intake arrives in the inbox.
-3. **Manager reputation** from results vs expectations (board
-   expectations per season), **job offers** and changing clubs (the user
-   club is still fixed at Greywater Town: `DEFAULT_USER_CLUB_ID`).
-4. A new-career flow (choose club, manager name) replacing the fixed
-   default; the dashboard's manager name is still preview data.
-5. Scouting could narrow potential ranges (currently fixed ±1/±2).
-6. Later ideas: `npm run test:calibration` (suite ~40 s); foreign leagues;
-   user substitutions during a match; suspensions; save slots (M10).
+Agreed: any of the 40 clubs; sacking with warnings. Plan details with the
+user first:
+1. **New-career flow:** manager name + club choice (difficulty hint by
+   reputation/league); replaces `DEFAULT_USER_CLUB_ID` and the dashboard's
+   preview manager name. "Start new game" on the Club tab opens it.
+2. **Board expectations** per season from club reputation vs league
+   (title / promotion / top half / avoid relegation), shown on the
+   dashboard; **board confidence** moves with results vs expectation;
+   warnings in the inbox; sacking below a threshold.
+3. **Manager reputation** (career-long) from finishing positions vs
+   expectations and trophies.
+4. **Job offers**: at season end (and while unemployed) from clubs whose
+   level matches the manager's reputation; accepting moves the user (club,
+   lineup, tactics, transfer list, training); the old club becomes AI.
+   Unemployed: the season plays on without a user team.
+5. Everything that assumes "the user always has a club" needs checking
+   (`tsc` will help if `userClubId` becomes nullable). Save v7.
+6. Later ideas: scouting to narrow potential ranges; `npm run
+   test:calibration` (suite ~45 s); foreign leagues; user substitutions
+   in matches; suspensions; save slots (M10).

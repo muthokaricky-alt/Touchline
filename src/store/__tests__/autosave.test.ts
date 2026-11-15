@@ -52,8 +52,8 @@ describe('autosave', () => {
     const { state: s, version } = saved();
     expect(version).toBe(SAVE_VERSION);
     expect(Object.keys(s).sort()).toEqual([
-      'attributeChanges', 'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'offers', 'season', 'tactics',
-      'training', 'transferHistory', 'transferListed', 'userClubId', 'worldSeed',
+      'attributeChanges', 'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'offers', 'retired', 'season',
+      'tactics', 'training', 'transferHistory', 'transferListed', 'userClubId', 'worldSeed',
     ]);
     expect(useSaveStatus.getState().lastSavedAt).not.toBeNull();
   });
@@ -90,7 +90,7 @@ describe('autosave', () => {
     state().playNextFixture();
     flushSave();
     const current = saved();
-    const { contracts: _c, clubFinances: _f, transferHistory: _t, transferListed: _l, offers: _o, inbox: _i, condition: _k, attributeChanges: _a, training: _tr, ...career } =
+    const { contracts: _c, clubFinances: _f, transferHistory: _t, transferListed: _l, offers: _o, inbox: _i, condition: _k, attributeChanges: _a, training: _tr, retired: _re, ...career } =
       current.state;
     await restartWith(JSON.stringify({ state: career, version: 1 }));
     expect(useSaveStatus.getState().notice).toBeNull();
@@ -148,5 +148,25 @@ describe('autosave', () => {
     flushSave();
     expect(saved().state.season.fixtures.every((f: { result: unknown }) => f.result === null)).toBe(true);
     expect(state().currentDate).toBe('2026-07-01');
+  });
+});
+
+describe('a new season with retirements and a youth intake', () => {
+  it('rebuilds the same world after a reload (intakes are regenerated, not saved)', async () => {
+    const user = state().userClubId;
+    while (state().season.fixtures.some((f) => !f.result && (f.homeId === user || f.awayId === user))) state().playNextFixture();
+    state().finishSeason();
+    state().startNextSeason();
+    const intakeMessage = state().inbox.find((m) => m.from === 'Head of Youth Development');
+    expect(intakeMessage?.title).toMatch(/Youth intake/);
+    const before = { players: state().database.players, attributes: state().database.attributes, contracts: state().database.contracts };
+    expect(before.players.some((p) => Number(p.id.slice(4)) >= 100_000)).toBe(true); // intake players exist
+    flushSave();
+    const saved = JSON.parse(memory.getItem(SAVE_KEY) as string);
+    expect(JSON.stringify(saved).length).toBeLessThan(1_500_000);
+
+    await restartWith(memory.getItem(SAVE_KEY) as string);
+    expect(useSaveStatus.getState().notice).toBeNull();
+    expect({ players: state().database.players, attributes: state().database.attributes, contracts: state().database.contracts }).toEqual(before);
   });
 });

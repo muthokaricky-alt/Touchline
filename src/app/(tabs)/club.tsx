@@ -44,7 +44,8 @@ export default function ClubRoute() {
   const history = useMemo(() => {
     const nameOf = (id: string) => {
       const p = database.players.find((x) => x.id === id);
-      return p ? fullName(p) : id;
+      // Retired players leave the world (Milestone 9a); their old deals stay in the history.
+      return p ? fullName(p) : 'Retired player';
     };
     const clubName = (id: string | null) => (id ? (database.clubs.find((c) => c.id === id)?.name ?? id) : 'free agency');
     return transferHistory

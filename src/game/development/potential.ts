@@ -29,7 +29,7 @@ function headroom(age: number, roll: number): number {
 }
 
 /** Gives every player a potential (unless one is already set). Deterministic for a seed. */
-export function assignPotential(db: GameDatabase, seed: number, onDate: string): GameDatabase {
+export function assignPotential<T extends Pick<GameDatabase, 'players' | 'attributes'>>(db: T, seed: number, onDate: string): T {
   const attributes = new Map(db.attributes.map((a) => [a.playerId, a]));
   return {
     ...db,

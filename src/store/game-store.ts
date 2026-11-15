@@ -19,6 +19,8 @@ import { injuryMessages, withoutInjured } from '@/game/condition/squad-care';
 import { DEFAULT_TRAINING, type Training } from '@/game/development/development';
 import { developmentReport, developThrough } from '@/game/development/monthly';
 import { assignPotential } from '@/game/development/potential';
+import { worldFor } from '@/game/world/renewal';
+import { admitIntakeToCareer, retireFromCareer } from '@/game/world/renewal-career';
 import type { MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
 import type { Season } from '@/game/season/season';
@@ -198,6 +200,9 @@ export function getBaseDatabase(): GameDatabase {
   return baseDatabase;
 }
 
+/** The generated world for a season: the base plus every youth intake so far (saves are diffs against this). */
+export const generatedWorld = (startYear: number) => worldFor(getBaseDatabase(), FICTIONAL_SEED, startYear);
+
 /**
  * The monthly step (development, training knocks, the coaching report) for a
  * move of the calendar from `from` to `to`. A no-op unless a 1st of the month
@@ -239,7 +244,7 @@ function toSave(state: GameState): GameSave {
     lineup: state.lineup,
     tactics: state.tactics,
     season: state.season,
-    ...worldChanges(state.database, getBaseDatabase()),
+    ...worldChanges(state.database, generatedWorld(state.season.startYear)),
     transferHistory: state.transferHistory,
     transferListed: state.transferListed,
     offers: state.offers,
@@ -347,11 +352,21 @@ export const useGameStore = create<Store>()(
         const seasonStart = `${state.season.startYear + 1}-07-01`;
         // June and July's development happens first (with the finished season's playing time).
         const monthly = monthlyStep(state, state.currentDate, seasonStart, state.season, state.condition);
-        const rolled = seasonRollover({ ...transferCareer(state), db: monthly.database, inbox: addMessages(state.inbox, monthly.messages) }, seasonStart);
+        const year = state.season.startYear + 1;
+        // 30 June: retirements. 1 July: contracts expire (AI clubs refill squads), then the academy intake.
+        const retired = retireFromCareer(
+          { ...transferCareer(state), db: monthly.database, inbox: addMessages(state.inbox, monthly.messages) },
+          FICTIONAL_SEED,
+          year,
+        ).career;
+        const rolled = admitIntakeToCareer(seasonRollover(retired, seasonStart), FICTIONAL_SEED, year);
         const next = startNextSeason(rolled.db, state.season);
         const career = afterCalendarMove(rolled, state.currentDate, next.seed);
         // Over the summer most players recover and heal; anyone still injured at the first kick-off stays out of the lineup.
-        const condition = conditionOn(monthly.condition, seasonStart);
+        // Retired players' records are dropped (the save only keeps condition for players who exist).
+        const recovered = conditionOn(monthly.condition, seasonStart);
+        const stillHere = new Set(rolled.db.players.map((p) => p.id));
+        const condition = { ...recovered, players: Object.fromEntries(Object.entries(recovered.players).filter(([id]) => stillHere.has(id))) };
         set({
           ...fromCareer(career),
           lineup: withoutInjured(
@@ -434,13 +449,13 @@ export const useGameStore = create<Store>()(
       merge: (persisted, current) => {
         // No save yet (first launch): persist still calls merge, with undefined. Not an error.
         if (persisted === undefined || persisted === null) return current;
-        const check = checkSave(persisted, getBaseDatabase(), FICTIONAL_SEED);
+        const check = checkSave(persisted, generatedWorld, FICTIONAL_SEED);
         if (!check.ok) {
           saveStatus.notify(`${check.reason} A new game was started.`);
           return current;
         }
         saveStatus.loaded();
-        const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, attributeChanges: _attributes, ...career } = check.save;
+        const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, attributeChanges: _attributes, retired: _retired, ...career } = check.save;
         return { ...current, ...career, database: check.database, lastMatch: null, lastMatchFixtureId: null };
       },
       // Unreadable JSON etc.

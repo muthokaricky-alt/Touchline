@@ -112,6 +112,16 @@ function newContract(db: GameDatabase, playerId: PlayerId, clubId: ClubId, weekl
   };
 }
 
+/**
+ * Gives an unattached player a contract at `clubId` (youth intake, Milestone 9).
+ * No fee and no budget checks: academy players are cheap and the club made
+ * the decision. Next free squad number.
+ */
+export function addContract(db: GameDatabase, playerId: PlayerId, clubId: ClubId, weeklyWage: number, years: number, date: string): GameDatabase {
+  if (db.contracts.some((c) => c.playerId === playerId)) throw new RangeError(`${playerId} already has a contract`);
+  return { ...db, contracts: [...db.contracts, newContract(db, playerId, clubId, weeklyWage, years, date)] };
+}
+
 function withFinances(db: GameDatabase, clubId: ClubId, change: { balance: number; transferBudget: number }): GameDatabase {
   return {
     ...db,

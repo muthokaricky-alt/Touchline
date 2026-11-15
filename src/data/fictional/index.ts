@@ -54,3 +54,4 @@ export function buildFictionalDatabase(seed: number = FICTIONAL_SEED): GameDatab
 }
 
 export { ALL_FICTIONAL_CLUBS, FICTIONAL_CLUBS, FIRST_DIVISION, NATIONAL_CUP, SECOND_DIVISION_LEAGUE } from './clubs';
+export { generateYouthIntake, SQUAD_TEMPLATE } from './generate-squads';

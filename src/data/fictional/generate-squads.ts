@@ -208,6 +208,41 @@ export function generateFreeAgents({
   return { players, attributes };
 }
 
+/**
+ * A club's youth intake (Milestone 9): 16–17-year-olds, weaker than the
+ * first team but better at bigger clubs. No contracts (the game layer
+ * decides who gets one) and no potential (the game layer assigns it).
+ * `playerNumber(k)` gives the k-th youngster's id number.
+ */
+export function generateYouthIntake({
+  rng,
+  club,
+  count,
+  referenceDate,
+  playerNumber,
+}: {
+  rng: Rng;
+  club: Club;
+  count: number;
+  referenceDate: string;
+  playerNumber: (k: number) => number;
+}): { players: Player[]; attributes: PlayerAttributes[] } {
+  const players: Player[] = [];
+  const attributes: PlayerAttributes[] = [];
+  const usedLastNames = new Set<string>();
+  // Reputation 9 → level ~6, reputation 16 → level ~9: raw, but with room to grow.
+  const academyLevel = 2 + Math.round(club.reputation * 0.45);
+  for (let k = 0; k < count; k++) {
+    const { position } = rng.pick(SQUAD_TEMPLATE);
+    const id = `plr_${playerNumber(k)}`;
+    const age = rng.int(16, 17);
+    const level = clamp(academyLevel + rng.int(-2, 1), 3, 14);
+    players.push(generatePlayer(rng, id, position, age, club.country, referenceDate, usedLastNames));
+    attributes.push(generateAttributes(rng, id, position, level));
+  }
+  return { players, attributes };
+}
+
 function generatePlayer(
   rng: Rng,
   id: string,

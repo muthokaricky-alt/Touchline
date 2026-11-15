@@ -14,8 +14,11 @@ import { ageAt, playerAbility, wageDemand } from './valuation';
  *
  * At the start of a season (1 July), contracts that ended on 30 June expire:
  *   - the USER's players leave as free agents (warned in January and April);
- *   - AI clubs renew first-team regulars and players under 30, release the
- *     rest, then refill to MIN_AI_SQUAD from free agents.
+ *   - AI clubs renew first-team regulars, then their best other under-30s
+ *     while the squad is below AI_TARGET_SQUAD, release the rest, then
+ *     refill to MIN_AI_SQUAD from free agents. (Renewing every under-30 made
+ *     squads creep towards 30 once youth intakes arrived: found by the
+ *     ten-summer renewal test.)
  * The released players join the free-agent pool, so every summer has a
  * living free-agent market.
  */
@@ -31,6 +34,9 @@ export type ExpiryOutcome = {
 
 const expired = (c: Contract, seasonStart: string) => c.endDate < seasonStart;
 
+/** AI clubs stop renewing non-essential players at this squad size. */
+export const AI_TARGET_SQUAD = 24;
+
 export function processExpiries(db: GameDatabase, userClubId: ClubId, seasonStart: string): ExpiryOutcome {
   const userLeavers: PlayerId[] = [];
   let aiRenewed = 0;
@@ -44,19 +50,34 @@ export function processExpiries(db: GameDatabase, userClubId: ClubId, seasonStar
     return keyPlayers.get(clubId)!.has(playerId);
   };
 
+  const staying = new Map<ClubId, number>();
+  const expiring: Contract[] = [];
   for (const c of db.contracts) {
     if (!expired(c, seasonStart)) {
       contracts.push(c);
-      continue;
-    }
-    if (c.clubId === userClubId) {
+      staying.set(c.clubId, (staying.get(c.clubId) ?? 0) + 1);
+    } else if (c.clubId === userClubId) {
       userLeavers.push(c.playerId);
-      continue;
+    } else {
+      expiring.push(c);
     }
+  }
+
+  const abilityOf = (playerId: PlayerId) => {
+    const p = players.get(playerId);
+    const a = attributes.get(playerId);
+    return p && a ? playerAbility(p, a) : 0;
+  };
+  // Per club: key players first, then the best; non-key under-30s only while below the target size.
+  const order = (a: Contract, b: Contract) =>
+    Number(isKey(b.clubId, b.playerId)) - Number(isKey(a.clubId, a.playerId)) || abilityOf(b.playerId) - abilityOf(a.playerId) || a.playerId.localeCompare(b.playerId);
+  for (const c of [...expiring].sort((a, b) => a.clubId.localeCompare(b.clubId) || order(a, b))) {
     const player = players.get(c.playerId);
     const attrs = attributes.get(c.playerId);
     const age = player ? ageAt(player, seasonStart) : 99;
-    if (player && attrs && (isKey(c.clubId, c.playerId) || age < 30)) {
+    const size = staying.get(c.clubId) ?? 0;
+    const key = isKey(c.clubId, c.playerId);
+    if (player && attrs && (key || (age < 30 && size < AI_TARGET_SQUAD))) {
       const club = db.clubs.find((x) => x.id === c.clubId)!;
       contracts.push({
         ...c,
@@ -64,6 +85,7 @@ export function processExpiries(db: GameDatabase, userClubId: ClubId, seasonStar
         startDate: seasonStart,
         endDate: contractEnd(seasonStart, age >= 30 ? 1 : 2),
       });
+      staying.set(c.clubId, size + 1);
       aiRenewed++;
     } else {
       aiReleased++;

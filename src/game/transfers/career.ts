@@ -32,8 +32,8 @@ const nameOf = (db: GameDatabase, id: PlayerId) => {
 };
 const clubName = (db: GameDatabase, id: ClubId | null) => (id ? (db.clubs.find((c) => c.id === id)?.name ?? id) : 'free agency');
 
-/** A player has left the user's club: refill the lineup, unlist him, drop his offers. */
-function departed(career: TransferCareer, db: GameDatabase, playerId: PlayerId): TransferCareer {
+/** A player has left the user's club: refill the lineup, unlist him, drop his offers. (Also used by retirement.) */
+export function departed(career: TransferCareer, db: GameDatabase, playerId: PlayerId): TransferCareer {
   return {
     ...career,
     db,

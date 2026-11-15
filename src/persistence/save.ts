@@ -39,10 +39,12 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   3  + transfer list, pending offers, inbox (Milestone 7b)
  *   4  + player condition: fitness, morale, injuries (Milestone 8a)
  *   5  + changed attributes (development), training settings (Milestone 8b)
+ *   6  + retired players (Milestone 9a). Youth intakes aren't saved: they're
+ *        regenerated from the seed (game/world/renewal.ts worldFor).
  */
 
 export const SAVE_KEY = 'touchline-save';
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -77,6 +79,8 @@ export const GameSaveSchema = z.strictObject({
   condition: ConditionStateSchema,
   attributeChanges: AttributeChangesSchema,
   training: TrainingSchema,
+  /** Players of the season's generated world who have retired (or left football). */
+  retired: z.array(PlayerIdSchema),
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -88,7 +92,7 @@ export type IncompatibleSave = { incompatibleVersion: number };
 export const isIncompatible = (value: unknown): value is IncompatibleSave =>
   typeof value === 'object' && value !== null && 'incompatibleVersion' in value;
 
-type WorldChanges = Pick<GameSave, 'contracts' | 'clubFinances' | 'attributeChanges'>;
+type WorldChanges = Pick<GameSave, 'contracts' | 'clubFinances' | 'attributeChanges' | 'retired'>;
 
 /** Attributes that differ from the base world (players unchanged since generation aren't listed). */
 export function attributeChanges(db: GameDatabase, base: GameDatabase): AttributeChanges {
@@ -109,10 +113,12 @@ export function attributeChanges(db: GameDatabase, base: GameDatabase): Attribut
 
 /** The parts of a database that a save stores. */
 export function worldChanges(db: GameDatabase, base: GameDatabase): WorldChanges {
+  const present = new Set(db.players.map((p) => p.id));
   return {
     contracts: db.contracts,
     clubFinances: db.clubs.map((c) => ({ clubId: c.id, ...c.finances })),
     attributeChanges: attributeChanges(db, base),
+    retired: base.players.filter((p) => !present.has(p.id)).map((p) => p.id),
   };
 }
 
@@ -125,20 +131,24 @@ function applyAttributeChanges(attrs: PlayerAttributes, changed: Partial<Record<
   return next;
 }
 
-/** Lays saved contracts, finances and attribute changes over the generated base world. */
+/** Lays saved contracts, finances, attribute changes and retirements over the generated world. */
 export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameDatabase {
   const finances = new Map(save.clubFinances.map((f) => [f.clubId, f]));
+  const retired = new Set(save.retired);
   return {
     ...base,
+    players: base.players.filter((p) => !retired.has(p.id)),
     contracts: save.contracts,
     clubs: base.clubs.map((club) => {
       const f = finances.get(club.id);
       return f ? { ...club, finances: { balance: f.balance, transferBudget: f.transferBudget, weeklyWageBudget: f.weeklyWageBudget } } : club;
     }),
-    attributes: base.attributes.map((a) => {
-      const changed = save.attributeChanges[a.playerId];
-      return changed ? applyAttributeChanges(a, changed) : a;
-    }),
+    attributes: base.attributes
+      .filter((a) => !retired.has(a.playerId))
+      .map((a) => {
+        const changed = save.attributeChanges[a.playerId];
+        return changed ? applyAttributeChanges(a, changed) : a;
+      }),
   };
 }
 
@@ -150,6 +160,7 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v2 → v3: no transfer list, offers or inbox existed yet: start empty.
  *   v3 → v4: condition didn't exist: everyone fully fit on the save's date.
  *   v4 → v5: no development yet: no attribute changes, default training.
+ *   v5 → v6: nobody had retired yet.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -167,17 +178,19 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
     save = { ...save, condition: emptyConditions(save.currentDate) };
   }
   if (fromVersion < 5) save = { ...save, attributeChanges: {}, training: DEFAULT_TRAINING };
+  if (fromVersion < 6) save = { ...save, retired: [] };
   return save;
 }
 
 export type SaveCheck = { ok: true; save: GameSave; database: GameDatabase } | { ok: false; reason: string };
 
 /**
- * Validates a save against the base world it will be loaded into, and
+ * Validates a save against the generated world it will be loaded into, and
  * returns the rebuilt world. Shape (Zod) → world consistency (the data
- * layer's integrity check) → career checks.
+ * layer's integrity check) → career checks. `baseFor(startYear)` gives the
+ * generated world for the save's season (the base plus youth intakes).
  */
-export function checkSave(raw: unknown, base: GameDatabase, worldSeed: number): SaveCheck {
+export function checkSave(raw: unknown, baseFor: (startYear: number) => GameDatabase, worldSeed: number): SaveCheck {
   if (isIncompatible(raw)) {
     return { ok: false, reason: `Your save is from an unsupported version of Touchline (format ${raw.incompatibleVersion}) and couldn't be loaded.` };
   }
@@ -189,6 +202,9 @@ export function checkSave(raw: unknown, base: GameDatabase, worldSeed: number): 
   const save = parsed.data;
   if (save.worldSeed !== worldSeed) return { ok: false, reason: 'Your save was made with a different game world.' };
 
+  const base = baseFor(save.season.startYear);
+  const baseIds = new Set(base.players.map((p) => p.id));
+  if (save.retired.some((id) => !baseIds.has(id))) return { ok: false, reason: "Your save's retired players don't match this world." };
   const db = applyWorldChanges(base, save);
   const issues = checkIntegrity(db);
   if (issues.length) return { ok: false, reason: `Your save's player contracts are inconsistent (${issues[0].message}).` };
