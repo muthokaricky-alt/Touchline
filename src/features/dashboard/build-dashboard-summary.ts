@@ -1,4 +1,5 @@
 import type { ClubId, GameDatabase } from '@/data/schemas';
+import { conditionOf, type ConditionState } from '@/game/condition/condition';
 import { unreadCount, type InboxMessage as GameMessage } from '@/game/inbox/inbox';
 import { cupWinner } from '@/game/season/cup';
 import type { Season } from '@/game/season/season';
@@ -23,9 +24,10 @@ export const INBOX_PREVIEW = 4;
  * Builds the dashboard from game state.
  *
  * Real: club, season, date, matchday, next fixture (league or cup), form,
- *       league table, squad size, finances, end-of-season summary, inbox.
- * Preview (until later milestones): manager name, kick-off time, fitness,
- *       morale, injuries/suspensions.
+ *       league table, squad size, finances, end-of-season summary, inbox,
+ *       fitness, morale, injuries (when `condition` is given).
+ * Preview (until later milestones): manager name, kick-off time; suspensions
+ *       aren't modelled yet (always 0).
  */
 export function buildDashboardSummary(
   db: GameDatabase,
@@ -34,6 +36,7 @@ export function buildDashboardSummary(
   currentDate: string,
   inbox: readonly GameMessage[],
   preview: DashboardSummary,
+  condition?: ConditionState,
 ): DashboardSummary {
   const club = db.clubs.find((c) => c.id === clubId);
   const leagueId = leagueOfClub(season, clubId);
@@ -101,7 +104,18 @@ export function buildDashboardSummary(
       goalDifference: r.goalDifference,
       points: r.points,
     })),
-    squad: { ...preview.squad, playerCount: contracts.length },
+    squad: (() => {
+      if (!condition || contracts.length === 0) return { ...preview.squad, playerCount: contracts.length };
+      const conditions = contracts.map((c) => conditionOf(condition, c.playerId));
+      const average = (pick: (c: (typeof conditions)[number]) => number) => conditions.reduce((sum, c) => sum + pick(c), 0) / conditions.length / 100;
+      return {
+        playerCount: contracts.length,
+        averageFitness: average((c) => c.fitness),
+        averageMorale: average((c) => c.morale),
+        injuredCount: conditions.filter((c) => c.injury !== null).length,
+        suspendedCount: 0,
+      };
+    })(),
     inbox: inbox.slice(0, INBOX_PREVIEW).map((m) => ({ id: m.id, from: m.from, subject: m.title, date: formatDate(m.date), unread: !m.read })),
     unreadMessages: unreadCount(inbox),
     finances: {

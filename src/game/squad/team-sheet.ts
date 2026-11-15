@@ -1,7 +1,7 @@
 import type { ClubId, GameDatabase, PlayerId, Position } from '@/data/schemas';
 
 import { findSlot, getFormation, type FormationId } from '../formations';
-import { BENCH_SIZE, isBenchFull, startingSlotOf, validateLineup, type Lineup, type LineupIssue } from '../lineup';
+import { BENCH_SIZE, isBenchFull, startingSlotOf, validateLineup, type Lineup, type LineupAvailability, type LineupIssue } from '../lineup';
 import { effectiveRating, positionFit, type PositionFit } from './position-fit';
 import { fullName, selectSquadCandidates, shortName } from './squad-selectors';
 
@@ -16,6 +16,9 @@ export type LineupPlayerView = {
   /** Rounded effective rating where they're placed (bench: primary position). */
   rating: number;
   fit: PositionFit;
+  /** 0–100 */
+  fitness: number;
+  injured: boolean;
 };
 
 export type TeamSheetSlotView = {
@@ -37,7 +40,10 @@ export type TeamSheetView = {
   issues: LineupIssue[];
 };
 
-export function selectTeamSheet(db: GameDatabase, clubId: ClubId, lineup: Lineup): TeamSheetView {
+/** Everyone fit: for callers that don't track condition (and tests). */
+const ALL_FIT: LineupAvailability = { isInjured: () => false, fitnessOf: () => 100 };
+
+export function selectTeamSheet(db: GameDatabase, clubId: ClubId, lineup: Lineup, availability: LineupAvailability = ALL_FIT): TeamSheetView {
   const candidates = selectSquadCandidates(db, clubId);
   const byId = new Map(candidates.map((c) => [c.player.id, c]));
   const numbers = new Map(db.contracts.map((c) => [c.playerId, c.squadNumber]));
@@ -54,6 +60,8 @@ export function selectTeamSheet(db: GameDatabase, clubId: ClubId, lineup: Lineup
       primaryPosition: player.primaryPosition,
       rating: Math.round(effectiveRating(player, attributes, position)),
       fit: positionFit(player, position),
+      fitness: availability.fitnessOf(player.id),
+      injured: availability.isInjured(player.id),
     };
   };
 
@@ -80,7 +88,7 @@ export function selectTeamSheet(db: GameDatabase, clubId: ClubId, lineup: Lineup
     benchSize: BENCH_SIZE,
     benchFull: isBenchFull(lineup),
     averageRating,
-    issues: validateLineup(lineup, candidates),
+    issues: validateLineup(lineup, candidates, availability),
   };
 }
 
@@ -104,6 +112,9 @@ export type PlayerOptionView = {
   /** Fit for the target slot; null when picking a substitute. */
   fit: PositionFit | null;
   status: PlayerStatus;
+  /** 0–100 */
+  fitness: number;
+  injured: boolean;
 };
 
 export type PlayerPickerView = {
@@ -132,6 +143,7 @@ export function selectPlayerPicker(
   clubId: ClubId,
   lineup: Lineup,
   target: PickerTarget,
+  availability: LineupAvailability = ALL_FIT,
 ): PlayerPickerView {
   const candidates = selectSquadCandidates(db, clubId);
   const numbers = new Map(db.contracts.map((c) => [c.playerId, c.squadNumber]));
@@ -160,9 +172,12 @@ export function selectPlayerPicker(
         rating: Math.round(effectiveRating(player, attributes, ratedAt)),
         fit: position ? positionFit(player, position) : null,
         status: statusOf(player.id),
+        fitness: availability.fitnessOf(player.id),
+        injured: availability.isInjured(player.id),
       };
     })
-    .sort((a, b) => b.rating - a.rating || (a.squadNumber ?? 99) - (b.squadNumber ?? 99));
+    // Injured players last: they can't be picked anyway.
+    .sort((a, b) => Number(a.injured) - Number(b.injured) || b.rating - a.rating || (a.squadNumber ?? 99) - (b.squadNumber ?? 99));
 
   return {
     target,

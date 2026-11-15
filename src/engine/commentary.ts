@@ -63,9 +63,14 @@ export function describeEvent(event: MatchEvent, ctx: CommentaryContext): string
       if (event.card === 'second-yellow') return `Second yellow! ${name(event.playerId)} is sent off.`;
       return `Straight red card! ${name(event.playerId)} is sent off.`;
     case 'substitution':
-      return event.reason === 'goalkeeper'
-        ? `${ctx.teamName(event.side)} bring on ${name(event.onId)} in goal; ${name(event.offId)} makes way.`
-        : `Substitution for ${ctx.teamName(event.side)}: ${name(event.onId)} replaces ${name(event.offId)}.`;
+      if (event.reason === 'goalkeeper') return `${ctx.teamName(event.side)} bring on ${name(event.onId)} in goal; ${name(event.offId)} makes way.`;
+      if (event.reason === 'injury') return `${name(event.onId)} comes on for the injured ${name(event.offId)}.`;
+      return `Substitution for ${ctx.teamName(event.side)}: ${name(event.onId)} replaces ${name(event.offId)}.`;
+    case 'injury':
+      return pick(['{player} goes down injured and can’t continue.', '{player} pulls up holding his leg. That looks bad.', '{player} is hurt and signals to the bench.']).replace(
+        '{player}',
+        name(event.playerId),
+      );
   }
 }
 

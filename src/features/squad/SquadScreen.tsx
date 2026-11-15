@@ -4,6 +4,7 @@ import { AppText, Button, Card, Icon, ListRow, PageHeader, PositionBadge, Rating
 import type { PlayerId } from '@/data/schemas';
 import type { SquadGroupView, SquadPlayerView } from '@/game/squad/squad-selectors';
 import { spacing } from '@/theme';
+import { ConditionTag } from '@/features/player/ConditionTag';
 
 type SquadScreenProps = {
   clubName: string;
@@ -43,7 +44,7 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
       subtitle={`${player.age} yrs · ${player.nationality}${also}`}
       divider={divider}
       onPress={onPress}
-      accessibilityLabel={`${player.fullName}, number ${player.squadNumber ?? 'none'}, ${player.primaryPosition}, age ${player.age}, rating ${player.rating}`}
+      accessibilityLabel={`${player.fullName}, number ${player.squadNumber ?? 'none'}, ${player.primaryPosition}, age ${player.age}, rating ${player.rating}${player.condition.injury ? ', injured' : `, ${player.condition.fitness}% fit`}`}
       accessibilityHint="Opens the player profile"
       leading={
         <View style={styles.leading}>
@@ -55,6 +56,7 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
       }
       trailing={
         <View style={styles.trailing}>
+          <ConditionTag fitness={player.condition.fitness} injured={player.condition.injury !== null} />
           <RatingBadge value={player.rating} label="Rating" />
           <Icon name="chevronRight" size={16} color="textMuted" />
         </View>

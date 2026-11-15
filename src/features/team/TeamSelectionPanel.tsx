@@ -19,6 +19,7 @@ import type { TeamSheetView } from '@/game/squad/team-sheet';
 import { spacing } from '@/theme';
 
 import { Pitch } from './components/Pitch';
+import { ConditionTag } from '@/features/player/ConditionTag';
 
 const FORMATION_OPTIONS = FORMATION_LIST.map((f) => ({ value: f.id, label: f.id }));
 
@@ -72,6 +73,7 @@ export function TeamSelectionPanel({
                   leading={<PositionBadge position={sub.primaryPosition} />}
                   trailing={
                     <View style={styles.inline}>
+                      <ConditionTag fitness={sub.fitness} injured={sub.injured} />
                       <RatingBadge value={sub.rating} label="Rating" />
                       <IconButton
                         icon="remove"

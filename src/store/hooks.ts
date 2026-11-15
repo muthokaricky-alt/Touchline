@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
+import { availabilityFrom, conditionOn } from '@/game/condition/condition';
 import { lineupStrength } from '@/game/match/build-match-team';
 import { competitionName, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
 import { MAX_SQUAD, MIN_USER_SQUAD, releaseCost, renewalYears, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
@@ -21,7 +22,7 @@ import { selectPlayerPicker, selectTeamSheet, type PickerTarget } from '@/game/s
 import { analyseTactics } from '@/game/tactics/analysis';
 import { matchPlayingStyle } from '@/game/tactics/presets';
 
-import { useGameStore } from './game-store';
+import { conditionAtKickOff, useGameStore } from './game-store';
 
 /**
  * React hooks that turn store state into view models.
@@ -38,24 +39,43 @@ export function useUserClub() {
   return useMemo(() => findClub(database, clubId), [database, clubId]);
 }
 
+/** Every player's fitness, morale and injuries as of today (recovery since the last matchday applied). */
+export function useConditionToday() {
+  const condition = useGameStore((s) => s.condition);
+  const date = useGameStore((s) => s.currentDate);
+  return useMemo(() => conditionOn(condition, date), [condition, date]);
+}
+
+/** Condition as it will be at the user's next kick-off: what team selection should judge players by. */
+export function useConditionAtKickOff() {
+  const condition = useGameStore((s) => s.condition);
+  const currentDate = useGameStore((s) => s.currentDate);
+  const season = useGameStore((s) => s.season);
+  const userClubId = useGameStore((s) => s.userClubId);
+  return useMemo(() => conditionAtKickOff({ condition, currentDate, season, userClubId }), [condition, currentDate, season, userClubId]);
+}
+
 export function useSquadGroups() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
   const date = useGameStore((s) => s.currentDate);
-  return useMemo(() => groupSquad(selectSquad(database, clubId, date)), [database, clubId, date]);
+  const today = useConditionToday();
+  return useMemo(() => groupSquad(selectSquad(database, clubId, date, today)), [database, clubId, date, today]);
 }
 
 export function usePlayerProfile(playerId: PlayerId) {
   const database = useGameStore((s) => s.database);
   const date = useGameStore((s) => s.currentDate);
-  return useMemo(() => selectPlayerProfile(database, playerId, date), [database, playerId, date]);
+  const today = useConditionToday();
+  return useMemo(() => selectPlayerProfile(database, playerId, date, today), [database, playerId, date, today]);
 }
 
 export function useTeamSheet() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
   const lineup = useGameStore((s) => s.lineup);
-  return useMemo(() => selectTeamSheet(database, clubId, lineup), [database, clubId, lineup]);
+  const atKickOff = useConditionAtKickOff();
+  return useMemo(() => selectTeamSheet(database, clubId, lineup, availabilityFrom(atKickOff)), [database, clubId, lineup, atKickOff]);
 }
 
 /** Other clubs in the user's league this season, strongest first: friendly opponents. */
@@ -244,8 +264,9 @@ export function usePlayerPicker(target: PickerTarget | null) {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
   const lineup = useGameStore((s) => s.lineup);
+  const atKickOff = useConditionAtKickOff();
   return useMemo(
-    () => (target ? selectPlayerPicker(database, clubId, lineup, target) : null),
-    [database, clubId, lineup, target],
+    () => (target ? selectPlayerPicker(database, clubId, lineup, target, availabilityFrom(atKickOff)) : null),
+    [database, clubId, lineup, target, atKickOff],
   );
 }

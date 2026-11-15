@@ -5,7 +5,7 @@ import { flattenAttributes } from '@/game/ratings';
 import { effectiveRating, positionFit, type PositionFit } from '@/game/squad/position-fit';
 
 import { tacticalEffects, type TacticalEffects } from './tactical-effects';
-import type { MatchTeamInput, Side } from './types';
+import type { MatchTeamInput, PlayerMatchCondition, Side } from './types';
 
 /**
  * Mutable per-team state during ONE simulation. It never escapes
@@ -18,8 +18,10 @@ export type OnPitch = {
   position: Position;
   attrs: Record<AttributeKey, number>;
   fit: PositionFit;
-  /** 0–100. Drains every minute. */
+  /** 0–100. Starts at the player's fitness; drains every minute. */
   energy: number;
+  /** Morale multiplier on every attribute (1 = neutral). */
+  form: number;
   booked: boolean;
 };
 
@@ -38,13 +40,24 @@ export const MAX_SUBS = 5;
 /** Playing out of position reduces every attribute a little. */
 const FIT_FACTOR: Record<PositionFit, number> = { natural: 1, accomplished: 0.93, unfamiliar: 0.8 };
 
-export function toOnPitch(candidate: LineupCandidate, position: Position): OnPitch {
+/** Morale everyone starts at; a player at this morale plays exactly to his attributes. */
+export const NEUTRAL_MORALE = 60;
+/** Morale moves every attribute by at most about ±3–5%: noticeable, smaller than tiredness. */
+const MORALE_EFFECT = 0.03;
+
+export function moraleFactor(morale: number | undefined): number {
+  return morale === undefined ? 1 : 1 + (MORALE_EFFECT * (morale - NEUTRAL_MORALE)) / 40;
+}
+
+export function toOnPitch(candidate: LineupCandidate, position: Position, condition?: PlayerMatchCondition): OnPitch {
   return {
     id: candidate.player.id,
     position,
     attrs: flattenAttributes(candidate.attributes),
     fit: positionFit(candidate.player, position),
-    energy: 100,
+    // A player who hasn't recovered from the last match starts this one tired.
+    energy: condition?.fitness ?? 100,
+    form: moraleFactor(condition?.morale),
     booked: false,
   };
 }
@@ -54,7 +67,7 @@ export function createTeamState(side: Side, input: MatchTeamInput): TeamState {
   const onPitch = getFormation(input.lineup.formationId).slots.flatMap((slot) => {
     const id = input.lineup.starters[slot.id];
     const candidate = id ? byId.get(id) : undefined;
-    return candidate ? [toOnPitch(candidate, slot.position)] : [];
+    return candidate ? [toOnPitch(candidate, slot.position, input.condition?.[candidate.player.id])] : [];
   });
   const bench = input.lineup.substitutes.flatMap((id) => {
     const candidate = byId.get(id);
@@ -65,10 +78,10 @@ export function createTeamState(side: Side, input: MatchTeamInput): TeamState {
 
 /**
  * An attribute as it counts *right now*: base value × position familiarity ×
- * tiredness. A fresh player counts 100%; at 0 energy, 70%.
+ * tiredness × morale. A fresh player counts 100%; at 0 energy, 70%.
  */
 export function value(p: OnPitch, key: AttributeKey): number {
-  return p.attrs[key] * FIT_FACTOR[p.fit] * (0.7 + 0.3 * (p.energy / 100));
+  return p.attrs[key] * FIT_FACTOR[p.fit] * (0.7 + 0.3 * (p.energy / 100)) * p.form;
 }
 
 export function average(p: OnPitch, keys: readonly AttributeKey[]): number {

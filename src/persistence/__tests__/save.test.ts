@@ -11,7 +11,8 @@ import { applyWorldChanges, checkSave, migrateSave, worldChanges, type GameSave 
 const db = buildFictionalDatabase();
 const USER = 'club_greywater_town';
 const lineup = autoPickLineup(selectSquadCandidates(db, USER), '4-4-2');
-const season = advanceToUserFixture(db, createSeason(db, 2026, 3), { clubId: USER, lineup, tactics: DEFAULT_TACTICS }).season;
+const played = advanceToUserFixture(db, createSeason(db, 2026, 3), { clubId: USER, lineup, tactics: DEFAULT_TACTICS });
+const { season, condition } = played;
 const valid: GameSave = {
   worldSeed: FICTIONAL_SEED,
   userClubId: USER,
@@ -24,6 +25,7 @@ const valid: GameSave = {
   transferListed: [],
   offers: [],
   inbox: [],
+  condition,
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -70,6 +72,14 @@ describe('checkSave', () => {
     if (!check.ok) expect(check.reason).toMatch(/contracts are inconsistent/);
   });
 
+  it('rejects condition records for unknown players or from the future', () => {
+    expect(Object.keys(condition.players).length).toBeGreaterThan(0); // a played matchday leaves players tired
+    const ghost = { ...valid, condition: { ...condition, players: { ...condition.players, plr_9999: { fitness: 50, morale: 60, injury: null } } } };
+    expect(checkSave(roundTrip(ghost), db, FICTIONAL_SEED).ok).toBe(false);
+    const future = { ...valid, condition: { ...condition, date: '2027-01-01' } };
+    expect(checkSave(roundTrip(future), db, FICTIONAL_SEED).ok).toBe(false);
+  });
+
   it("rejects a season where the user's club is in no league", () => {
     const leagues = season.leagues.map((l) => ({ ...l, clubIds: l.clubIds.filter((id) => id !== USER) }));
     expect(checkSave(roundTrip({ ...valid, season: { ...season, leagues } }), db, FICTIONAL_SEED).ok).toBe(false);
@@ -90,7 +100,8 @@ describe('world changes', () => {
 });
 
 describe('migrateSave', () => {
-  const v2 = (({ transferListed: _l, offers: _o, inbox: _i, ...rest }) => rest)(valid);
+  const v3 = (({ condition: _c, ...rest }) => rest)(valid);
+  const v2 = (({ transferListed: _l, offers: _o, inbox: _i, ...rest }) => rest)(v3);
   const v1 = (({ contracts: _c, clubFinances: _f, transferHistory: _t, ...rest }) => rest)(v2);
 
   it('upgrades a version 1 save using the generated world (1 → 2 → 3)', () => {
@@ -107,11 +118,17 @@ describe('migrateSave', () => {
   it('upgrades a version 2 save with an empty transfer list, offers and inbox', () => {
     const check = checkSave(migrateSave(roundTrip(v2), 2), db, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
-    if (check.ok) expect(check.save).toEqual(valid);
+    if (check.ok) expect(check.save).toEqual({ ...valid, condition: { date: valid.currentDate, players: {} } });
+  });
+
+  it('upgrades a version 3 save with everyone fully fit', () => {
+    const check = checkSave(migrateSave(roundTrip(v3), 3), db, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save.condition).toEqual({ date: valid.currentDate, players: {} });
   });
 
   it('rejects a current-version save passed to migrate', () => {
-    expect(migrateSave(roundTrip(valid), 3)).toEqual({ incompatibleVersion: 3 });
+    expect(migrateSave(roundTrip(valid), 4)).toEqual({ incompatibleVersion: 4 });
   });
 
   it('marks unknown versions as incompatible', () => {

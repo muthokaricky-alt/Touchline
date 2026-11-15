@@ -33,7 +33,7 @@ const user: UserTeam = { clubId: USER, lineup: autoPickLineup(selectSquadCandida
 function playFullSeason(start: Season): Season {
   let season = start;
   while (nextFixtureFor(season, USER)) season = advanceToUserFixture(db, season, user).season;
-  return playRemaining(db, season);
+  return playRemaining(db, season).season;
 }
 
 describe('createSeason', () => {

@@ -8,7 +8,7 @@ import { IsoDateSchema } from '@/data/schemas';
  * career. Only the newest MAX_MESSAGES are kept so saves stay small.
  */
 
-export const MESSAGE_CATEGORIES = ['offer', 'transfer', 'contract', 'squad'] as const;
+export const MESSAGE_CATEGORIES = ['offer', 'transfer', 'contract', 'squad', 'medical'] as const;
 export type MessageCategory = (typeof MESSAGE_CATEGORIES)[number];
 
 export const InboxMessageSchema = z.strictObject({

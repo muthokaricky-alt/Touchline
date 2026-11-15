@@ -187,7 +187,15 @@ export type LineupIssueCode =
   | 'duplicate-player'
   | 'bench-too-large'
   | 'no-goalkeeper'
-  | 'out-of-position';
+  | 'out-of-position'
+  | 'injured'
+  | 'low-fitness';
+
+/** Fitness (0–100) below which a starter gets a warning. */
+export const LOW_FITNESS = 75;
+
+/** Who can play today (Milestone 8). Plain functions, so this module doesn't depend on how condition is stored. */
+export type LineupAvailability = { isInjured: (id: PlayerId) => boolean; fitnessOf: (id: PlayerId) => number };
 
 /** Errors make a lineup unplayable; warnings are allowed but worth showing. */
 export type LineupIssue = {
@@ -198,7 +206,7 @@ export type LineupIssue = {
   playerId?: PlayerId;
 };
 
-export function validateLineup(lineup: Lineup, candidates: readonly LineupCandidate[]): LineupIssue[] {
+export function validateLineup(lineup: Lineup, candidates: readonly LineupCandidate[], availability?: LineupAvailability): LineupIssue[] {
   const issues: LineupIssue[] = [];
   const formation = getFormation(lineup.formationId);
   const byId = new Map(candidates.map((c) => [c.player.id, c]));
@@ -221,6 +229,14 @@ export function validateLineup(lineup: Lineup, candidates: readonly LineupCandid
       issues.push({ severity: 'error', code: 'unknown-player', slotId: slot.id, playerId, message: `${playerId} isn't in your squad` });
       continue;
     }
+    if (availability?.isInjured(playerId)) {
+      issues.push({ severity: 'error', code: 'injured', slotId: slot.id, playerId, message: `${nameOf(candidate)} is injured` });
+      continue;
+    }
+    const fitness = availability?.fitnessOf(playerId) ?? 100;
+    if (fitness < LOW_FITNESS) {
+      issues.push({ severity: 'warning', code: 'low-fitness', slotId: slot.id, playerId, message: `${nameOf(candidate)} is only ${fitness}% fit` });
+    }
     const fit = positionFit(candidate.player, slot.position);
     if (slot.position === 'GK' && fit !== 'natural') {
       issues.push({ severity: 'warning', code: 'no-goalkeeper', slotId: slot.id, playerId, message: `${nameOf(candidate)} isn't a goalkeeper` });
@@ -230,8 +246,11 @@ export function validateLineup(lineup: Lineup, candidates: readonly LineupCandid
   }
 
   for (const playerId of lineup.substitutes) {
-    if (!byId.has(playerId)) {
+    const candidate = byId.get(playerId);
+    if (!candidate) {
       issues.push({ severity: 'error', code: 'unknown-player', playerId, message: `${playerId} isn't in your squad` });
+    } else if (availability?.isInjured(playerId)) {
+      issues.push({ severity: 'error', code: 'injured', playerId, message: `${nameOf(candidate)} is injured` });
     }
   }
 

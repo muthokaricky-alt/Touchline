@@ -46,7 +46,7 @@ export function Pitch({ slots, onSlotPress }: PitchProps) {
 function SlotMarker({ slot, onPress }: { slot: TeamSheetSlotView; onPress: () => void }) {
   const { player } = slot;
   const label = player
-    ? `${slot.slotId}: ${player.shortName}, rating ${player.rating}, ${FIT_WORD[player.fit]}`
+    ? `${slot.slotId}: ${player.shortName}, rating ${player.rating}, ${FIT_WORD[player.fit]}${player.injured ? ', injured' : player.fitness < 90 ? `, ${player.fitness}% fit` : ''}`
     : `${slot.slotId}: empty, ${POSITION_NAMES[slot.position]} needed`;
 
   return (
@@ -63,7 +63,7 @@ function SlotMarker({ slot, onPress }: { slot: TeamSheetSlotView; onPress: () =>
       <View
         style={[
           styles.shirt,
-          player ? { borderColor: colors[FIT_RING[player.fit]] } : styles.shirtEmpty,
+          player ? { borderColor: colors[player.injured ? 'danger' : FIT_RING[player.fit]] } : styles.shirtEmpty,
         ]}>
         <AppText variant="bodyStrong" color={player ? 'textPrimary' : 'textSecondary'}>
           {player ? (player.squadNumber ?? '–') : '+'}
@@ -72,8 +72,12 @@ function SlotMarker({ slot, onPress }: { slot: TeamSheetSlotView; onPress: () =>
       <AppText variant="caption" numberOfLines={1} align="center" style={styles.name}>
         {player ? player.lastName : 'Empty'}
       </AppText>
-      <AppText variant="overline" color="textSecondary" numberOfLines={1} align="center">
-        {player ? `${slot.slotId} · ${player.rating}` : slot.slotId}
+      <AppText
+        variant="overline"
+        color={player?.injured ? 'danger' : player && player.fitness < 75 ? 'warning' : 'textSecondary'}
+        numberOfLines={1}
+        align="center">
+        {player ? (player.injured ? 'Injured' : player.fitness < 90 ? `${slot.slotId} · ${player.fitness}%` : `${slot.slotId} · ${player.rating}`) : slot.slotId}
       </AppText>
     </Pressable>
   );

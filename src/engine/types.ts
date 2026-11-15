@@ -22,7 +22,12 @@ export type MatchTeamInput = {
   tactics: Tactics;
   /** Every player available to this team (starters, bench, reserves) with attributes. */
   squad: readonly LineupCandidate[];
+  /** Fitness (starting energy) and morale by player. Missing → fresh, neutral morale. */
+  condition?: Readonly<Record<PlayerId, PlayerMatchCondition>>;
 };
+
+/** A player's state going into a match, both 0–100. */
+export type PlayerMatchCondition = { fitness: number; morale: number };
 
 export type MatchInput = {
   home: MatchTeamInput;
@@ -65,7 +70,9 @@ export type MatchEvent = MatchClock &
     | { type: 'tackle'; side: Side; playerId: PlayerId }
     | { type: 'foul'; side: Side; playerId: PlayerId; victimId: PlayerId }
     | { type: 'card'; side: Side; playerId: PlayerId; card: 'yellow' | 'second-yellow' | 'red' }
-    | { type: 'substitution'; side: Side; offId: PlayerId; onId: PlayerId; reason: 'fatigue' | 'goalkeeper' }
+    | { type: 'substitution'; side: Side; offId: PlayerId; onId: PlayerId; reason: 'fatigue' | 'goalkeeper' | 'injury' }
+    /** `days`: how long he'll be out (the game layer turns it into a return date). */
+    | { type: 'injury'; side: Side; playerId: PlayerId; days: number }
   );
 
 export type MatchEventType = MatchEvent['type'];

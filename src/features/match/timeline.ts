@@ -8,7 +8,7 @@ import type { MatchEvent, MatchResult, Score, Side, TeamMatchStats } from '@/eng
  * rating colours. No React here, so it's all unit-tested.
  */
 
-export type TimelineKind = 'goal' | 'chance' | 'card' | 'substitution' | 'whistle';
+export type TimelineKind = 'goal' | 'chance' | 'card' | 'substitution' | 'injury' | 'whistle';
 
 export type TimelineItem = {
   key: string;
@@ -35,6 +35,8 @@ function kindOf(event: MatchEvent): TimelineKind | null {
       return 'card';
     case 'substitution':
       return 'substitution';
+    case 'injury':
+      return 'injury';
     case 'kick-off':
     case 'half-time':
     case 'full-time':

@@ -1,4 +1,4 @@
-import { addDays, ageOn, nextWeekday, parseIsoDate, toIsoDate, weekdayOf } from '../date';
+import { addDays, ageOn, daysBetween, nextWeekday, parseIsoDate, toIsoDate, weekdayOf } from '../date';
 
 describe('calendar arithmetic', () => {
   it('adds days across month, year and leap-day boundaries', () => {
@@ -43,5 +43,14 @@ describe('parseIsoDate / toIsoDate', () => {
 
   it('rejects non-ISO strings', () => {
     expect(() => parseIsoDate('01/07/2026')).toThrow(RangeError);
+  });
+});
+
+describe('daysBetween', () => {
+  it('counts whole days across months, years and leap days', () => {
+    expect(daysBetween('2026-08-08', '2026-08-15')).toBe(7);
+    expect(daysBetween('2026-12-30', '2027-01-02')).toBe(3);
+    expect(daysBetween('2028-02-28', '2028-03-01')).toBe(2);
+    expect(daysBetween('2026-08-15', '2026-08-08')).toBe(-7);
   });
 });

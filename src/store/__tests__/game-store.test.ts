@@ -1,9 +1,10 @@
+import { conditionOf, conditionOn, isInjured, NEUTRAL_MORALE } from '@/game/condition/condition';
 import { starterIds, validateLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES } from '@/game/tactics/presets';
 import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 
-import { createInitialGameState, DEFAULT_USER_CLUB_ID, flushSave, useGameStore } from '../game-store';
+import { conditionAtKickOff, createInitialGameState, DEFAULT_USER_CLUB_ID, flushSave, useGameStore } from '../game-store';
 
 // The autosave's real storage can't run in Jest; use memory (see autosave.test.ts).
 jest.mock('@/persistence/storage', () => {
@@ -160,5 +161,46 @@ describe('game store', () => {
     const before = state().lineup;
     state().clearSlot('LM');
     expect(state().lineup).not.toBe(before);
+  });
+});
+
+describe('player condition in the store', () => {
+  it('a matchday leaves players tired and keeps injured ones out of the lineup', () => {
+    // Play until someone in the squad is injured (deterministic for the fictional world).
+    let injuredId: string | undefined;
+    for (let i = 0; i < 20 && !injuredId; i++) {
+      state().playNextFixture();
+      // Injured for the NEXT match (a short knock may heal before then).
+      const atKickOff = conditionAtKickOff(state());
+      injuredId = candidates().find((c) => isInjured(atKickOff, c.player.id))?.player.id;
+    }
+    expect(Object.keys(state().condition.players).length).toBeGreaterThan(0);
+    expect(injuredId).toBeDefined();
+    const selected = [...starterIds(state().lineup), ...state().lineup.substitutes];
+    expect(selected).not.toContain(injuredId);
+    expect(state().inbox.some((m) => m.category === 'medical')).toBe(true);
+
+    // Auto pick never brings him back.
+    state().autoPick();
+    expect([...starterIds(state().lineup), ...state().lineup.substitutes]).not.toContain(injuredId);
+  });
+
+  it('judges availability at the next kick-off, not today', () => {
+    state().playNextFixture(); // 8 Aug; next league match 15 Aug
+    const id = state().lineup.starters.LST!;
+    const date = state().currentDate;
+    const knock = { date, players: { [id]: { fitness: 70, morale: 60, injury: { name: 'dead leg', returns: '2026-08-12' } } } };
+    useGameStore.setState({ condition: knock });
+    expect(isInjured(conditionOn(knock, date), id)).toBe(true); // hurt today…
+    expect(isInjured(conditionAtKickOff(state()), id)).toBe(false); // …fine by kick-off
+    expect(conditionOf(conditionAtKickOff(state()), id).fitness).toBe(100);
+  });
+
+  it('putting a player on the transfer list hurts his morale', () => {
+    const id = state().lineup.substitutes[0];
+    state().toggleTransferListed(id);
+    expect(conditionOf(state().condition, id).morale).toBe(NEUTRAL_MORALE - 10);
+    state().toggleTransferListed(id);
+    expect(conditionOf(state().condition, id).morale).toBe(NEUTRAL_MORALE - 5);
   });
 });

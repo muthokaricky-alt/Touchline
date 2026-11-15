@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — Milestone 7 complete (7a buying, 7b selling/contracts/inbox, save v3); Milestone 8 next._
+_Last updated: 16 Nov 2026 — Milestone 8 step 8a (fitness, injuries, morale; save v4) complete; 8b (development) next._
 
 ---
 
@@ -61,7 +61,10 @@ src/
     lineup.ts            Lineup schema + immutable ops, autoPick, validateLineup
     squad/               positionFit/effectiveRating, view-model selectors
     tactics/             Tactics schema, playing-style presets, assistant analysis
-    ai/opponent.ts       AI club setup: best formation + style for the strength gap
+    ai/opponent.ts       AI club setup: best formation + style for the strength gap;
+                         rotation (aiSetupOn): rests tired starters, drops injured
+    condition/           fitness, morale, injuries between matches (lazy
+                         recovery, applyMatch); squad-care (lineup + medical news)
     match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
     season/              Season/Fixture schemas, fixture generator, table, cup
                          (draws, rounds, ties), running player stats, season flow
@@ -73,7 +76,8 @@ src/
                          user's transfer business as pure state transitions)
     inbox/               inbox messages: schema, add (capped), mark read
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
-    simulate.ts          minute loop: possession → fouls → chance/shot → fatigue → subs
+    simulate.ts          minute loop: possession → fouls → chance/shot → fatigue →
+                         injuries → subs
     team-state.ts        on-pitch players, energy, unit strengths, replacements
     tactical-effects.ts  instructions → numeric modifiers
     summarise.ts         events → score, team/player stats, ratings (one source of truth)
@@ -316,8 +320,8 @@ call pure functions from `src/game` and save the result.
   (opponent/venue fixed), "Play a friendly instead" toggle; after a league
   match the report adds the matchday's other results and "Continue". After
   the final matchday, Continue returns to the dashboard's season summary.
-- **Dashboard** is now real apart from manager name, kick-off time,
-  fitness/morale/injuries (preview until M8). The inbox became real in 7b.
+- **Dashboard** is now real apart from manager name, kick-off time and
+  suspensions (M8a made fitness, morale and injuries real; the inbox became real in 7b).
 
 #### 6b: world size, multi-competition seasons, cup
 
@@ -486,6 +490,61 @@ under-30 players at season end; a departing lineup player is auto-replaced.
   and the unread count over the whole inbox.
 - **Save v3** adds `transferListed`, `offers`, `inbox`. Migrations chain
   (v1 → v2 → v3), tested from both v1 and v2.
+
+### Player development (Milestone 8)
+
+Decisions (user): condition and development apply to **everyone** (AI clubs
+too); training = team focus + intensity; potential shown as a range; 8a
+(condition) before 8b (development).
+
+#### 8a: fitness, injuries, morale
+
+- **Engine input:** `MatchTeamInput.condition` (optional) gives each
+  player's starting fitness (= starting energy, was always 100) and morale.
+  Morale multiplies every attribute: `1 + 0.03 × (morale − 60) / 40`, so
+  neutral (60) changes nothing and the extremes are about ±3–5%. Missing
+  condition = fresh + neutral, so old tests/calibration are unchanged
+  (tested: explicit neutral condition gives an identical match).
+- **Injuries in the engine:** one draw per team per minute; risk per
+  player 8.5e-5/min, ×(1 + (100 − energy)/50) (tired players more), keepers
+  ×0.3. Event `injury` with `days` (50% 3–10, 35% 11–28, 15% 29–90); forced
+  substitution if one is left, else the team goes down to ten. Measured
+  0.106 injuries per team per match. Effect sizes (600 matches): 70%
+  fitness → home wins 48% → 40.5%; morale 100 vs 10 → 51% vs 44%.
+- **`ConditionState = { date, players }`**, stored **sparsely** (only
+  players not at 100 fitness / 60 morale / uninjured) and recovered
+  **lazily**: `conditionOn(state, date)` applies +7 fitness/day, morale
+  drifting 3%/day back to 60, injuries healing on their return date.
+  Nothing ticks daily.
+- **After a match** (`applyMatch`): fitness = end-of-match energy; morale
+  +4 win / +1 draw / −4 loss, ±rating bonus; squad players left out −2.
+  Injuries get a name (by severity, deterministic) and a return date.
+- **Season flow threads condition:** `playDate`, `advanceToUserFixture`,
+  `playRemaining` take and return it. Every match on a date uses the
+  condition at kick-off.
+- **AI rotation** (`aiSetupOn`): if a starter is below 80% fitness or anyone
+  selected is injured, re-pick in the same formation from the fit players;
+  otherwise reuse the cached best setup.
+- **Judge availability at the next kick-off, not today.** The first browser
+  run showed starters at ~70% right after a match with "only 70% fit"
+  warnings, although they'd be 100% by the next Saturday; and a 4-day knock
+  took a player out of the lineup. `conditionAtKickOff` (store) is now used
+  for team selection, the picker, auto pick and the post-match lineup
+  clean-up. The squad list, profile and dashboard show today.
+- **User side:** injured players leave the lineup after a matchday
+  (`withoutInjured`, reusing `removeAndRefill`); Head of Medical inbox
+  messages (new `medical` category); `validateLineup` gets an `injured`
+  error (blocks kick-off) and a `low-fitness` warning (< 75%), via plain
+  `isInjured`/`fitnessOf` functions so `lineup.ts` doesn't depend on the
+  condition record. Morale: transfer listing −10, unlisting +5, new
+  contract +5.
+- **Performance:** a full season (~45 dates) takes ~5.7 s in Jest; kick-off
+  in Chrome averages ~85 ms (max ~230). `matchConditions` is cached per
+  state object (WeakMap), which saved ~0.8 s a season.
+- **Save v4** adds `condition`; v3 → v4 starts everyone fully fit on the
+  save's date. Load rejects condition records for unknown players or dated
+  after the career date.
+- Suspensions still aren't modelled (dashboard shows 0).
 
 ## 3. Commands
 
@@ -658,6 +717,26 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   in the inbox → accept → "sold to", squad 20, lineup without issues,
   all kept after reload. Zero console errors, no overflow.
 
+### Milestone 8 — Player development (in progress)
+**8a — Fitness, injuries, morale ✅**
+- Engine: condition input, morale factor, injury event + forced subs.
+- `src/game/condition` (condition, squad-care); AI rotation; season flow
+  threads condition; lineup validation (injured / low fitness);
+  `daysBetween` date util.
+- Store: `condition`, `conditionAtKickOff`; injuries leave the lineup with
+  medical inbox messages; auto pick skips injured; morale on listing/renewal.
+  Save v4.
+- UI: condition tags on squad list, bench, picker (injured last) and pitch;
+  Condition card on profiles; real dashboard squad status; injuries in the
+  match feed.
+- Tests: 615 total (35 new) incl. engine injury/fitness/morale statistics,
+  recovery, AI rotation, kick-off availability, v3 → v4 migration.
+- Verified: `tsc` clean, tests pass, Android + web export; headless Chrome
+  at 412px and 1280px: 12 matches → two injuries with medical messages,
+  injured players out of the XI and last in the picker; forcing one back
+  in → "Team not ready · … is injured" and kick-off disabled; auto pick
+  fixes it; condition survives a reload. Zero console errors, no overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -672,29 +751,33 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Web only: directly loading the URL of a player profile from another club
   isn't supported (only the user's squad is pre-rendered); opening it
   within the app works.
-- Squads are 22 players for 38 league games + cup; fine until injuries and
-  suspensions arrive (M8), when 24–25 may be needed.
+- Squads are 22 players for 38 league games + cup. With injuries and rotation
+  (M8a) it still works (AI clubs have 22+, injuries ~0.1/team/match), but
+  watch it in long careers; 24–25 may be needed once suspensions exist.
+- Web/headless testing note: killing Chrome right after a save can lose
+  localStorage writes Chrome hasn't flushed; reload inside the session to
+  test persistence.
 - The modal picker and profile were checked on web only; native gestures
   (swipe-to-dismiss on iOS, Android back button) still need checking in Expo Go.
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 8 (Player development)
+## 5. Next steps — Milestone 8 step 8b (development)
 
-Brief: training, player progression, potential, injuries, fatigue, morale.
-Plan with the user first. Things to decide / known constraints:
-1. **Attributes start changing**, so the world can no longer be rebuilt
-   from the seed alone: save attributes (or per-player deltas) with a
-   `SAVE_VERSION` 4 migration. Size matters (880 players × 23 attributes).
-2. **Potential** needs a field on players (data layer + generator), and
-   valuation should start using it for young players.
-3. **Injuries/fatigue between matches:** the engine tracks energy within a
-   match; carry fitness over between matchdays. Injured players must leave
-   the lineup (reuse `removeAndRefill`). Squads of 22 may then be too
-   small (see known issues).
-4. **Morale** could react to results, playing time and being transfer
-   listed (listing currently has no downside).
-5. Dashboard still shows preview fitness/morale/injuries: make them real.
-6. Later ideas: `npm run test:calibration` (suite ~32 s); foreign leagues
-   (M9); user substitutions during a match; save slots (M10). Renewal wages
-   include the +10% "move" premium (fine for now).
+Agreed: everyone develops (AI too); training = team focus + intensity;
+potential shown as a range. Plan details with the user first:
+1. **Potential** on players (data layer + generator; a hidden true value,
+   shown to the user as a range, narrower for their own players).
+2. **Progression** (weekly or per matchday): young players grow towards
+   potential (faster with minutes and training), from ~30 physical
+   attributes decline. Pure, seeded, tested for realistic rates.
+3. **Training screen:** focus (balanced / attacking / defending / physical
+   / recovery) and intensity (light / normal / heavy). Heavy = faster
+   growth, slower recovery, training injuries (the condition module from 8a).
+4. **Attributes become saved state** (save v5): store changed attributes
+   (sparse, like condition) over the generated base; check the size.
+5. **Valuation** uses potential for young players; season rollover:
+   ageing, retirement of players ~34+ (they leave contracts; new regens are
+   M9).
+6. Later ideas: `npm run test:calibration` (suite ~37 s); foreign leagues
+   (M9); user substitutions during a match; save slots (M10); suspensions.

@@ -14,6 +14,8 @@ import {
   type Lineup,
 } from '@/game/lineup';
 import { simulateMatch } from '@/engine/simulate';
+import { adjustMorale, conditionOn, emptyConditions, isInjured, type ConditionState } from '@/game/condition/condition';
+import { injuryMessages, withoutInjured } from '@/game/condition/squad-care';
 import type { MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
 import type { Season } from '@/game/season/season';
@@ -90,7 +92,27 @@ export type GameState = {
   /** AI bids for the user's players, waiting for an answer. */
   offers: TransferOffer[];
   inbox: InboxMessage[];
+  /**
+   * Fitness, morale and injuries of every player, as of `condition.date`
+   * (the last matchday). Read it through `conditionOn(condition, currentDate)`.
+   */
+  condition: ConditionState;
 };
+
+/**
+ * Condition as it will be at the user's next kick-off (today if there's no
+ * fixture left): team selection is about who can play THAT match. A 4-day
+ * knock picked up on Saturday doesn't rule a player out of next Saturday.
+ */
+export function conditionAtKickOff(s: Pick<GameState, 'condition' | 'currentDate' | 'season' | 'userClubId'>): ConditionState {
+  const next = nextFixtureFor(s.season, s.userClubId);
+  return conditionOn(s.condition, next && next.date > s.currentDate ? next.date : s.currentDate);
+}
+
+/** Morale effects of the user's decisions. */
+const LISTED_MORALE = -10;
+const UNLISTED_MORALE = 5;
+const RENEWED_MORALE = 5;
 
 /** Terms agreed in the negotiation screen; re-checked by `signPlayer`. */
 export type SigningOffer = { playerId: PlayerId; fee: number; weeklyWage: number; years: number };
@@ -191,6 +213,7 @@ function toSave(state: GameState): GameSave {
     transferListed: state.transferListed,
     offers: state.offers,
     inbox: state.inbox,
+    condition: state.condition,
   };
 }
 
@@ -210,6 +233,7 @@ export function createInitialGameState(database: GameDatabase = getBaseDatabase(
     transferListed: [],
     offers: [],
     inbox: [],
+    condition: emptyConditions(FICTIONAL_REFERENCE_DATE),
   };
 }
 
@@ -227,31 +251,52 @@ export const useGameStore = create<Store>()(
       addSubstitute: (playerId) => set((s) => ({ lineup: addSubstitute(s.lineup, playerId) })),
       removeFromLineup: (playerId) => set((s) => ({ lineup: removeFromLineup(s.lineup, playerId) })),
       autoPick: () =>
-        set((s) => ({ lineup: autoPickLineup(selectSquadCandidates(s.database, s.userClubId), s.lineup.formationId) })),
+        set((s) => {
+          const atKickOff = conditionAtKickOff(s);
+          const fit = selectSquadCandidates(s.database, s.userClubId).filter((c) => !isInjured(atKickOff, c.player.id));
+          return { lineup: autoPickLineup(fit, s.lineup.formationId) };
+        }),
       setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
       applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
       playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
-        const { database, userClubId, lineup, tactics } = get();
-        const result = simulateMatch(prepareFriendly({ db: database, userClubId, lineup, tactics, opponentId, venue, seed }));
+        const { database, userClubId, lineup, tactics, condition, currentDate } = get();
+        // Friendlies use today's condition but don't change it (no injuries or fatigue carried over).
+        const today = conditionOn(condition, currentDate);
+        const result = simulateMatch(prepareFriendly({ db: database, userClubId, lineup, tactics, opponentId, venue, seed, condition: today }));
         set({ lastMatch: result, lastMatchFixtureId: null });
         return result;
       },
       playNextFixture: () => {
         const state = get();
         const { database, userClubId, lineup, tactics, season } = state;
-        const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics });
+        const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics }, state.condition);
+        const date = played.fixture.date;
         // The calendar moved: offers expire / arrive, contract warnings.
-        const career = afterCalendarMove({ ...transferCareer(state), date: played.fixture.date }, state.currentDate, season.seed);
-        set({ ...fromCareer(career), season: played.season, lastMatch: played.result, lastMatchFixtureId: played.fixture.id });
+        const career = afterCalendarMove({ ...transferCareer(state), date }, state.currentDate, season.seed);
+        set({
+          ...fromCareer(career),
+          // Players still injured at the next kick-off leave the lineup; the Head of Medical reports every injury.
+          lineup: withoutInjured(
+            career.db,
+            userClubId,
+            career.lineup,
+            conditionAtKickOff({ condition: played.condition, currentDate: date, season: played.season, userClubId }),
+          ),
+          inbox: addMessages(career.inbox, injuryMessages(career.db, userClubId, played.injuries, date)),
+          condition: played.condition,
+          season: played.season,
+          lastMatch: played.result,
+          lastMatchFixtureId: played.fixture.id,
+        });
         return played.result;
       },
       finishSeason: () => {
         const state = get();
         if (nextFixtureFor(state.season, state.userClubId)) throw new RangeError('You still have fixtures to play');
-        const finished = playRemaining(state.database, state.season);
-        const lastDate = finished.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), state.currentDate);
+        const finished = playRemaining(state.database, state.season, state.condition);
+        const lastDate = finished.season.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), state.currentDate);
         const career = afterCalendarMove({ ...transferCareer(state), date: lastDate }, state.currentDate, state.season.seed);
-        set({ ...fromCareer(career), season: finished });
+        set({ ...fromCareer(career), season: finished.season, condition: finished.condition ?? state.condition });
       },
       startNextSeason: () => {
         const state = get();
@@ -262,7 +307,21 @@ export const useGameStore = create<Store>()(
         const rolled = seasonRollover(transferCareer(state), seasonStart);
         const next = startNextSeason(rolled.db, state.season);
         const career = afterCalendarMove(rolled, state.currentDate, next.seed);
-        set({ ...fromCareer(career), season: next, lastMatch: null, lastMatchFixtureId: null });
+        // Over the summer most players recover and heal; anyone still injured at the first kick-off stays out of the lineup.
+        const condition = conditionOn(state.condition, seasonStart);
+        set({
+          ...fromCareer(career),
+          lineup: withoutInjured(
+            career.db,
+            state.userClubId,
+            career.lineup,
+            conditionAtKickOff({ condition, currentDate: seasonStart, season: next, userClubId: state.userClubId }),
+          ),
+          condition,
+          season: next,
+          lastMatch: null,
+          lastMatchFixtureId: null,
+        });
       },
       clearMatch: () => set({ lastMatch: null, lastMatchFixtureId: null }),
       startNewGame: () => {
@@ -296,11 +355,22 @@ export const useGameStore = create<Store>()(
           ]),
         });
       },
-      toggleTransferListed: (playerId) => set((s) => fromCareer(toggleListed(transferCareer(s), playerId))),
+      toggleTransferListed: (playerId) =>
+        set((s) => {
+          const listing = !s.transferListed.includes(playerId);
+          const career = toggleListed(transferCareer(s), playerId);
+          // Being put up for sale hurts; being taken off the list helps a little.
+          const condition = adjustMorale(conditionOn(s.condition, s.currentDate), playerId, listing ? LISTED_MORALE : UNLISTED_MORALE);
+          return { ...fromCareer(career), condition };
+        }),
       acceptOffer: (offerId) => set((s) => fromCareer(acceptOffer(transferCareer(s), offerId))),
       rejectOffer: (offerId) => set((s) => fromCareer(rejectOffer(transferCareer(s), offerId))),
       releasePlayer: (playerId) => set((s) => fromCareer(releaseFromSquad(transferCareer(s), playerId))),
-      renewContract: (offer) => set((s) => fromCareer(renewPlayer(transferCareer(s), offer))),
+      renewContract: (offer) =>
+        set((s) => ({
+          ...fromCareer(renewPlayer(transferCareer(s), offer)),
+          condition: adjustMorale(conditionOn(s.condition, s.currentDate), offer.playerId, RENEWED_MORALE),
+        })),
       markMessageRead: (id) => set((s) => ({ inbox: markRead(s.inbox, id) })),
       markAllMessagesRead: () => set((s) => ({ inbox: markAllRead(s.inbox) })),
     }),

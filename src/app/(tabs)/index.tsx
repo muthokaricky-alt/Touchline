@@ -5,6 +5,7 @@ import { previewDashboard } from '@/features/dashboard/dashboard.preview';
 import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
 import { saveStatus, useSaveStatus } from '@/persistence/save-status';
 import { useGameStore } from '@/store/game-store';
+import { useConditionToday } from '@/store/hooks';
 
 /**
  * Route file: stays thin. It decides *which* data the dashboard shows;
@@ -17,12 +18,13 @@ export default function HomeRoute() {
   const season = useGameStore((s) => s.season);
   const currentDate = useGameStore((s) => s.currentDate);
   const inbox = useGameStore((s) => s.inbox);
+  const today = useConditionToday();
   const startNextSeason = useGameStore((s) => s.startNextSeason);
   const finishSeason = useGameStore((s) => s.finishSeason);
   const saveNotice = useSaveStatus((s) => s.notice);
   const summary = useMemo(
-    () => buildDashboardSummary(database, clubId, season, currentDate, inbox, previewDashboard),
-    [database, clubId, season, currentDate, inbox],
+    () => buildDashboardSummary(database, clubId, season, currentDate, inbox, previewDashboard, today),
+    [database, clubId, season, currentDate, inbox, today],
   );
   return (
     <DashboardScreen

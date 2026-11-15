@@ -11,6 +11,7 @@ import {
   PlayerIdSchema,
   type GameDatabase,
 } from '@/data/schemas';
+import { ConditionStateSchema, emptyConditions } from '@/game/condition/condition';
 import { InboxMessageSchema } from '@/game/inbox/inbox';
 import { LineupSchema } from '@/game/lineup';
 import { TransferOfferSchema } from '@/game/transfers/offers';
@@ -30,10 +31,11 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   1  career only (club, date, lineup, tactics, season)
  *   2  + contracts, club finances, transfer history (Milestone 7a)
  *   3  + transfer list, pending offers, inbox (Milestone 7b)
+ *   4  + player condition: fitness, morale, injuries (Milestone 8a)
  */
 
 export const SAVE_KEY = 'touchline-save';
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -55,6 +57,7 @@ export const GameSaveSchema = z.strictObject({
   transferListed: z.array(PlayerIdSchema),
   offers: z.array(TransferOfferSchema),
   inbox: z.array(InboxMessageSchema),
+  condition: ConditionStateSchema,
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -93,6 +96,7 @@ export function applyWorldChanges(base: GameDatabase, save: Pick<GameSave, 'cont
  *   v1 → v2: nothing had been transferred yet, so the generated world's
  *            contracts and finances ARE the v1 world.
  *   v2 → v3: no transfer list, offers or inbox existed yet: start empty.
+ *   v3 → v4: condition didn't exist: everyone fully fit on the save's date.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -103,6 +107,10 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
     save = { ...save, ...worldChanges(buildFictionalDatabase(save.worldSeed)), transferHistory: [] };
   }
   if (fromVersion < 3) save = { ...save, transferListed: [], offers: [], inbox: [] };
+  if (fromVersion < 4) {
+    if (typeof save.currentDate !== 'string') return incompatible;
+    save = { ...save, condition: emptyConditions(save.currentDate) };
+  }
   return save;
 }
 
@@ -140,6 +148,10 @@ export function checkSave(raw: unknown, base: GameDatabase, worldSeed: number): 
   const seasonClubs = [...save.season.leagues.flatMap((l) => l.clubIds), ...save.season.fixtures.flatMap((f) => [f.homeId, f.awayId])];
   if (save.season.leagues.some((l) => !competitionIds.has(l.competitionId)) || seasonClubs.some((id) => !clubIds.has(id))) {
     return { ok: false, reason: 'Your saved season refers to clubs or competitions that no longer exist.' };
+  }
+  const playerIds = new Set(db.players.map((p) => p.id));
+  if (Object.keys(save.condition.players).some((id) => !playerIds.has(id)) || save.condition.date > save.currentDate) {
+    return { ok: false, reason: "Your save's player fitness records don't match this world." };
   }
   if (!save.season.leagues.some((l) => l.clubIds.includes(save.userClubId))) {
     return { ok: false, reason: "Your club isn't in any league in the saved season." };

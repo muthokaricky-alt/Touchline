@@ -10,6 +10,7 @@ const KIND_STYLE: Record<TimelineKind, { icon: IconName; color: ColorToken }> = 
   chance: { icon: 'trendUp', color: 'textSecondary' },
   card: { icon: 'warning', color: 'warning' },
   substitution: { icon: 'transfers', color: 'info' },
+  injury: { icon: 'medical', color: 'danger' },
   whistle: { icon: 'fixtures', color: 'textMuted' },
 };
 

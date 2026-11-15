@@ -59,7 +59,7 @@ describe('buildCupView', () => {
   it('shows every round, a winner and the user’s fate after a full season', () => {
     let full = season;
     while (nextFixtureFor(full, USER)) full = advanceToUserFixture(db, full, user).season;
-    full = playRemaining(db, full);
+    full = playRemaining(db, full).season;
     const view = buildCupView(db, full, USER)!;
     expect(view.rounds.map((r) => r.name)).toEqual(['First round', 'Round of 32', 'Round of 16', 'Quarter-finals', 'Semi-finals', 'Final']);
     expect(view.winnerName).not.toBeNull();

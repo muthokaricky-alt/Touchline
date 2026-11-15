@@ -40,6 +40,11 @@ export function addDays(iso: string, days: number): string {
   return fromUtc(toUtc(iso) + days * 86_400_000);
 }
 
+/** Whole days from `from` to `to` (negative if `to` is earlier). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((toUtc(to) - toUtc(from)) / 86_400_000);
+}
+
 /** 0 = Sunday … 6 = Saturday. */
 export function weekdayOf(iso: string): number {
   return new Date(toUtc(iso)).getUTCDay();

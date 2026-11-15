@@ -1,20 +1,22 @@
 import type { ClubId, GameDatabase } from '@/data/schemas';
 import type { MatchTeamInput } from '@/engine/types';
 
+import { matchConditions, type ConditionState } from '../condition/condition';
 import { getFormation } from '../formations';
 import type { Lineup, LineupCandidate } from '../lineup';
 import { findClub, selectSquadCandidates } from '../squad/squad-selectors';
 import { effectiveRating } from '../squad/position-fit';
 import type { Tactics } from '../tactics/tactics';
 
-/** Packs a club's lineup, tactics and squad into the engine's input shape. */
-export function buildMatchTeam(db: GameDatabase, clubId: ClubId, lineup: Lineup, tactics: Tactics): MatchTeamInput {
+/** Packs a club's lineup, tactics, squad and (optionally) players' condition into the engine's input shape. */
+export function buildMatchTeam(db: GameDatabase, clubId: ClubId, lineup: Lineup, tactics: Tactics, condition?: ConditionState): MatchTeamInput {
   return {
     clubId,
     name: findClub(db, clubId)?.name ?? clubId,
     lineup,
     tactics,
     squad: selectSquadCandidates(db, clubId),
+    ...(condition ? { condition: matchConditions(condition) } : {}),
   };
 }
 

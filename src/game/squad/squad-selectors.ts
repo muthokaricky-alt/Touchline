@@ -15,6 +15,7 @@ import { ageOn } from '@/utils/date';
 import type { LineupCandidate } from '../lineup';
 import { POSITION_GROUP, POSITION_GROUP_LABELS, POSITION_GROUP_ORDER, type PositionGroup } from '../positions';
 import { effectiveRating, positionFit, type PositionFit } from './position-fit';
+import { conditionOf, FULLY_FIT, type ConditionState, type PlayerCondition } from '../condition/condition';
 
 /**
  * Selectors: pure functions that join raw records (Player + PlayerAttributes
@@ -76,6 +77,7 @@ export type SquadPlayerView = {
   group: PositionGroup;
   /** Rounded 1–20 rating in their primary position. */
   rating: number;
+  condition: PlayerCondition;
 };
 
 export type SquadGroupView = {
@@ -84,7 +86,7 @@ export type SquadGroupView = {
   players: SquadPlayerView[];
 };
 
-export function selectSquad(db: GameDatabase, clubId: ClubId, onDate: string): SquadPlayerView[] {
+export function selectSquad(db: GameDatabase, clubId: ClubId, onDate: string, condition?: ConditionState): SquadPlayerView[] {
   const numbers = squadNumbers(db);
   return selectSquadCandidates(db, clubId).map(({ player, attributes }) => ({
     id: player.id,
@@ -97,6 +99,7 @@ export function selectSquad(db: GameDatabase, clubId: ClubId, onDate: string): S
     secondaryPositions: player.secondaryPositions,
     group: POSITION_GROUP[player.primaryPosition],
     rating: Math.round(effectiveRating(player, attributes, player.primaryPosition)),
+    condition: condition ? conditionOf(condition, player.id) : FULLY_FIT,
   }));
 }
 
@@ -131,9 +134,10 @@ export type PlayerProfileView = {
   positionRatings: { position: Position; fit: PositionFit; rating: number }[];
   /** Attribute groups to show, in display order. Goalkeeping only appears for goalkeepers. */
   attributeGroups: { group: AttributeGroup; attributes: { key: AttributeKey; value: number }[] }[];
+  condition: PlayerCondition;
 };
 
-export function selectPlayerProfile(db: GameDatabase, playerId: PlayerId, onDate: string): PlayerProfileView | null {
+export function selectPlayerProfile(db: GameDatabase, playerId: PlayerId, onDate: string, condition?: ConditionState): PlayerProfileView | null {
   const player = db.players.find((p) => p.id === playerId);
   const attributes = db.attributes.find((a) => a.playerId === playerId);
   if (!player || !attributes) return null;
@@ -173,5 +177,6 @@ export function selectPlayerProfile(db: GameDatabase, playerId: PlayerId, onDate
       group,
       attributes: Object.entries(attributes[group]).map(([key, value]) => ({ key: key as AttributeKey, value })),
     })),
+    condition: condition ? conditionOf(condition, player.id) : FULLY_FIT,
   };
 }

@@ -11,6 +11,7 @@ import {
   emptyLineup,
   isLineupPlayable,
   LineupSchema,
+  LOW_FITNESS,
   removeFromLineup,
   startingSlotOf,
   starterIds,
@@ -251,5 +252,29 @@ describe('validateLineup', () => {
     const big = { ...lineup, substitutes: [...lineup.substitutes, aReserve(lineup)] };
     expect(codes(big)).toContain('bench-too-large');
     expect(LineupSchema.safeParse(big).success).toBe(false);
+  });
+});
+
+describe('validateLineup with availability (Milestone 8)', () => {
+  const db8 = buildFictionalDatabase();
+  const squad8 = selectSquadCandidates(db8, 'club_greywater_town');
+  const picked = autoPickLineup(squad8, '4-4-2');
+  const striker = picked.starters.LST!;
+  const sub = picked.substitutes[0];
+
+  it('an injured starter or substitute is an error', () => {
+    const issues = validateLineup(picked, squad8, { isInjured: (id) => id === striker || id === sub, fitnessOf: () => 100 });
+    const injured = issues.filter((i) => i.code === 'injured');
+    expect(injured.map((i) => i.playerId).sort()).toEqual([striker, sub].sort());
+    expect(injured.every((i) => i.severity === 'error')).toBe(true);
+  });
+
+  it('a tired starter is a warning, a fit one is not', () => {
+    const issues = validateLineup(picked, squad8, { isInjured: () => false, fitnessOf: (id) => (id === striker ? LOW_FITNESS - 5 : 95) });
+    expect(issues.filter((i) => i.code === 'low-fitness')).toEqual([expect.objectContaining({ playerId: striker, severity: 'warning' })]);
+  });
+
+  it('without availability nothing changes', () => {
+    expect(validateLineup(picked, squad8).some((i) => i.code === 'injured' || i.code === 'low-fitness')).toBe(false);
   });
 });

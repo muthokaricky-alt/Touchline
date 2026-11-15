@@ -4,6 +4,7 @@ import { simulateMatch } from '@/engine/simulate';
 import type { MatchInput, MatchResult, Side } from '@/engine/types';
 
 import { aiSetup, buildAiTeam } from '../ai/opponent';
+import { applyMatch, conditionOn, emptyConditions, squadIds, type ConditionState, type NewInjury } from '../condition/condition';
 import type { Lineup } from '../lineup';
 import { buildMatchTeam, lineupStrength } from '../match/build-match-team';
 import { flattenAttributes } from '../ratings';
@@ -23,6 +24,10 @@ import { computeTable, type TableRow } from './table';
  * date they're not involved in, then that whole date.
  *
  *   createSeason → advanceToUserFixture × n → playRemaining → startNextSeason
+ *
+ * Players' condition (fitness, morale, injuries) is threaded through play:
+ * pass the current ConditionState and get the updated one back. Omitting it
+ * starts everyone fully fit on the first date played.
  */
 
 export type UserTeam = { clubId: ClubId; lineup: Lineup; tactics: Tactics };
@@ -138,18 +143,20 @@ export function fixtureSeed(season: Season, fixture: Fixture): number {
 }
 
 /** Engine input. The user's side uses their lineup/tactics; AI sides set up against their opponent's strength. */
-export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam): MatchInput {
+export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam, condition?: ConditionState): MatchInput {
   const isUser = (clubId: ClubId) => user !== undefined && clubId === user.clubId;
   const strengthOf = (clubId: ClubId) =>
     isUser(clubId) ? lineupStrength(user!.lineup, selectSquadCandidates(db, clubId)) : aiSetup(db, clubId).strength;
   const teamFor = (clubId: ClubId, opponentId: ClubId) =>
-    isUser(clubId) ? buildMatchTeam(db, clubId, user!.lineup, user!.tactics) : buildAiTeam(db, clubId, strengthOf(opponentId));
+    isUser(clubId)
+      ? buildMatchTeam(db, clubId, user!.lineup, user!.tactics, condition)
+      : buildAiTeam(db, clubId, strengthOf(opponentId), condition);
   return { home: teamFor(fixture.homeId, fixture.awayId), away: teamFor(fixture.awayId, fixture.homeId), seed: fixtureSeed(season, fixture) };
 }
 
 /** Simulates a fixture; a level cup tie goes to penalties taken by the players who finished the match. */
-export function simulateFixture(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam): MatchResult {
-  const input = buildFixtureInput(db, season, fixture, user);
+export function simulateFixture(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam, condition?: ConditionState): MatchResult {
+  const input = buildFixtureInput(db, season, fixture, user, condition);
   const result = simulateMatch(input);
   if (fixture.competitionId !== season.cupId || result.score.home !== result.score.away) return result;
 
@@ -206,26 +213,38 @@ function advanceCup(season: Season): Season {
   return drawn.length ? { ...season, fixtures: [...season.fixtures, ...drawn] } : season;
 }
 
+export type PlayedDate = {
+  season: Season;
+  userMatch: { fixture: Fixture; result: MatchResult } | null;
+  condition: ConditionState;
+  /** Injuries picked up on this date, all clubs. */
+  injuries: NewInjury[];
+};
+
 /**
  * Plays every unplayed fixture on `date`. The user's fixture (if any) uses
- * their team; its full result is returned for the match centre.
+ * their team; its full result is returned for the match centre. Everyone
+ * recovers up to `date` first; afterwards fitness, morale and injuries
+ * reflect the matches.
  */
-export function playDate(
-  db: GameDatabase,
-  season: Season,
-  date: string,
-  user?: UserTeam,
-): { season: Season; userMatch: { fixture: Fixture; result: MatchResult } | null } {
+export function playDate(db: GameDatabase, season: Season, date: string, user?: UserTeam, condition?: ConditionState): PlayedDate {
+  // Every match uses condition as it was at kick-off; the state is updated as each result comes in.
+  const before = conditionOn(condition ?? emptyConditions(date), date);
+  let after = before;
   let next = season;
-  let userMatch: { fixture: Fixture; result: MatchResult } | null = null;
+  let userMatch: PlayedDate['userMatch'] = null;
+  const injuries: NewInjury[] = [];
   for (const fixture of season.fixtures) {
     if (fixture.date !== date || fixture.result) continue;
     const mine = user !== undefined && involves(fixture, user.clubId);
-    const result = simulateFixture(db, season, fixture, mine ? user : undefined);
+    const result = simulateFixture(db, season, fixture, mine ? user : undefined, before);
     next = recordResult(next, fixture.id, result);
+    const applied = applyMatch(after, result, { home: squadIds(db, fixture.homeId), away: squadIds(db, fixture.awayId) }, date);
+    after = applied.state;
+    injuries.push(...applied.injuries);
     if (mine) userMatch = { fixture, result };
   }
-  return { season: advanceCup(next), userMatch };
+  return { season: advanceCup(next), userMatch, condition: after, injuries };
 }
 
 /**
@@ -237,23 +256,40 @@ export function advanceToUserFixture(
   db: GameDatabase,
   season: Season,
   user: UserTeam,
-): { season: Season; fixture: Fixture; result: MatchResult } {
+  condition?: ConditionState,
+): { season: Season; fixture: Fixture; result: MatchResult; condition: ConditionState; injuries: NewInjury[] } {
   const target = nextFixtureFor(season, user.clubId);
   if (!target) throw new RangeError('No fixture left to play this season');
   let current = season;
+  let cond = condition;
+  const injuries: NewInjury[] = [];
   for (let date = nextDate(current); date !== null && date < target.date; date = nextDate(current)) {
-    current = playDate(db, current, date).season;
+    const played = playDate(db, current, date, undefined, cond);
+    current = played.season;
+    cond = played.condition;
+    injuries.push(...played.injuries);
   }
-  const played = playDate(db, current, target.date, user);
+  const played = playDate(db, current, target.date, user, cond);
   if (!played.userMatch) throw new Error(`Expected the user's fixture on ${target.date}`);
-  return { season: played.season, fixture: played.userMatch.fixture, result: played.userMatch.result };
+  return {
+    season: played.season,
+    fixture: played.userMatch.fixture,
+    result: played.userMatch.result,
+    condition: played.condition,
+    injuries: [...injuries, ...played.injuries],
+  };
 }
 
 /** Plays every remaining date (used once the user has no fixtures left). */
-export function playRemaining(db: GameDatabase, season: Season): Season {
+export function playRemaining(db: GameDatabase, season: Season, condition?: ConditionState): { season: Season; condition: ConditionState | undefined } {
   let current = season;
-  for (let date = nextDate(current); date !== null; date = nextDate(current)) current = playDate(db, current, date).season;
-  return current;
+  let cond = condition;
+  for (let date = nextDate(current); date !== null; date = nextDate(current)) {
+    const played = playDate(db, current, date, undefined, cond);
+    current = played.season;
+    cond = played.condition;
+  }
+  return { season: current, condition: cond };
 }
 
 // --- End of season -----------------------------------------------------------------

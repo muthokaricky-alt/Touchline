@@ -52,7 +52,7 @@ describe('autosave', () => {
     const { state: s, version } = saved();
     expect(version).toBe(SAVE_VERSION);
     expect(Object.keys(s).sort()).toEqual([
-      'clubFinances', 'contracts', 'currentDate', 'inbox', 'lineup', 'offers', 'season', 'tactics', 'transferHistory',
+      'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'offers', 'season', 'tactics', 'transferHistory',
       'transferListed', 'userClubId', 'worldSeed',
     ]);
     expect(useSaveStatus.getState().lastSavedAt).not.toBeNull();
@@ -90,7 +90,7 @@ describe('autosave', () => {
     state().playNextFixture();
     flushSave();
     const current = saved();
-    const { contracts: _c, clubFinances: _f, transferHistory: _t, transferListed: _l, offers: _o, inbox: _i, ...career } = current.state;
+    const { contracts: _c, clubFinances: _f, transferHistory: _t, transferListed: _l, offers: _o, inbox: _i, condition: _k, ...career } = current.state;
     await restartWith(JSON.stringify({ state: career, version: 1 }));
     expect(useSaveStatus.getState().notice).toBeNull();
     expect(useSaveStatus.getState().loadedFromSave).toBe(true);

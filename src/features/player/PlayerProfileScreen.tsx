@@ -9,10 +9,12 @@ import {
   ListRow,
   PageHeader,
   PositionBadge,
+  ProgressBar,
   RatingBadge,
   Screen,
   StatTile,
 } from '@/components/ui';
+import { moraleLabel } from '@/game/condition/condition';
 import type { PlayerProfileView } from '@/game/squad/squad-selectors';
 import { POSITION_NAMES } from '@/game/positions';
 import { spacing } from '@/theme';
@@ -49,6 +51,16 @@ export function PlayerProfileScreen({ profile, onBack, extra }: PlayerProfileScr
 
       <View style={styles.columns}>
         <View style={styles.column}>
+          <Card title="Condition" icon="medical">
+            {profile.condition.injury ? (
+              <AppText color="danger">
+                Injured ({profile.condition.injury.name}), back on {formatDate(profile.condition.injury.returns)}
+              </AppText>
+            ) : null}
+            <Meter label="Fitness" value={profile.condition.fitness} detail={`${profile.condition.fitness}%`} />
+            <Meter label="Morale" value={profile.condition.morale} detail={moraleLabel(profile.condition.morale)} />
+          </Card>
+
           <Card title="Positions" icon="tactics">
             <View>
               {profile.positionRatings.map((r, index) => (
@@ -101,7 +113,23 @@ export function PlayerProfileScreen({ profile, onBack, extra }: PlayerProfileScr
   );
 }
 
+function Meter({ label, value, detail }: { label: string; value: number; detail: string }) {
+  return (
+    <View style={styles.meter}>
+      <View style={styles.meterLabels}>
+        <AppText variant="caption" color="textSecondary">
+          {label}
+        </AppText>
+        <AppText variant="caption">{detail}</AppText>
+      </View>
+      <ProgressBar progress={value / 100} accessibilityLabel={`${label}: ${detail}`} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  meter: { gap: spacing.xs },
+  meterLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, alignItems: 'flex-start' },
   column: { flexGrow: 1, flexBasis: 340, gap: spacing.lg, minWidth: 0 },

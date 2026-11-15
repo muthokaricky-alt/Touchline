@@ -38,7 +38,8 @@ import type {
  *   3. chance       the side in possession may create a shot (attack vs
  *                   defence + tactics); otherwise a defender may win it back
  *   4. fatigue      everyone tires; tired players count for less
- *   5. substitutions at set windows, tired players are replaced
+ *   5. injuries     rare; tired players are more at risk; forced substitution
+ *   6. substitutions at set windows, tired players are replaced
  *
  * Every random decision goes through one seeded RNG, in a fixed order, so the
  * same input and seed always replay the same match.
@@ -81,6 +82,11 @@ const SUB_WINDOWS = [60, 70, 78, 85];
 /** Energy below which an outfielder is due to be replaced. */
 const TIRED = 72;
 const MAX_SUBS_PER_WINDOW = 2;
+/**
+ * Injury chance per outfielder per minute when fresh; doubles at 50 energy.
+ * Keepers ×0.3. Gives ~0.12 injuries per team per match (calibration test).
+ */
+const INJURY_RATE = 0.000085;
 
 const BASE_MIX: Record<ChanceType, number> = {
   'through-ball': 30,
@@ -256,7 +262,11 @@ class MatchSimulation {
     drainEnergy(home);
     drainEnergy(away);
 
-    // 5. Substitutions (not in stoppage time)
+    // 5. Injuries
+    this.considerInjury(home, clock);
+    this.considerInjury(away, clock);
+
+    // 6. Substitutions (not in stoppage time)
     if (clock.addedTime === undefined && SUB_WINDOWS.includes(clock.minute)) {
       this.considerSubstitutions(home, clock);
       this.considerSubstitutions(away, clock);
@@ -392,6 +402,28 @@ class MatchSimulation {
     standIn.fit = 'unfamiliar';
   }
 
+  // --- Injuries --------------------------------------------------------------
+
+  /** One draw per team per minute: does anyone get hurt, and if so who (tired players more likely). */
+  private considerInjury(team: TeamState, clock: MatchClock): void {
+    const risk = (p: OnPitch) => INJURY_RATE * (1 + (100 - p.energy) / 50) * (p.position === 'GK' ? 0.3 : 1);
+    const total = team.onPitch.reduce((sum, p) => sum + risk(p), 0);
+    if (this.rng.next() >= total) return;
+    const player = this.rng.pickWeighted(team.onPitch, risk);
+    if (!player) return;
+    this.events.push({ ...clock, type: 'injury', side: team.side, playerId: player.id, days: injuryDays(this.rng) });
+
+    const replacement = team.subsUsed < MAX_SUBS ? bestReplacement(team, player.position) : undefined;
+    if (replacement) {
+      this.substitute(team, player, replacement, player.position, clock, 'injury');
+      return;
+    }
+    // No substitute left: his team plays on a man down.
+    team.onPitch = team.onPitch.filter((p) => p.id !== player.id);
+    this.leaveField(team.side, player, clock);
+    if (player.position === 'GK') this.replaceSentOffKeeper(team, clock);
+  }
+
   // --- Substitutions ---------------------------------------------------------
 
   private considerSubstitutions(team: TeamState, clock: MatchClock): void {
@@ -414,11 +446,11 @@ class MatchSimulation {
     on: TeamState['bench'][number],
     position: Position,
     clock: MatchClock,
-    reason: 'fatigue' | 'goalkeeper',
+    reason: 'fatigue' | 'goalkeeper' | 'injury',
   ): void {
     const index = team.onPitch.findIndex((p) => p.id === off.id);
     if (index === -1) return;
-    team.onPitch[index] = toOnPitch(on, position);
+    team.onPitch[index] = toOnPitch(on, position, team.input.condition?.[on.player.id]);
     team.bench = team.bench.filter((c) => c.player.id !== on.player.id);
     team.subsUsed++;
     this.leaveField(team.side, off, clock);
@@ -431,6 +463,14 @@ class MatchSimulation {
     const appearance = this.appearances.find((a) => a.playerId === player.id && a.side === side && a.offMinute === null);
     if (appearance) appearance.offMinute = clock.minute;
   }
+}
+
+/** Days out: half are knocks (3–10), a third a strain (11–28), the rest serious (29–90). */
+function injuryDays(rng: Rng): number {
+  const roll = rng.next();
+  if (roll < 0.5) return rng.int(3, 10);
+  if (roll < 0.85) return rng.int(11, 28);
+  return rng.int(29, 90);
 }
 
 /** Poor tacklers foul more. Whole-team factor, roughly 0.8–1.25. */

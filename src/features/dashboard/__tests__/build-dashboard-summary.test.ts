@@ -54,6 +54,22 @@ describe('buildDashboardSummary: pre-season', () => {
     expect(s.unreadMessages).toBe(6);
   });
 
+  it('uses real fitness, morale and injuries when condition is given', () => {
+    const ids = db.contracts.filter((c) => c.clubId === CLUB).map((c) => c.playerId);
+    const condition = {
+      date: '2026-07-01',
+      players: {
+        [ids[0]]: { fitness: 50, morale: 60, injury: { name: 'calf strain', returns: '2026-07-20' } },
+        [ids[1]]: { fitness: 80, morale: 30, injury: null },
+      },
+    };
+    const s = buildDashboardSummary(db, CLUB, fresh, '2026-07-01', [], previewDashboard, condition);
+    expect(s.squad.injuredCount).toBe(1);
+    expect(s.squad.suspendedCount).toBe(0);
+    expect(s.squad.averageFitness).toBeCloseTo((100 * (ids.length - 2) + 50 + 80) / ids.length / 100);
+    expect(s.squad.averageMorale).toBeCloseTo((60 * (ids.length - 1) + 30) / ids.length / 100);
+  });
+
   it('falls back to the preview for a club outside the leagues', () => {
     expect(buildDashboardSummary(db, 'club_nowhere', fresh, '2026-07-01', [], previewDashboard)).toBe(previewDashboard);
   });
@@ -85,7 +101,7 @@ describe('buildDashboardSummary: during and after the season', () => {
       expect(waiting.nextMatch).toBeNull();
       expect(waiting.awaitingSeasonEnd).toBe(true);
       expect(waiting.seasonEnd).toBeNull();
-      season = playRemaining(db, season);
+      season = playRemaining(db, season).season;
     }
     const summary = buildDashboardSummary(db, CLUB, season, '2027-05-01', [], previewDashboard);
     expect(summary.awaitingSeasonEnd).toBe(false);

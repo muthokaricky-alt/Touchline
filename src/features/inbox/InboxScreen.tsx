@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, IconButton, PageHeader, Pill, Screen } from '@/components/ui';
+import type { MessageCategory } from '@/game/inbox/inbox';
 import { colors, radii, spacing } from '@/theme';
 
 export type InboxItemView = {
@@ -12,7 +13,7 @@ export type InboxItemView = {
   /** e.g. "3 Jul" */
   date: string;
   read: boolean;
-  category: 'offer' | 'transfer' | 'contract' | 'squad';
+  category: MessageCategory;
   /** An offer that can still be answered (it hasn't expired, been answered or lapsed with the window). */
   offer: { id: string; playerId: string } | null;
 };
@@ -28,7 +29,8 @@ type InboxScreenProps = {
   onBack: () => void;
 };
 
-const CATEGORY_LABEL: Record<InboxItemView['category'], string> = {
+const CATEGORY_LABEL: Record<MessageCategory, string> = {
+  medical: 'Medical',
   offer: 'Offer',
   transfer: 'Transfer',
   contract: 'Contract',
