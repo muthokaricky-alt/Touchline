@@ -6,7 +6,7 @@ Read these before doing anything:
 @DEVELOPMENT.md
 @AGENTS.md
 
-Current state: Milestones 1–6 are complete (two 20-club divisions, cup, promotion/relegation), plus autosave. Next is Milestone 7 (Transfers),
+Current state: Milestones 1–6 and autosave are complete; Milestone 7 step 7a (buying, free agents, save v2) is done. Next is step 7b (selling, contracts, inbox),
 following the plan in DEVELOPMENT.md section 5. Work one milestone at a time, explain decisions
 (the user is a CS student who wants to understand the code), and run `npm run typecheck` and
 `npm test` before claiming anything works. Keep DEVELOPMENT.md updated at the end of each session.

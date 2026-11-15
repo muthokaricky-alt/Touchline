@@ -29,7 +29,9 @@ import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES, type PlayingStyleId } from '@/game/tactics/presets';
 import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from '@/game/tactics/tactics';
 import { createDebouncedStorage } from '@/persistence/debounced-storage';
-import { checkSave, SAVE_KEY, SAVE_VERSION, type GameSave } from '@/persistence/save';
+import { completeTransfer, type TransferRecord } from '@/game/transfers/complete';
+import { personalTerms, playerContext, respondToBid, respondToTerms } from '@/game/transfers/negotiation';
+import { checkSave, migrateSave, SAVE_KEY, SAVE_VERSION, worldChanges, type GameSave } from '@/persistence/save';
 import { saveStatus } from '@/persistence/save-status';
 import { platformStorage } from '@/persistence/storage';
 
@@ -68,7 +70,12 @@ export type GameState = {
   lastMatch: MatchResult | null;
   /** Fixture id when `lastMatch` was a league game; null for friendlies. */
   lastMatchFixtureId: string | null;
+  /** Every completed deal this career (including AI replacement signings). */
+  transferHistory: TransferRecord[];
 };
+
+/** Terms agreed in the negotiation screen; re-checked by `signPlayer`. */
+export type SigningOffer = { playerId: PlayerId; fee: number; weeklyWage: number; years: number };
 
 export type GameActions = {
   changeFormation: (formationId: FormationId) => void;
@@ -90,7 +97,23 @@ export type GameActions = {
   clearMatch: () => void;
   /** Throws away the career and starts again (the autosave is overwritten). */
   startNewGame: () => void;
+  /**
+   * Completes a signing. Re-runs the club's and player's decisions and all
+   * deal checks, so the UI can never sign someone on terms they'd refuse.
+   * Throws a RangeError explaining why if the deal isn't possible.
+   */
+  signPlayer: (offer: SigningOffer) => void;
 };
+
+/**
+ * The generated world, built once. The live `database` in state is this plus
+ * whatever transfers changed; a new game or a loaded save starts from here.
+ */
+let baseDatabase: GameDatabase | null = null;
+export function getBaseDatabase(): GameDatabase {
+  baseDatabase ??= buildFictionalDatabase(FICTIONAL_SEED);
+  return baseDatabase;
+}
 
 /**
  * Autosave: writes are debounced (at most one per second) because persist
@@ -109,11 +132,13 @@ function toSave(state: GameState): GameSave {
     lineup: state.lineup,
     tactics: state.tactics,
     season: state.season,
+    ...worldChanges(state.database),
+    transferHistory: state.transferHistory,
   };
 }
 
-/** A brand-new career. Pass the existing database to avoid rebuilding it (it's deterministic anyway). */
-export function createInitialGameState(database: GameDatabase = buildFictionalDatabase()): GameState {
+/** A brand-new career, in the generated world (never a world changed by transfers). */
+export function createInitialGameState(database: GameDatabase = getBaseDatabase()): GameState {
   const userClubId = DEFAULT_USER_CLUB_ID;
   return {
     database,
@@ -124,6 +149,7 @@ export function createInitialGameState(database: GameDatabase = buildFictionalDa
     season: createSeason(database, 2026, FICTIONAL_SEED),
     lastMatch: null,
     lastMatchFixtureId: null,
+    transferHistory: [],
   };
 }
 
@@ -166,37 +192,54 @@ export const useGameStore = create<Store>()(
       startNextSeason: () => {
         const { database, season } = get();
         if (!isSeasonComplete(season)) throw new RangeError('The current season is still in progress');
-        set({ season: startNextSeason(database, season), lastMatch: null, lastMatchFixtureId: null });
+        const next = startNextSeason(database, season);
+        // The calendar moves to 1 July: pre-season, with the summer transfer window open.
+        set({ season: next, currentDate: `${next.startYear}-07-01`, lastMatch: null, lastMatchFixtureId: null });
       },
       clearMatch: () => set({ lastMatch: null, lastMatchFixtureId: null }),
       startNewGame: () => {
         saveStatus.dismissNotice();
-        set(createInitialGameState(get().database));
+        set(createInitialGameState());
+      },
+      signPlayer: ({ playerId, fee, weeklyWage, years }) => {
+        const { database, userClubId, currentDate, transferHistory } = get();
+        const ctx = playerContext(database, playerId, currentDate);
+        const buyer = database.clubs.find((c) => c.id === userClubId);
+        if (!ctx || !buyer) throw new RangeError('Unknown player or club.');
+        if (ctx.club) {
+          const bid = respondToBid(ctx, fee);
+          if (bid.kind !== 'accept') throw new RangeError(bid.message);
+        }
+        const terms = respondToTerms(personalTerms(ctx, buyer), { weeklyWage, years });
+        if (!terms.accepted) throw new RangeError(terms.reason);
+        const outcome = completeTransfer(database, { playerId, buyerId: userClubId, fee, weeklyWage, years, date: currentDate });
+        set({ database: outcome.db, transferHistory: [...transferHistory, ...outcome.records] });
       },
     }),
     {
       name: SAVE_KEY,
       version: SAVE_VERSION,
       storage: createJSONStorage(() => debouncedSave.storage),
-      // Only these fields are saved; the database is rebuilt from its seed.
+      // Saved: the career plus what transfers changed (contracts, finances);
+      // players and attributes are rebuilt from the world seed.
       partialize: (state) => toSave(state),
       // Loading is started by the app after mount (see persistence/use-hydration.ts),
       // so the first render always matches the static web HTML.
       skipHydration: true,
-      // A save from another format version: hand `merge` a marker instead of guessing.
-      migrate: (_persisted, version): GameSave => ({ incompatibleVersion: version }) as unknown as GameSave,
+      // Older save formats are upgraded (v1 → v2); unknown ones become a marker `merge` rejects.
+      migrate: (persisted, version) => migrateSave(persisted, version) as GameSave,
       // Validate before using anything from disk; on failure keep the new game and say why.
       merge: (persisted, current) => {
         // No save yet (first launch): persist still calls merge, with undefined. Not an error.
         if (persisted === undefined || persisted === null) return current;
-        const check = checkSave(persisted, current.database, FICTIONAL_SEED);
+        const check = checkSave(persisted, getBaseDatabase(), FICTIONAL_SEED);
         if (!check.ok) {
           saveStatus.notify(`${check.reason} A new game was started.`);
           return current;
         }
         saveStatus.loaded();
-        const { worldSeed: _worldSeed, ...saved } = check.save;
-        return { ...current, ...saved, lastMatch: null, lastMatchFixtureId: null };
+        const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, ...career } = check.save;
+        return { ...current, ...career, database: check.database, lastMatch: null, lastMatchFixtureId: null };
       },
       // Unreadable JSON etc.
       onRehydrateStorage: () => (_state, error) => {

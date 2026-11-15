@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -22,9 +23,11 @@ import { ATTRIBUTE_GROUP_LABELS, ATTRIBUTE_LABELS, FOOT_LABELS } from './attribu
 type PlayerProfileScreenProps = {
   profile: PlayerProfileView;
   onBack: () => void;
+  /** Shown under the header, e.g. the transfer card for other clubs' players. */
+  extra?: ReactNode;
 };
 
-export function PlayerProfileScreen({ profile, onBack }: PlayerProfileScreenProps) {
+export function PlayerProfileScreen({ profile, onBack, extra }: PlayerProfileScreenProps) {
   const number = profile.contract ? `#${profile.contract.squadNumber} · ` : '';
   return (
     <Screen bottomInset>
@@ -41,6 +44,8 @@ export function PlayerProfileScreen({ profile, onBack }: PlayerProfileScreenProp
         <StatTile label="Height" value={`${profile.heightCm}`} detail="cm" />
         <StatTile label="Foot" value={FOOT_LABELS[profile.preferredFoot]} />
       </View>
+
+      {extra}
 
       <View style={styles.columns}>
         <View style={styles.column}>

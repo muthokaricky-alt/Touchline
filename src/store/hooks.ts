@@ -4,6 +4,10 @@ import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
 import { lineupStrength } from '@/game/match/build-match-team';
 import { competitionName, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
+import { MAX_SQUAD, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
+import { searchMarket, type MarketFilters } from '@/game/transfers/market';
+import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
+import { transferWindow } from '@/game/transfers/window';
 import {
   findClub,
   fullName,
@@ -102,6 +106,65 @@ export function useNextFixture() {
       awayName: nameOf(fixture.awayId),
     };
   }, [database, clubId, season]);
+}
+
+/** The user's transfer position: window, budgets, wage room, squad size. */
+export function useTransferBudget() {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const date = useGameStore((s) => s.currentDate);
+  return useMemo(() => {
+    const club = findClub(database, clubId);
+    const bill = wageBill(database, clubId);
+    return {
+      window: transferWindow(date),
+      transferBudget: club?.finances.transferBudget ?? 0,
+      balance: club?.finances.balance ?? 0,
+      wageBill: bill,
+      wageBudget: club?.finances.weeklyWageBudget ?? 0,
+      wageRoom: Math.max(0, (club?.finances.weeklyWageBudget ?? 0) - bill),
+      squadSize: squadSize(database, clubId),
+      maxSquad: MAX_SQUAD,
+    };
+  }, [database, clubId, date]);
+}
+
+export function useTransferMarket(filters: MarketFilters) {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const season = useGameStore((s) => s.season);
+  const date = useGameStore((s) => s.currentDate);
+  return useMemo(() => searchMarket(database, season, clubId, filters, date), [database, season, clubId, filters, date]);
+}
+
+/**
+ * Everything the profile and negotiation screens need about a possible
+ * signing, or null for the user's own players / unknown ids.
+ */
+export function useTransferTarget(playerId: PlayerId) {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const date = useGameStore((s) => s.currentDate);
+  return useMemo(() => {
+    const ctx = playerContext(database, playerId, date);
+    const buyer = findClub(database, clubId);
+    if (!ctx || !buyer || ctx.club?.id === clubId) return null;
+    return {
+      ctx,
+      name: fullName(ctx.player),
+      askingPrice: ctx.club ? askingPrice(ctx) : 0,
+      terms: personalTerms(ctx, buyer),
+      /** Problems with the cheapest possible deal (asking price, demanded wage). */
+      blockers: transferProblems(database, {
+        playerId,
+        buyerId: clubId,
+        fee: ctx.club ? askingPrice(ctx) : 0,
+        weeklyWage: 0,
+        years: 1,
+        date,
+      }).filter((p) => !/transfer budget/.test(p)), // budget is shown separately: you might still bid lower
+    };
+  }, [database, clubId, playerId, date]);
 }
 
 /** Lookup from player id to full name, for commentary and ratings. */

@@ -3,7 +3,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppText, Button, PageHeader, Screen } from '@/components/ui';
 import { PlayerProfileScreen } from '@/features/player/PlayerProfileScreen';
 import { useGameStore } from '@/store/game-store';
-import { usePlayerProfile } from '@/store/hooks';
+import { TransferCard } from '@/features/transfers/TransferCard';
+import { usePlayerProfile, useTransferTarget } from '@/store/hooks';
 
 /**
  * Web static export pre-renders an HTML page per player listed here. The
@@ -23,6 +24,7 @@ export default function PlayerRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const profile = usePlayerProfile(id);
+  const target = useTransferTarget(id);
 
   // Deep links (or a refreshed web page) may have no history to go back to.
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/squad'));
@@ -37,5 +39,19 @@ export default function PlayerRoute() {
     );
   }
 
-  return <PlayerProfileScreen profile={profile} onBack={goBack} />;
+  // Other clubs' players and free agents get a transfer card; the user's own don't.
+  const transferCard = target ? (
+    <TransferCard
+      clubName={target.ctx.club?.name ?? null}
+      value={target.ctx.value}
+      weeklyWage={target.ctx.contract?.weeklyWage ?? (target.terms.willing ? target.terms.weeklyWage : null)}
+      contractEnds={target.ctx.contract?.endDate ?? null}
+      isKeyPlayer={target.ctx.isKeyPlayer}
+      blockers={target.blockers}
+      unwillingReason={target.terms.willing ? null : target.terms.reason}
+      onNegotiate={() => router.push({ pathname: '/negotiate', params: { player: id } })}
+    />
+  ) : null;
+
+  return <PlayerProfileScreen profile={profile} onBack={goBack} extra={transferCard} />;
 }

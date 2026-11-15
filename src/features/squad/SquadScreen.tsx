@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Card, Icon, ListRow, PageHeader, PositionBadge, RatingBadge, Screen } from '@/components/ui';
+import { AppText, Button, Card, Icon, ListRow, PageHeader, PositionBadge, RatingBadge, Screen } from '@/components/ui';
 import type { PlayerId } from '@/data/schemas';
 import type { SquadGroupView, SquadPlayerView } from '@/game/squad/squad-selectors';
 import { spacing } from '@/theme';
@@ -9,15 +9,17 @@ type SquadScreenProps = {
   clubName: string;
   groups: readonly SquadGroupView[];
   onPlayerPress: (playerId: PlayerId) => void;
+  onOpenMarket: () => void;
 };
 
 /** The user's squad, one card per position group. Layout only: data arrives ready-made. */
-export function SquadScreen({ clubName, groups, onPlayerPress }: SquadScreenProps) {
+export function SquadScreen({ clubName, groups, onPlayerPress, onOpenMarket }: SquadScreenProps) {
   const playerCount = groups.reduce((sum, g) => sum + g.players.length, 0);
 
   return (
     <Screen>
       <PageHeader overline={clubName} title="Squad" subtitle={`${playerCount} players · rating shown for each player's main position`} />
+      <Button label="Transfer market" icon="transfers" variant="secondary" onPress={onOpenMarket} />
       <View style={styles.columns}>
         {groups.map((group) => (
           <Card key={group.group} title={`${group.label} · ${group.players.length}`} style={styles.card}>

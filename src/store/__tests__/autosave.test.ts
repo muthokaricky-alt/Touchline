@@ -3,6 +3,8 @@ import { SAVE_KEY, SAVE_VERSION } from '@/persistence/save';
 import { useSaveStatus } from '@/persistence/save-status';
 import { platformStorage } from '@/persistence/storage';
 
+import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
+
 import { createInitialGameState, flushSave, useGameStore } from '../game-store';
 
 /*
@@ -44,13 +46,40 @@ beforeEach(() => {
 });
 
 describe('autosave', () => {
-  it('saves only the career, not the database or the match being replayed', () => {
+  it('saves the career and world changes, not players/attributes or the match being replayed', () => {
     state().playNextFixture();
     flushSave();
     const { state: s, version } = saved();
     expect(version).toBe(SAVE_VERSION);
-    expect(Object.keys(s).sort()).toEqual(['currentDate', 'lineup', 'season', 'tactics', 'userClubId', 'worldSeed']);
+    expect(Object.keys(s).sort()).toEqual([
+      'clubFinances', 'contracts', 'currentDate', 'lineup', 'season', 'tactics', 'transferHistory', 'userClubId', 'worldSeed',
+    ]);
     expect(useSaveStatus.getState().lastSavedAt).not.toBeNull();
+  });
+
+  it('keeps a signing after a reload', async () => {
+    const reserve = state().database.contracts.find((c) => c.clubId === 'club_westhaven_albion' && c.squadNumber === 31)!.playerId;
+    const ctx = playerContext(state().database, reserve, state().currentDate)!;
+    const terms = personalTerms(ctx, state().database.clubs.find((c) => c.id === state().userClubId)!);
+    if (!terms.willing) throw new Error('test player should be willing');
+    state().signPlayer({ playerId: reserve, fee: askingPrice(ctx), weeklyWage: terms.weeklyWage, years: terms.maxYears });
+    flushSave();
+
+    await restartWith(memory.getItem(SAVE_KEY) as string);
+    expect(state().database.contracts.find((c) => c.playerId === reserve)!.clubId).toBe(state().userClubId);
+    expect(state().transferHistory[0].playerId).toBe(reserve);
+  });
+
+  it('upgrades a version 1 save from before transfers existed', async () => {
+    state().playNextFixture();
+    flushSave();
+    const current = saved();
+    const { contracts: _c, clubFinances: _f, transferHistory: _t, ...career } = current.state;
+    await restartWith(JSON.stringify({ state: career, version: 1 }));
+    expect(useSaveStatus.getState().notice).toBeNull();
+    expect(useSaveStatus.getState().loadedFromSave).toBe(true);
+    expect(state().season.fixtures.some((f) => f.result)).toBe(true);
+    expect(state().transferHistory).toEqual([]);
   });
 
   it('round-trips: a played matchday and changed tactics survive a reload', async () => {
@@ -80,7 +109,7 @@ describe('autosave', () => {
 
   it('rejects a save from another format version', async () => {
     await restartWith(JSON.stringify({ state: { anything: true }, version: SAVE_VERSION + 99 }));
-    expect(useSaveStatus.getState().notice).toMatch(/older version/);
+    expect(useSaveStatus.getState().notice).toMatch(/unsupported version/);
   });
 
   it('survives unreadable JSON', async () => {

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Autosave step complete (after Milestone 6); next is Milestone 7 (Transfers)._
+_Last updated: 15 Nov 2026 — Milestone 7 step 7a (buying, free agents, save v2) complete; 7b next._
 
 ---
 
@@ -34,6 +34,8 @@ src/
     player/[id].tsx      player profile (exports generateStaticParams for web)
     select-player.tsx    modal picker: ?target=<slotId>|bench
     match.tsx            match day: league fixture or friendly → live replay → report
+    transfers.tsx        transfer market search
+    negotiate.tsx        ?player=<id>: bid → terms → signed (snapshot of the target)
   components/
     ui/                  design-system primitives (AppText, Card, Button, ListRow,
                          RatingBadge, PositionBadge, ChoiceChips, PageHeader…)
@@ -47,6 +49,8 @@ src/
     match/               FixtureSetupScreen (league), MatchSetupScreen (friendly),
                          MatchCentreScreen, timeline.ts (pure), useReplay
     fixtures/            FixturesScreen (fixtures / table / stats), season-view.ts (pure)
+    transfers/           TransfersScreen, NegotiationScreen, TransferCard
+    club/                ClubScreen (facts, transfers, career save)
   game/                GAME SYSTEMS: pure TS, no React imports
     positions.ts         position groups and names
     ratings.ts           positionRating(): weighted 1–20 suitability per position
@@ -59,6 +63,9 @@ src/
     season/              Season/Fixture schemas, fixture generator, table, cup
                          (draws, rounds, ties), running player stats, season flow
                          (date-ordered play, promotion/relegation, roll over)
+    transfers/           valuation, windows, negotiation (AI club + player
+                         responses), complete (the only world-changing step),
+                         market search
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
     simulate.ts          minute loop: possession → fouls → chance/shot → fatigue → subs
     team-state.ts        on-pitch players, energy, unit strengths, replacements
@@ -382,6 +389,48 @@ call pure functions from `src/game` and save the result.
   two-step "Start new game"); dashboard notice banner; new `danger`
   Button variant for destructive actions.
 
+### Transfers (Milestone 7)
+
+Decisions (user): split 7a/7b; bid + counter then terms; AI clubs react only
+(no AI-to-AI market); foreign leagues later.
+
+- **The world is "generated base + saved changes".** Transfers only change
+  contracts and club finances (a player's club *is* his contract). Players
+  and attributes are still rebuilt from the seed; `getBaseDatabase()` builds
+  it once; `applyWorldChanges` overlays saved contracts/finances on load.
+- **Save v2** adds `contracts`, `clubFinances`, `transferHistory`.
+  `migrateSave` upgrades v1 (pre-transfer saves = the generated world's
+  contracts). Load runs the data layer's `checkIntegrity` on the rebuilt
+  world. Unknown versions → "unsupported version" notice.
+- **60 free agents** generated after all club squads from the same RNG (club
+  squads unchanged; `generatePlayer` now takes a country, not a club).
+- **Valuation:** `100K · e^(0.57·(ability−6))` × age factor (peak 22–28,
+  then falling every year) × contract factor (≥3 yrs 1.0 … <1 yr 0.45),
+  rounded to 2 significant figures. Calibrated: ability 16 at 25 ≈ €30M,
+  ability 10 at 31 ≈ €0.5M. Tests check it's monotonic (caught a flat tail
+  where 34- and 35-year-olds cost the same).
+- **Wages** use the generator's formula (45·ability² + 250·club reputation),
+  +10% for a move. Older players: max 2 years (30+), 1 year (33+).
+- **AI responses are deterministic rules** (learnable, testable): asking
+  price = value × 1.15, or × 1.5 for a first-team regular (in the AI's best
+  XI); bid ≥ asking → accept, ≥ 70% → counter at asking, else reject.
+  Players refuse a step down of > 4 reputation or a club whose reputation
+  is > 5 below their ability; accept wages ≥ 95% of their demand.
+- **Windows:** summer 1 Jul–31 Aug, winter January; free agents any time.
+  `startNextSeason` now sets the date to 1 July (window open).
+- **`completeTransfer` is the only world-changing step** and re-checks
+  everything (window, budgets incl. wage bill, squad max 30, 1–5 years).
+  Seller gets the fee (half back into its transfer budget) and signs the
+  best same-position free agent if its squad drops below 22. New db object
+  → AI setup cache refreshes automatically.
+- **The store never trusts the UI:** `signPlayer` re-runs the club's and
+  the player's decisions, then `completeTransfer`; any failure is a
+  RangeError message shown in the negotiation screen.
+- **Negotiation route snapshots its target** when talks open: after a
+  successful signing the player is "ours", the live target becomes null and
+  the success screen used to vanish ("No one to sign"), a bug only the
+  browser walkthrough could catch.
+
 ## 3. Commands
 
 ```
@@ -523,6 +572,22 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - **Not yet verified on a device:** the native SQLite path and splash
   screen gate only run on Android/iOS (Expo Go).
 
+### Milestone 7 — Transfers (in progress)
+**7a — Buying, free agents, save v2 ✅**
+- `src/game/transfers` (valuation, window, negotiation, complete, market);
+  60 free agents; save v2 + migration; store `signPlayer`,
+  `transferHistory`; Transfers screen, negotiation screen, transfer card on
+  profiles, Club tab transfers + history, market button on Squad.
+- Tests: 544 total (42 new) incl. a signing surviving a reload and a v1
+  save upgrading.
+- Verified: `tsc` clean, tests pass, Android + web export; headless Chrome
+  at 412px and 1280px: bid rejected → raised → accepted → terms → signed;
+  squad 22→23→24 (free agent), both surviving reloads; history on Club
+  tab; after 5 matches (5 Sep) the window is closed and club players can't
+  be bid for. Zero console errors.
+
+**7b — Next:** selling (AI offers), contract renewals/expiry, inbox (section 5).
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -544,23 +609,19 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 7: Transfers
+## 5. Next steps — Milestone 7 step 7b
 
-Agree the plan with the user before coding. Likely shape and open questions:
-1. **The database becomes mutable** (players change clubs, contracts
-   change). It must then be **saved** (today it's rebuilt from its seed):
-   bump `SAVE_VERSION`, add a migration from v1 (rebuild db from seed), and
-   re-measure save size (880 players × attributes ≈ 0.5–1 MB on top of the
-   season; consider saving only *changes* vs the generated world). The AI
-   setup cache is keyed by the db object, so a new db object after a
-   transfer naturally invalidates it.
-2. **Other countries' leagues as data** (decided in 6b): when and how many,
-   simulated or "dormant" until relevant.
-3. Player **valuation** (age, ability, potential?, contract length,
-   reputation) as a pure, tested function.
-4. Transfer market: search/filter, bids, AI accept/reject/counter,
-   **transfer windows** (summer/winter dates in the calendar), budgets.
-5. Contracts & wages: offers, renewals, expiry → free agents; wage budget
-   enforcement. AI clubs also buy/sell (keep it simple first).
-6. Later ideas: `npm run test:calibration` if the suite gets slow (~30 s);
-   user substitutions during a match; injuries (M8); save slots (M10).
+Agreed scope (plan details with the user first):
+1. **Selling:** list a player; at each matchday (in a window) AI clubs that
+   need the position and can afford him may bid; accept/reject. Also allow
+   releasing a player (pay up the contract?) — decide.
+2. **Contracts:** renew the user's players (demands from the same wage
+   formula, age-based lengths); at season end expired contracts end →
+   free agents; AI clubs auto-renew most of their own.
+3. **Real inbox** replacing the dashboard preview: bid responses, offers
+   received, completed deals, contract warnings. Saved (bump SAVE_VERSION
+   to 3 with a migration).
+4. Squad changes and the lineup: a sold player must leave the user's
+   lineup (re-run validation / auto-fill).
+5. Later ideas: `npm run test:calibration` (suite ~32 s); foreign leagues
+   (M9); user substitutions during a match; injuries (M8); save slots (M10).

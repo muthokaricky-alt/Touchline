@@ -25,15 +25,29 @@ export type SaveView = {
   notice: string | null;
 };
 
+export type ClubTransfersView = {
+  /** e.g. "Summer window open · closes 31 Aug" */
+  windowLabel: string;
+  windowOpen: boolean;
+  wageBill: number;
+  wageBudget: number;
+  squadSize: number;
+  maxSquad: number;
+  /** The user's own deals, newest first. */
+  history: readonly { key: string; title: string; detail: string; incoming: boolean }[];
+};
+
 type ClubScreenProps = {
   club: ClubInfoView;
+  transfers: ClubTransfersView;
   save: SaveView;
+  onOpenMarket: () => void;
   onStartNewGame: () => void;
   onDismissNotice: () => void;
 };
 
-/** Club facts and the career save. Transfers, staff and finances detail arrive in M7–M9. */
-export function ClubScreen({ club, save, onStartNewGame, onDismissNotice }: ClubScreenProps) {
+/** Club facts, transfers and the career save. Staff and detailed finances arrive later. */
+export function ClubScreen({ club, transfers, save, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
   return (
     <Screen>
       <PageHeader overline={club.leagueName} title={club.name} subtitle={`${club.city} · founded ${club.founded}`} />
@@ -49,8 +63,38 @@ export function ClubScreen({ club, save, onStartNewGame, onDismissNotice }: Club
               <StatTile label="Transfer budget" value={formatCompactCurrency(club.transferBudget)} />
             </View>
             <AppText variant="caption" color="textSecondary">
-              Wage budget {formatWeeklyWage(club.weeklyWageBudget)}. Transfers and contracts arrive in Milestone 7.
+              Wage bill {formatWeeklyWage(transfers.wageBill)} of {formatWeeklyWage(transfers.wageBudget)} · squad {transfers.squadSize}/
+              {transfers.maxSquad}
             </AppText>
+          </Card>
+
+          <Card title="Transfers" icon="transfers" highlighted={transfers.windowOpen}>
+            <View style={styles.notice}>
+              <Icon name={transfers.windowOpen ? 'transfers' : 'warning'} size={16} color={transfers.windowOpen ? 'accent' : 'warning'} />
+              <AppText style={styles.flex}>{transfers.windowLabel}</AppText>
+            </View>
+            <Button label="Transfer market" icon="transfers" onPress={onOpenMarket} />
+            {transfers.history.length === 0 ? (
+              <AppText variant="caption" color="textSecondary">
+                No deals yet.
+              </AppText>
+            ) : (
+              <View>
+                {transfers.history.map((h) => (
+                  <View key={h.key} style={styles.history} accessible accessibilityLabel={`${h.incoming ? 'Signed' : 'Sold'}: ${h.title}, ${h.detail}`}>
+                    <Icon name={h.incoming ? 'add' : 'remove'} size={16} color={h.incoming ? 'accent' : 'danger'} />
+                    <View style={styles.flex}>
+                      <AppText variant="bodyStrong" numberOfLines={1}>
+                        {h.title}
+                      </AppText>
+                      <AppText variant="caption" color="textSecondary">
+                        {h.detail}
+                      </AppText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </Card>
         </View>
         <View style={styles.column}>
@@ -61,7 +105,7 @@ export function ClubScreen({ club, save, onStartNewGame, onDismissNotice }: Club
   );
 }
 
-function SaveCard({ save, onStartNewGame, onDismissNotice }: Omit<ClubScreenProps, 'club'>) {
+function SaveCard({ save, onStartNewGame, onDismissNotice }: Pick<ClubScreenProps, 'save' | 'onStartNewGame' | 'onDismissNotice'>) {
   // Two-step confirmation in the UI: React Native's Alert does nothing on web.
   const [confirming, setConfirming] = useState(false);
 
@@ -116,6 +160,7 @@ const styles = StyleSheet.create({
   column: { flexGrow: 1, flexBasis: 340, gap: spacing.lg, minWidth: 0 },
   tiles: { flexDirection: 'row', gap: spacing.sm },
   notice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  history: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
   confirm: { gap: spacing.sm },
   row: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },

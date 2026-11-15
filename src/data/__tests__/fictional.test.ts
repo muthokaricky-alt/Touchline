@@ -1,6 +1,6 @@
 import { ageOn } from '@/utils/date';
 
-import { buildFictionalDatabase, FICTIONAL_CLUBS, FICTIONAL_REFERENCE_DATE } from '../fictional';
+import { buildFictionalDatabase, FICTIONAL_CLUBS, FICTIONAL_REFERENCE_DATE, FREE_AGENT_COUNT } from '../fictional';
 import { SQUAD_TEMPLATE } from '../fictional/generate-squads';
 import { checkIntegrity } from '../integrity';
 import { GameDatabaseSchema, isCup, isLeague, type GameDatabase, type PlayerAttributes } from '../schemas';
@@ -38,13 +38,22 @@ describe('fictional database', () => {
 
   it('has 40 clubs of 22 players in two 20-club divisions and a cup', () => {
     expect(db.clubs).toHaveLength(40);
-    expect(db.players).toHaveLength(40 * 22);
+    expect(db.players).toHaveLength(40 * 22 + FREE_AGENT_COUNT);
     expect(db.attributes).toHaveLength(db.players.length);
-    expect(db.contracts).toHaveLength(db.players.length);
+    expect(db.contracts).toHaveLength(40 * 22);
     const leagues = db.competitions.filter(isLeague);
     expect(leagues.map((l) => [l.tier, l.clubIds.length])).toEqual([[1, 20], [2, 20]]);
     expect(leagues[0].clubIds.slice(0, 8)).toEqual(FICTIONAL_CLUBS.map((c) => c.id));
     expect(db.competitions.filter(isCup)).toHaveLength(1);
+  });
+
+  it('has a pool of free agents (no contract) covering every position line', () => {
+    const contracted = new Set(db.contracts.map((c) => c.playerId));
+    const free = db.players.filter((p) => !contracted.has(p.id));
+    expect(free).toHaveLength(FREE_AGENT_COUNT);
+    for (const position of ['GK', 'CB', 'CM', 'ST'] as const) {
+      expect(free.some((p) => p.primaryPosition === position)).toBe(true);
+    }
   });
 
   it('gives every club a unique id, name and short name', () => {

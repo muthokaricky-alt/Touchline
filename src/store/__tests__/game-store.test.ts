@@ -1,6 +1,7 @@
 import { starterIds, validateLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES } from '@/game/tactics/presets';
+import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 
 import { createInitialGameState, DEFAULT_USER_CLUB_ID, flushSave, useGameStore } from '../game-store';
 
@@ -90,6 +91,32 @@ describe('game store', () => {
     // A friendly afterwards is not a competitive match.
     state().playFriendly('club_kestrel_bay', 'home', 1);
     expect(state().lastMatchFixtureId).toBeNull();
+  });
+
+  it('signs a player only on terms the club and player accept', () => {
+    const db = state().database;
+    const target = db.contracts.find((c) => c.clubId === 'club_westhaven_albion' && c.squadNumber === 31)!.playerId;
+    const ctx = playerContext(db, target, state().currentDate)!;
+    const terms = personalTerms(ctx, db.clubs.find((c) => c.id === DEFAULT_USER_CLUB_ID)!);
+    if (!terms.willing) throw new Error('test player should be willing');
+    const fair = { playerId: target, fee: askingPrice(ctx), weeklyWage: terms.weeklyWage, years: 1 };
+
+    expect(() => state().signPlayer({ ...fair, fee: Math.round(fair.fee * 0.5) })).toThrow(/reject/);
+    expect(() => state().signPlayer({ ...fair, weeklyWage: Math.round(fair.weeklyWage * 0.5) })).toThrow(/too low/);
+    expect(state().database).toBe(db); // nothing changed
+
+    state().signPlayer(fair);
+    expect(state().database.contracts.find((c) => c.playerId === target)!.clubId).toBe(DEFAULT_USER_CLUB_ID);
+    expect(state().transferHistory.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('moves the calendar to 1 July for the next season (summer window open)', () => {
+    while (state().season.fixtures.some((f) => !f.result && (f.homeId === DEFAULT_USER_CLUB_ID || f.awayId === DEFAULT_USER_CLUB_ID))) {
+      state().playNextFixture();
+    }
+    state().finishSeason();
+    state().startNextSeason();
+    expect(state().currentDate).toBe('2027-07-01');
   });
 
   it('guards season transitions', () => {

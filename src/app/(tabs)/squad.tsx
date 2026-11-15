@@ -14,6 +14,7 @@ export default function SquadRoute() {
       clubName={club?.name ?? ''}
       groups={groups}
       onPlayerPress={(id) => router.push({ pathname: '/player/[id]', params: { id } })}
+      onOpenMarket={() => router.push('/transfers')}
     />
   );
 }

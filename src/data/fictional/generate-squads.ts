@@ -11,6 +11,7 @@ import {
   type Contract,
   type Player,
   type PlayerAttributes,
+  type NationCode,
   type Position,
   type PreferredFoot,
 } from '../schemas';
@@ -164,7 +165,7 @@ export function generateSquad({ rng, club, referenceDate, firstPlayerNumber }: S
     const youthPenalty = age < 20 ? 2 : 0;
     const level = clamp(clubLevel + rng.int(-3, 2) - youthPenalty, 3, 18);
 
-    squad.players.push(generatePlayer(rng, playerId, slot.position, age, club, referenceDate, usedLastNames));
+    squad.players.push(generatePlayer(rng, playerId, slot.position, age, club.country, referenceDate, usedLastNames));
     squad.attributes.push(generateAttributes(rng, playerId, slot.position, level));
     squad.contracts.push(generateContract(rng, `con_${serial}`, playerId, club, slot.squadNumber, level, referenceDate));
   });
@@ -172,16 +173,51 @@ export function generateSquad({ rng, club, referenceDate, firstPlayerNumber }: S
   return squad;
 }
 
+/**
+ * Unattached players (no contract): the transfer market's free agents, and
+ * the pool AI clubs sign replacements from. Mostly modest or veteran
+ * players, as real free agents tend to be.
+ */
+export function generateFreeAgents({
+  rng,
+  count,
+  homeCountry,
+  referenceDate,
+  firstPlayerNumber,
+}: {
+  rng: Rng;
+  count: number;
+  homeCountry: NationCode;
+  referenceDate: string;
+  firstPlayerNumber: number;
+}): { players: Player[]; attributes: PlayerAttributes[] } {
+  const players: Player[] = [];
+  const attributes: PlayerAttributes[] = [];
+  const usedLastNames = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    // Cycle through the template so every position is represented.
+    const { position } = SQUAD_TEMPLATE[i % SQUAD_TEMPLATE.length];
+    const id = `plr_${String(firstPlayerNumber + i).padStart(4, '0')}`;
+    const age = rng.int(19, 34);
+    const level = clamp(rng.int(5, 12) - (age < 21 ? 1 : 0), 3, 18);
+    players.push(generatePlayer(rng, id, position, age, homeCountry, referenceDate, usedLastNames));
+    attributes.push(generateAttributes(rng, id, position, level));
+    // Surnames only need to be unique within a squad; a pool this size would exhaust them.
+    if (usedLastNames.size > 15) usedLastNames.clear();
+  }
+  return { players, attributes };
+}
+
 function generatePlayer(
   rng: Rng,
   id: string,
   position: Position,
   age: number,
-  club: Club,
+  homeCountry: NationCode,
   referenceDate: string,
   usedLastNames: Set<string>,
 ): Player {
-  const nationality = rng.chance(0.7) ? club.country : rng.pick(FOREIGN_NATIONS);
+  const nationality = rng.chance(0.7) ? homeCountry : rng.pick(FOREIGN_NATIONS);
   const names = NAME_POOLS[nationality] ?? NAME_POOLS.ENG;
   const unused = names.lastNames.filter((name) => !usedLastNames.has(name));
   // Fall back to the full pool only if this nationality's surnames are exhausted.
