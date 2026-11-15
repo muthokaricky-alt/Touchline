@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { ClubIdSchema, IsoDateSchema, PlayerIdSchema, type ClubId, type Contract, type GameDatabase, type PlayerId } from '@/data/schemas';
+import {
+  ClubIdSchema,
+  IsoDateSchema,
+  PlayerIdSchema,
+  type ClubId,
+  type Contract,
+  type GameDatabase,
+  type PlayerId,
+  type Position,
+} from '@/data/schemas';
 import { parseIsoDate } from '@/utils/date';
 import { formatDate } from '@/utils/format';
 
@@ -39,7 +48,15 @@ export type TransferDeal = {
   weeklyWage: number;
   years: number;
   date: string;
+  /**
+   * Let a selling AI club sign a free-agent replacement (default true).
+   * False when the USER sells: the game never signs players on your behalf.
+   */
+  replaceSeller?: boolean;
 };
+
+/** The user can't sell or release below this many players. */
+export const MIN_USER_SQUAD = 16;
 
 export function wageBill(db: GameDatabase, clubId: ClubId): number {
   return db.contracts.filter((c) => c.clubId === clubId).reduce((sum, c) => sum + c.weeklyWage, 0);
@@ -132,8 +149,9 @@ export function completeTransfer(db: GameDatabase, deal: TransferDeal): Transfer
     { date: deal.date, playerId: deal.playerId, fromClubId: sellerId, toClubId: deal.buyerId, fee: deal.fee, weeklyWage: deal.weeklyWage, years: deal.years },
   ];
 
-  if (sellerId && squadSize(next, sellerId) < MIN_AI_SQUAD) {
-    const replacement = signReplacement(next, sellerId, deal.playerId, deal.date);
+  if (sellerId && deal.replaceSeller !== false && squadSize(next, sellerId) < MIN_AI_SQUAD) {
+    const position = db.players.find((p) => p.id === deal.playerId)!.primaryPosition;
+    const replacement = signReplacement(next, sellerId, position, deal.date);
     if (replacement) {
       next = replacement.db;
       records.push(replacement.record);
@@ -142,14 +160,57 @@ export function completeTransfer(db: GameDatabase, deal: TransferDeal): Transfer
   return { db: next, records };
 }
 
+// --- Releases and renewals ----------------------------------------------------
+
+/** Compensation to release a player: half the wages left on his contract. */
+export function releaseCost(contract: Pick<Contract, 'weeklyWage' | 'endDate'>, date: string): number {
+  const end = parseIsoDate(contract.endDate);
+  const now = parseIsoDate(date);
+  const weeksLeft = Math.max(0, ((end.year - now.year) * 12 + (end.month - now.month)) * (52 / 12) + (end.day - now.day) / 7);
+  return Math.round((0.5 * contract.weeklyWage * weeksLeft) / 1000) * 1000;
+}
+
+/** Terminates a contract: the club pays `releaseCost`, the player becomes a free agent. */
+export function releasePlayer(db: GameDatabase, playerId: PlayerId, date: string): { db: GameDatabase; cost: number } {
+  const contract = db.contracts.find((c) => c.playerId === playerId);
+  if (!contract) throw new RangeError('He has no contract to release.');
+  if (squadSize(db, contract.clubId) <= MIN_USER_SQUAD) throw new RangeError(`You need at least ${MIN_USER_SQUAD} players.`);
+  const cost = releaseCost(contract, date);
+  const next = { ...db, contracts: db.contracts.filter((c) => c.playerId !== playerId) };
+  return { db: withFinances(next, contract.clubId, { balance: -cost, transferBudget: 0 }), cost };
+}
+
+/** Replaces a player's contract terms at his current club (renewal). Squad number is kept. */
+/** Contract lengths (up to `maxYears`) that would end after the current contract: a renewal never shortens a deal. */
+export function renewalYears(contract: Contract, date: string, maxYears: number): number[] {
+  return Array.from({ length: maxYears }, (_, i) => i + 1).filter((years) => contractEnd(date, years) > contract.endDate);
+}
+
+export function renewContract(db: GameDatabase, playerId: PlayerId, weeklyWage: number, years: number, date: string): GameDatabase {
+  const contract = db.contracts.find((c) => c.playerId === playerId);
+  if (!contract) throw new RangeError('He has no contract to renew.');
+  if (!Number.isInteger(years) || years < 1 || years > 5) throw new RangeError('Contracts run for 1–5 years.');
+  if (!renewalYears(contract, date, 5).includes(years)) {
+    throw new RangeError(`A new contract must run beyond his current one (until ${formatDate(contract.endDate)}).`);
+  }
+  const club = db.clubs.find((c) => c.id === contract.clubId);
+  const otherWages = wageBill(db, contract.clubId) - contract.weeklyWage;
+  if (club && otherWages + weeklyWage > club.finances.weeklyWageBudget) throw new RangeError('His new wage would take you over your wage budget.');
+  return {
+    ...db,
+    contracts: db.contracts.map((c) =>
+      c.playerId === playerId ? { ...c, weeklyWage, startDate: date, endDate: contractEnd(date, years) } : c,
+    ),
+  };
+}
+
 /**
- * The selling club signs the best free agent who plays the same position
- * (or the same line) as the player who left, on a 2-year deal.
+ * An AI club signs the best free agent for `position` (or, failing that,
+ * the same line), on a 2-year deal.
  */
-function signReplacement(db: GameDatabase, clubId: ClubId, departedId: PlayerId, date: string): { db: GameDatabase; record: TransferRecord } | null {
-  const departed = db.players.find((p) => p.id === departedId);
+export function signReplacement(db: GameDatabase, clubId: ClubId, position: Position, date: string): { db: GameDatabase; record: TransferRecord } | null {
   const club = db.clubs.find((c) => c.id === clubId);
-  if (!departed || !club) return null;
+  if (!club) return null;
   const contracted = new Set(db.contracts.map((c) => c.playerId));
   const free = db.players.filter((p) => !contracted.has(p.id));
   const abilityOf = (id: PlayerId) => {
@@ -159,8 +220,8 @@ function signReplacement(db: GameDatabase, clubId: ClubId, departedId: PlayerId,
   const best = (candidates: typeof free) =>
     [...candidates].sort((a, b) => abilityOf(b.id) - abilityOf(a.id) || (a.id < b.id ? -1 : 1))[0];
   const pick =
-    best(free.filter((p) => p.primaryPosition === departed.primaryPosition)) ??
-    best(free.filter((p) => POSITION_GROUP[p.primaryPosition] === POSITION_GROUP[departed.primaryPosition]));
+    best(free.filter((p) => p.primaryPosition === position)) ??
+    best(free.filter((p) => POSITION_GROUP[p.primaryPosition] === POSITION_GROUP[position]));
   if (!pick) return null;
 
   const weeklyWage = wageDemand({ ability: abilityOf(pick.id), clubReputation: club.reputation, currentWage: null });

@@ -57,4 +57,5 @@ export const previewDashboard: DashboardSummary = {
     { id: 'm2', from: 'Head of Medical', subject: 'Injury update: two players out', date: '13 Nov', unread: true },
     { id: 'm3', from: 'Chief Scout', subject: 'Scouting report ready', date: '11 Nov', unread: false },
   ],
+  unreadMessages: 2,
 };

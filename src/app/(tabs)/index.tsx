@@ -16,12 +16,13 @@ export default function HomeRoute() {
   const clubId = useGameStore((s) => s.userClubId);
   const season = useGameStore((s) => s.season);
   const currentDate = useGameStore((s) => s.currentDate);
+  const inbox = useGameStore((s) => s.inbox);
   const startNextSeason = useGameStore((s) => s.startNextSeason);
   const finishSeason = useGameStore((s) => s.finishSeason);
   const saveNotice = useSaveStatus((s) => s.notice);
   const summary = useMemo(
-    () => buildDashboardSummary(database, clubId, season, currentDate, previewDashboard),
-    [database, clubId, season, currentDate],
+    () => buildDashboardSummary(database, clubId, season, currentDate, inbox, previewDashboard),
+    [database, clubId, season, currentDate, inbox],
   );
   return (
     <DashboardScreen

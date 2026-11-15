@@ -52,7 +52,8 @@ describe('autosave', () => {
     const { state: s, version } = saved();
     expect(version).toBe(SAVE_VERSION);
     expect(Object.keys(s).sort()).toEqual([
-      'clubFinances', 'contracts', 'currentDate', 'lineup', 'season', 'tactics', 'transferHistory', 'userClubId', 'worldSeed',
+      'clubFinances', 'contracts', 'currentDate', 'inbox', 'lineup', 'offers', 'season', 'tactics', 'transferHistory',
+      'transferListed', 'userClubId', 'worldSeed',
     ]);
     expect(useSaveStatus.getState().lastSavedAt).not.toBeNull();
   });
@@ -68,13 +69,28 @@ describe('autosave', () => {
     await restartWith(memory.getItem(SAVE_KEY) as string);
     expect(state().database.contracts.find((c) => c.playerId === reserve)!.clubId).toBe(state().userClubId);
     expect(state().transferHistory[0].playerId).toBe(reserve);
+    expect(state().inbox[0].title).toMatch(/signs/);
+  });
+
+  it('keeps the transfer list, a release and the inbox after a reload', async () => {
+    const own = state().database.contracts.filter((c) => c.clubId === state().userClubId).map((c) => c.playerId);
+    const starter = state().lineup.starters.LST!;
+    state().toggleTransferListed(own.find((id) => id !== starter)!);
+    state().releasePlayer(starter);
+    flushSave();
+    const before = { listed: state().transferListed, inbox: state().inbox, lineup: state().lineup, contracts: state().database.contracts };
+
+    await restartWith(memory.getItem(SAVE_KEY) as string);
+    expect(useSaveStatus.getState().notice).toBeNull();
+    expect({ listed: state().transferListed, inbox: state().inbox, lineup: state().lineup, contracts: state().database.contracts }).toEqual(before);
+    expect(state().lineup.starters.LST).not.toBe(starter);
   });
 
   it('upgrades a version 1 save from before transfers existed', async () => {
     state().playNextFixture();
     flushSave();
     const current = saved();
-    const { contracts: _c, clubFinances: _f, transferHistory: _t, ...career } = current.state;
+    const { contracts: _c, clubFinances: _f, transferHistory: _t, transferListed: _l, offers: _o, inbox: _i, ...career } = current.state;
     await restartWith(JSON.stringify({ state: career, version: 1 }));
     expect(useSaveStatus.getState().notice).toBeNull();
     expect(useSaveStatus.getState().loadedFromSave).toBe(true);

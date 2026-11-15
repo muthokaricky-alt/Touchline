@@ -29,7 +29,20 @@ import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES, type PlayingStyleId } from '@/game/tactics/presets';
 import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from '@/game/tactics/tactics';
 import { createDebouncedStorage } from '@/persistence/debounced-storage';
+import { addMessages, markAllRead, markRead, type InboxMessage } from '@/game/inbox/inbox';
+import {
+  acceptOffer,
+  afterCalendarMove,
+  rejectOffer,
+  releaseFromSquad,
+  renewPlayer,
+  seasonRollover,
+  toggleListed,
+  type TransferCareer,
+} from '@/game/transfers/career';
 import { completeTransfer, type TransferRecord } from '@/game/transfers/complete';
+import type { TransferOffer } from '@/game/transfers/offers';
+import { formatCompactCurrency } from '@/utils/format';
 import { personalTerms, playerContext, respondToBid, respondToTerms } from '@/game/transfers/negotiation';
 import { checkSave, migrateSave, SAVE_KEY, SAVE_VERSION, worldChanges, type GameSave } from '@/persistence/save';
 import { saveStatus } from '@/persistence/save-status';
@@ -72,6 +85,11 @@ export type GameState = {
   lastMatchFixtureId: string | null;
   /** Every completed deal this career (including AI replacement signings). */
   transferHistory: TransferRecord[];
+  /** The user's players available for sale. */
+  transferListed: PlayerId[];
+  /** AI bids for the user's players, waiting for an answer. */
+  offers: TransferOffer[];
+  inbox: InboxMessage[];
 };
 
 /** Terms agreed in the negotiation screen; re-checked by `signPlayer`. */
@@ -103,7 +121,43 @@ export type GameActions = {
    * Throws a RangeError explaining why if the deal isn't possible.
    */
   signPlayer: (offer: SigningOffer) => void;
+  toggleTransferListed: (playerId: PlayerId) => void;
+  acceptOffer: (offerId: string) => void;
+  rejectOffer: (offerId: string) => void;
+  /** Terminates a contract, paying half the remaining wages. */
+  releasePlayer: (playerId: PlayerId) => void;
+  /** New terms for one of the user's players (re-checked against his demands). */
+  renewContract: (offer: { playerId: PlayerId; weeklyWage: number; years: number }) => void;
+  markMessageRead: (id: string) => void;
+  markAllMessagesRead: () => void;
 };
+
+/** The transfer slice of the state, as the pure `career` functions expect it. */
+function transferCareer(s: GameState): TransferCareer {
+  return {
+    db: s.database,
+    userClubId: s.userClubId,
+    date: s.currentDate,
+    lineup: s.lineup,
+    transferListed: s.transferListed,
+    offers: s.offers,
+    inbox: s.inbox,
+    transferHistory: s.transferHistory,
+  };
+}
+
+/** …and back into state fields. */
+function fromCareer(c: TransferCareer): Partial<GameState> {
+  return {
+    database: c.db,
+    currentDate: c.date,
+    lineup: c.lineup,
+    transferListed: c.transferListed,
+    offers: c.offers,
+    inbox: c.inbox,
+    transferHistory: c.transferHistory,
+  };
+}
 
 /**
  * The generated world, built once. The live `database` in state is this plus
@@ -134,6 +188,9 @@ function toSave(state: GameState): GameSave {
     season: state.season,
     ...worldChanges(state.database),
     transferHistory: state.transferHistory,
+    transferListed: state.transferListed,
+    offers: state.offers,
+    inbox: state.inbox,
   };
 }
 
@@ -150,6 +207,9 @@ export function createInitialGameState(database: GameDatabase = getBaseDatabase(
     lastMatch: null,
     lastMatchFixtureId: null,
     transferHistory: [],
+    transferListed: [],
+    offers: [],
+    inbox: [],
   };
 }
 
@@ -177,24 +237,32 @@ export const useGameStore = create<Store>()(
         return result;
       },
       playNextFixture: () => {
-        const { database, userClubId, lineup, tactics, season } = get();
+        const state = get();
+        const { database, userClubId, lineup, tactics, season } = state;
         const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics });
-        set({ season: played.season, lastMatch: played.result, lastMatchFixtureId: played.fixture.id, currentDate: played.fixture.date });
+        // The calendar moved: offers expire / arrive, contract warnings.
+        const career = afterCalendarMove({ ...transferCareer(state), date: played.fixture.date }, state.currentDate, season.seed);
+        set({ ...fromCareer(career), season: played.season, lastMatch: played.result, lastMatchFixtureId: played.fixture.id });
         return played.result;
       },
       finishSeason: () => {
-        const { database, userClubId, season } = get();
-        if (nextFixtureFor(season, userClubId)) throw new RangeError('You still have fixtures to play');
-        const finished = playRemaining(database, season);
-        const lastDate = finished.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), get().currentDate);
-        set({ season: finished, currentDate: lastDate });
+        const state = get();
+        if (nextFixtureFor(state.season, state.userClubId)) throw new RangeError('You still have fixtures to play');
+        const finished = playRemaining(state.database, state.season);
+        const lastDate = finished.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), state.currentDate);
+        const career = afterCalendarMove({ ...transferCareer(state), date: lastDate }, state.currentDate, state.season.seed);
+        set({ ...fromCareer(career), season: finished });
       },
       startNextSeason: () => {
-        const { database, season } = get();
-        if (!isSeasonComplete(season)) throw new RangeError('The current season is still in progress');
-        const next = startNextSeason(database, season);
-        // The calendar moves to 1 July: pre-season, with the summer transfer window open.
-        set({ season: next, currentDate: `${next.startYear}-07-01`, lastMatch: null, lastMatchFixtureId: null });
+        const state = get();
+        if (!isSeasonComplete(state.season)) throw new RangeError('The current season is still in progress');
+        // 1 July: contracts expire first (promotion/relegation doesn't depend on them), then the new
+        // fixture list; the summer window is open, so offers may arrive straight away.
+        const seasonStart = `${state.season.startYear + 1}-07-01`;
+        const rolled = seasonRollover(transferCareer(state), seasonStart);
+        const next = startNextSeason(rolled.db, state.season);
+        const career = afterCalendarMove(rolled, state.currentDate, next.seed);
+        set({ ...fromCareer(career), season: next, lastMatch: null, lastMatchFixtureId: null });
       },
       clearMatch: () => set({ lastMatch: null, lastMatchFixtureId: null }),
       startNewGame: () => {
@@ -213,8 +281,28 @@ export const useGameStore = create<Store>()(
         const terms = respondToTerms(personalTerms(ctx, buyer), { weeklyWage, years });
         if (!terms.accepted) throw new RangeError(terms.reason);
         const outcome = completeTransfer(database, { playerId, buyerId: userClubId, fee, weeklyWage, years, date: currentDate });
-        set({ database: outcome.db, transferHistory: [...transferHistory, ...outcome.records] });
+        const name = `${ctx.player.firstName} ${ctx.player.lastName}`;
+        set({
+          database: outcome.db,
+          transferHistory: [...transferHistory, ...outcome.records],
+          inbox: addMessages(get().inbox, [
+            {
+              date: currentDate,
+              category: 'transfer',
+              from: 'Director of Football',
+              title: `${name} signs ${ctx.club ? `from ${ctx.club.name}` : 'on a free transfer'}`,
+              body: `${years}-year contract.${fee ? ` Fee ${formatCompactCurrency(fee)}.` : ''}`,
+            },
+          ]),
+        });
       },
+      toggleTransferListed: (playerId) => set((s) => fromCareer(toggleListed(transferCareer(s), playerId))),
+      acceptOffer: (offerId) => set((s) => fromCareer(acceptOffer(transferCareer(s), offerId))),
+      rejectOffer: (offerId) => set((s) => fromCareer(rejectOffer(transferCareer(s), offerId))),
+      releasePlayer: (playerId) => set((s) => fromCareer(releaseFromSquad(transferCareer(s), playerId))),
+      renewContract: (offer) => set((s) => fromCareer(renewPlayer(transferCareer(s), offer))),
+      markMessageRead: (id) => set((s) => ({ inbox: markRead(s.inbox, id) })),
+      markAllMessagesRead: () => set((s) => ({ inbox: markAllRead(s.inbox) })),
     }),
     {
       name: SAVE_KEY,

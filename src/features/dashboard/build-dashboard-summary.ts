@@ -1,4 +1,5 @@
 import type { ClubId, GameDatabase } from '@/data/schemas';
+import { unreadCount, type InboxMessage as GameMessage } from '@/game/inbox/inbox';
 import { cupWinner } from '@/game/season/cup';
 import type { Season } from '@/game/season/season';
 import {
@@ -11,23 +12,27 @@ import {
   roundLabel,
   totalMatchdays,
 } from '@/game/season/season-flow';
-import { formatMatchDate } from '@/utils/format';
+import { formatDate, formatMatchDate } from '@/utils/format';
 
 import type { DashboardSummary } from './dashboard.types';
+
+/** How many of the latest messages the dashboard shows. */
+export const INBOX_PREVIEW = 4;
 
 /**
  * Builds the dashboard from game state.
  *
  * Real: club, season, date, matchday, next fixture (league or cup), form,
- *       league table, squad size, finances, end-of-season summary.
+ *       league table, squad size, finances, end-of-season summary, inbox.
  * Preview (until later milestones): manager name, kick-off time, fitness,
- *       morale, injuries/suspensions, inbox.
+ *       morale, injuries/suspensions.
  */
 export function buildDashboardSummary(
   db: GameDatabase,
   clubId: ClubId,
   season: Season,
   currentDate: string,
+  inbox: readonly GameMessage[],
   preview: DashboardSummary,
 ): DashboardSummary {
   const club = db.clubs.find((c) => c.id === clubId);
@@ -97,6 +102,8 @@ export function buildDashboardSummary(
       points: r.points,
     })),
     squad: { ...preview.squad, playerCount: contracts.length },
+    inbox: inbox.slice(0, INBOX_PREVIEW).map((m) => ({ id: m.id, from: m.from, subject: m.title, date: formatDate(m.date), unread: !m.read })),
+    unreadMessages: unreadCount(inbox),
     finances: {
       balance: club.finances.balance,
       transferBudget: club.finances.transferBudget,

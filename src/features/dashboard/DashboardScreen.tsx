@@ -58,7 +58,7 @@ export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason, sa
   const secondary = (
     <>
       <SquadStatusCard squad={summary.squad} />
-      <InboxCard messages={summary.inbox} />
+      <InboxCard messages={summary.inbox} unread={summary.unreadMessages} onOpen={() => router.push('/inbox')} />
       <FinanceCard finances={summary.finances} />
     </>
   );

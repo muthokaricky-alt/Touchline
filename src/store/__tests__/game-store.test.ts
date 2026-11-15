@@ -110,13 +110,45 @@ describe('game store', () => {
     expect(state().transferHistory.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('moves the calendar to 1 July for the next season (summer window open)', () => {
+  it('runs a season with a listed player, then lets expired contracts go at the rollover', () => {
+    const listed = state().lineup.substitutes[0];
+    state().toggleTransferListed(listed);
+    const expiring = state().database.contracts.filter((c) => c.clubId === DEFAULT_USER_CLUB_ID && c.endDate < '2027-07-01').map((c) => c.playerId);
     while (state().season.fixtures.some((f) => !f.result && (f.homeId === DEFAULT_USER_CLUB_ID || f.awayId === DEFAULT_USER_CLUB_ID))) {
       state().playNextFixture();
     }
+    // Late May: no window is open, so every offer has lapsed.
+    expect(state().offers).toEqual([]);
+    expect(state().inbox.length).toBeGreaterThan(0);
     state().finishSeason();
     state().startNextSeason();
+
+    // The calendar moves to 1 July: next season, summer window open.
     expect(state().currentDate).toBe('2027-07-01');
+    const db = state().database;
+    expiring.forEach((id) => expect(db.contracts.find((c) => c.playerId === id)?.clubId).not.toBe(DEFAULT_USER_CLUB_ID));
+    expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
+  });
+
+  it('accepts an offer for a listed player and refills the lineup', () => {
+    const listed = state().lineup.starters.LST!;
+    state().toggleTransferListed(listed);
+    // Move through the summer until a club bids (offers are seeded, so this is deterministic).
+    while (state().offers.length === 0 && state().currentDate < '2026-09-01') state().playNextFixture();
+    const offer = state().offers[0];
+    expect(offer).toBeDefined(); // deterministic for the fictional world's seed
+    state().acceptOffer(offer.id);
+    expect(state().database.contracts.find((c) => c.playerId === offer.playerId)!.clubId).toBe(offer.fromClubId);
+    expect(starterIds(state().lineup)).not.toContain(offer.playerId);
+    expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
+    expect(() => state().acceptOffer(offer.id)).toThrow(/no longer available/);
+  });
+
+  it('marks inbox messages read', () => {
+    state().releasePlayer(state().lineup.substitutes[0]);
+    expect(state().inbox[0].read).toBe(false);
+    state().markMessageRead(state().inbox[0].id);
+    expect(state().inbox[0].read).toBe(true);
   });
 
   it('guards season transitions', () => {

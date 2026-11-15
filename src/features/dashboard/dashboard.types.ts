@@ -22,6 +22,8 @@ export type DashboardSummary = {
   squad: SquadStatusSummary;
   finances: FinanceSummary;
   inbox: readonly InboxMessage[];
+  /** Unread messages in the whole inbox (the card shows only the latest few). */
+  unreadMessages: number;
 };
 
 export type NextMatchSummary = {

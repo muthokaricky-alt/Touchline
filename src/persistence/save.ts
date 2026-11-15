@@ -2,8 +2,18 @@ import { z } from 'zod';
 
 import { buildFictionalDatabase } from '@/data/fictional';
 import { checkIntegrity } from '@/data/integrity';
-import { ClubIdSchema, ContractSchema, IsoDateSchema, MoneySchema, NonNegativeMoneySchema, type GameDatabase } from '@/data/schemas';
+import {
+  ClubIdSchema,
+  ContractSchema,
+  IsoDateSchema,
+  MoneySchema,
+  NonNegativeMoneySchema,
+  PlayerIdSchema,
+  type GameDatabase,
+} from '@/data/schemas';
+import { InboxMessageSchema } from '@/game/inbox/inbox';
 import { LineupSchema } from '@/game/lineup';
+import { TransferOfferSchema } from '@/game/transfers/offers';
 import { SeasonSchema } from '@/game/season/season';
 import { TacticsSchema } from '@/game/tactics/tactics';
 import { TransferRecordSchema } from '@/game/transfers/complete';
@@ -18,11 +28,12 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *
  * Versions:
  *   1  career only (club, date, lineup, tactics, season)
- *   2  + contracts, club finances, transfer history (Milestone 7)
+ *   2  + contracts, club finances, transfer history (Milestone 7a)
+ *   3  + transfer list, pending offers, inbox (Milestone 7b)
  */
 
 export const SAVE_KEY = 'touchline-save';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -41,6 +52,9 @@ export const GameSaveSchema = z.strictObject({
   contracts: z.array(ContractSchema),
   clubFinances: z.array(ClubFinancesSchema),
   transferHistory: z.array(TransferRecordSchema),
+  transferListed: z.array(PlayerIdSchema),
+  offers: z.array(TransferOfferSchema),
+  inbox: z.array(InboxMessageSchema),
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -75,14 +89,21 @@ export function applyWorldChanges(base: GameDatabase, save: Pick<GameSave, 'cont
 
 /**
  * Upgrades an older save to SAVE_VERSION (called by persist's `migrate`).
- * v1 → v2: nothing had been transferred yet, so the generated world's
- * contracts and finances ARE the v1 world.
+ * Steps run in sequence, so a v1 save goes 1 → 2 → 3.
+ *   v1 → v2: nothing had been transferred yet, so the generated world's
+ *            contracts and finances ARE the v1 world.
+ *   v2 → v3: no transfer list, offers or inbox existed yet: start empty.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
-  if (fromVersion === 1 && typeof raw === 'object' && raw !== null && 'worldSeed' in raw && typeof raw.worldSeed === 'number') {
-    return { ...raw, ...worldChanges(buildFictionalDatabase(raw.worldSeed)), transferHistory: [] };
+  const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
+  if (typeof raw !== 'object' || raw === null || fromVersion < 1 || fromVersion >= SAVE_VERSION) return incompatible;
+  let save: Record<string, unknown> = { ...raw };
+  if (fromVersion < 2) {
+    if (!('worldSeed' in save) || typeof save.worldSeed !== 'number') return incompatible;
+    save = { ...save, ...worldChanges(buildFictionalDatabase(save.worldSeed)), transferHistory: [] };
   }
-  return { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
+  if (fromVersion < 3) save = { ...save, transferListed: [], offers: [], inbox: [] };
+  return save;
 }
 
 export type SaveCheck = { ok: true; save: GameSave; database: GameDatabase } | { ok: false; reason: string };

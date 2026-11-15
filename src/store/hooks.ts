@@ -4,7 +4,8 @@ import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
 import { lineupStrength } from '@/game/match/build-match-team';
 import { competitionName, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
-import { MAX_SQUAD, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
+import { MAX_SQUAD, MIN_USER_SQUAD, releaseCost, renewalYears, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
+import { liveOffers } from '@/game/transfers/offers';
 import { searchMarket, type MarketFilters } from '@/game/transfers/market';
 import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 import { transferWindow } from '@/game/transfers/window';
@@ -165,6 +166,53 @@ export function useTransferTarget(playerId: PlayerId) {
       }).filter((p) => !/transfer budget/.test(p)), // budget is shown separately: you might still bid lower
     };
   }, [database, clubId, playerId, date]);
+}
+
+/**
+ * One of the user's own players, for the profile's contract card: terms he'd
+ * renew on, what releasing him costs, whether he's listed and any live offers.
+ * Null for other clubs' players (they get useTransferTarget instead).
+ */
+export function useOwnPlayerContract(playerId: PlayerId) {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const date = useGameStore((s) => s.currentDate);
+  const listed = useGameStore((s) => s.transferListed);
+  const offers = useGameStore((s) => s.offers);
+  return useMemo(() => {
+    const ctx = playerContext(database, playerId, date);
+    const club = findClub(database, clubId);
+    if (!ctx || !club || !ctx.contract || ctx.club?.id !== clubId) return null;
+    const size = squadSize(database, clubId);
+    const terms = personalTerms(ctx, club);
+    return {
+      contract: ctx.contract,
+      value: ctx.value,
+      isKeyPlayer: ctx.isKeyPlayer,
+      renewal: terms.willing ? { ...terms, years: renewalYears(ctx.contract, date, terms.maxYears) } : terms,
+      releaseCost: releaseCost(ctx.contract, date),
+      canRelease: size > MIN_USER_SQUAD,
+      minSquad: MIN_USER_SQUAD,
+      listed: listed.includes(playerId),
+      offers: liveOffers(database, clubId, offers, date)
+        .filter((o) => o.playerId === playerId)
+        .map((o) => ({ ...o, clubName: findClub(database, o.fromClubId)?.name ?? o.fromClubId })),
+      windowOpen: transferWindow(date).open,
+    };
+  }, [database, clubId, playerId, date, listed, offers]);
+}
+
+/** Inbox messages (newest first), with the live offer attached to offer messages. */
+export function useInbox() {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const date = useGameStore((s) => s.currentDate);
+  const inbox = useGameStore((s) => s.inbox);
+  const offers = useGameStore((s) => s.offers);
+  return useMemo(() => {
+    const live = new Map(liveOffers(database, clubId, offers, date).map((o) => [o.id, o]));
+    return inbox.map((message) => ({ message, liveOffer: message.offerId ? (live.get(message.offerId) ?? null) : null }));
+  }, [database, clubId, date, inbox, offers]);
 }
 
 /** Lookup from player id to full name, for commentary and ratings. */

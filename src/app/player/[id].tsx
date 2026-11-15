@@ -3,8 +3,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppText, Button, PageHeader, Screen } from '@/components/ui';
 import { PlayerProfileScreen } from '@/features/player/PlayerProfileScreen';
 import { useGameStore } from '@/store/game-store';
+import { ContractCard } from '@/features/transfers/ContractCard';
 import { TransferCard } from '@/features/transfers/TransferCard';
-import { usePlayerProfile, useTransferTarget } from '@/store/hooks';
+import { useOwnPlayerContract, usePlayerProfile, useTransferTarget } from '@/store/hooks';
 
 /**
  * Web static export pre-renders an HTML page per player listed here. The
@@ -25,6 +26,8 @@ export default function PlayerRoute() {
   const router = useRouter();
   const profile = usePlayerProfile(id);
   const target = useTransferTarget(id);
+  const own = useOwnPlayerContract(id);
+  const actions = useGameStore.getState; // actions never change; read them when called
 
   // Deep links (or a refreshed web page) may have no history to go back to.
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/squad'));
@@ -39,8 +42,42 @@ export default function PlayerRoute() {
     );
   }
 
-  // Other clubs' players and free agents get a transfer card; the user's own don't.
-  const transferCard = target ? (
+  /** Runs a store action; its RangeError (e.g. wage budget) becomes a message. */
+  const attempt = (action: () => void): string | null => {
+    try {
+      action();
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
+
+  // The user's own players get a contract card; other clubs' players and free agents a transfer card.
+  const card = own ? (
+    <ContractCard
+      view={{
+        weeklyWage: own.contract.weeklyWage,
+        contractEnds: own.contract.endDate,
+        value: own.value,
+        isKeyPlayer: own.isKeyPlayer,
+        listed: own.listed,
+        windowOpen: own.windowOpen,
+        renewal: own.renewal,
+        releaseCost: own.releaseCost,
+        canRelease: own.canRelease,
+        minSquad: own.minSquad,
+        offers: own.offers,
+      }}
+      onToggleListed={() => actions().toggleTransferListed(id)}
+      onAcceptOffer={(offerId) => attempt(() => actions().acceptOffer(offerId))}
+      onRejectOffer={(offerId) => actions().rejectOffer(offerId)}
+      onRenew={(years) => {
+        const renewal = own.renewal;
+        return renewal.willing ? attempt(() => actions().renewContract({ playerId: id, weeklyWage: renewal.weeklyWage, years })) : renewal.reason;
+      }}
+      onRelease={() => attempt(() => actions().releasePlayer(id))}
+    />
+  ) : target ? (
     <TransferCard
       clubName={target.ctx.club?.name ?? null}
       value={target.ctx.value}
@@ -53,5 +90,5 @@ export default function PlayerRoute() {
     />
   ) : null;
 
-  return <PlayerProfileScreen profile={profile} onBack={goBack} extra={transferCard} />;
+  return <PlayerProfileScreen profile={profile} onBack={goBack} extra={card} />;
 }

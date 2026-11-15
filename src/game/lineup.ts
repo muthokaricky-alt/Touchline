@@ -148,6 +148,38 @@ export function autoPickLineup(candidates: readonly LineupCandidate[], formation
 // Validation
 // ---------------------------------------------------------------------------
 
+/**
+ * A player has left the club (sold, released, contract expired): take him
+ * out of the lineup and fill the gap. His slot goes to the best available
+ * player for that position (a substitute moving up leaves a bench place),
+ * and the bench is topped back up to its previous size from the reserves.
+ * `candidates` is the squad AFTER he left.
+ */
+export function removeAndRefill(lineup: Lineup, playerId: PlayerId, candidates: readonly LineupCandidate[]): Lineup {
+  const fromSlot = startingSlotOf(lineup, playerId);
+  const benchBefore = lineup.substitutes.length;
+  let next = removeFromLineup(lineup, playerId);
+  const available = candidates.filter((c) => c.player.id !== playerId);
+
+  if (fromSlot) {
+    const slot = findSlot(getFormation(next.formationId), fromSlot)!;
+    const starting = new Set(starterIds(next));
+    const best = available
+      .filter((c) => !starting.has(c.player.id))
+      .sort((a, b) => effectiveRating(b.player, b.attributes, slot.position) - effectiveRating(a.player, a.attributes, slot.position) || compareIds(a, b))[0];
+    if (best) next = assignToSlot(next, fromSlot, best.player.id);
+  }
+
+  const selected = new Set([...starterIds(next), ...next.substitutes]);
+  const reserves = available.filter((c) => !selected.has(c.player.id)).sort((a, b) => primaryRating(b) - primaryRating(a) || compareIds(a, b));
+  const substitutes = [...next.substitutes];
+  for (const c of reserves) {
+    if (substitutes.length >= Math.min(benchBefore, BENCH_SIZE)) break;
+    substitutes.push(c.player.id);
+  }
+  return { ...next, substitutes };
+}
+
 export type LineupIssueCode =
   | 'unknown-slot'
   | 'empty-slot'

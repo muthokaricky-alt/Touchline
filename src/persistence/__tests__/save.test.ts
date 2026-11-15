@@ -21,6 +21,9 @@ const valid: GameSave = {
   season,
   ...worldChanges(db),
   transferHistory: [],
+  transferListed: [],
+  offers: [],
+  inbox: [],
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -87,16 +90,28 @@ describe('world changes', () => {
 });
 
 describe('migrateSave', () => {
-  const v1 = (({ contracts: _c, clubFinances: _f, transferHistory: _t, ...rest }) => rest)(valid);
+  const v2 = (({ transferListed: _l, offers: _o, inbox: _i, ...rest }) => rest)(valid);
+  const v1 = (({ contracts: _c, clubFinances: _f, transferHistory: _t, ...rest }) => rest)(v2);
 
-  it('upgrades a version 1 save using the generated world', () => {
+  it('upgrades a version 1 save using the generated world (1 → 2 → 3)', () => {
     const upgraded = migrateSave(roundTrip(v1), 1);
     const check = checkSave(upgraded, db, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
     if (check.ok) {
       expect(check.save.transferHistory).toEqual([]);
+      expect(check.save.inbox).toEqual([]);
       expect(check.database.contracts).toEqual(db.contracts);
     }
+  });
+
+  it('upgrades a version 2 save with an empty transfer list, offers and inbox', () => {
+    const check = checkSave(migrateSave(roundTrip(v2), 2), db, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save).toEqual(valid);
+  });
+
+  it('rejects a current-version save passed to migrate', () => {
+    expect(migrateSave(roundTrip(valid), 3)).toEqual({ incompatibleVersion: 3 });
   });
 
   it('marks unknown versions as incompatible', () => {
