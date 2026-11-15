@@ -1,11 +1,27 @@
 import {
   describeForm,
   formatCompactCurrency,
+  formatDate,
   formatGoalDifference,
   formatOrdinal,
   formatWeeklyWage,
 } from '../format';
 import { clamp } from '../math';
+
+describe('formatDate', () => {
+  it.each([
+    ['2029-06-30', '30 Jun 2029'],
+    ['2026-01-05', '5 Jan 2026'],
+    ['2026-12-31', '31 Dec 2026'],
+  ])('%s → %s', (iso, expected) => {
+    expect(formatDate(iso)).toBe(expected);
+  });
+
+  it('returns the input unchanged if it is not an ISO date', () => {
+    expect(formatDate('soon')).toBe('soon');
+    expect(formatDate('2026-13-01')).toBe('2026-13-01');
+  });
+});
 
 describe('formatOrdinal', () => {
   it.each([

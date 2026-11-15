@@ -57,6 +57,16 @@ export function describeForm(results: readonly MatchOutcome[]): string {
   return results.map((r) => words[r]).join(', ');
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** ISO date → "30 Jun 2029". Parsed by hand so time zones can't shift the day. */
+export function formatDate(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  const month = MONTHS[Number(match[2]) - 1];
+  return month ? `${Number(match[3])} ${month} ${match[1]}` : iso;
+}
+
 function trimTrailingZero(value: number): string {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
 }

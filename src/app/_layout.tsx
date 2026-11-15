@@ -6,8 +6,9 @@ import { colors, navigationTheme } from '@/theme';
 
 /**
  * Root layout: app-wide providers and the top-level stack.
- * The tab navigator lives in the (tabs) group; future full-screen flows
- * (player profile, match day, new career) will be added as stack screens here.
+ * The tab navigator lives in the (tabs) group. Full-screen flows sit on top
+ * of the tabs as stack screens (player profile; later match day, new career);
+ * pickers are modals.
  */
 export default function RootLayout() {
   return (
@@ -20,6 +21,8 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: colors.background },
           }}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="player/[id]" />
+          <Stack.Screen name="select-player" options={{ presentation: 'modal' }} />
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>

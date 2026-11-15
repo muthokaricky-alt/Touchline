@@ -154,6 +154,8 @@ export function generateSquad({ rng, club, referenceDate, firstPlayerNumber }: S
   const squad: GeneratedSquad = { players: [], attributes: [], contracts: [] };
   // Reputation 9 → level ~9, reputation 16 → level ~14.
   const clubLevel = 4 + Math.round(club.reputation * 0.6);
+  // Surnames already used at this club, so a squad doesn't end up with four Pembertons.
+  const usedLastNames = new Set<string>();
 
   SQUAD_TEMPLATE.forEach((slot, index) => {
     const serial = String(firstPlayerNumber + index).padStart(4, '0');
@@ -162,7 +164,7 @@ export function generateSquad({ rng, club, referenceDate, firstPlayerNumber }: S
     const youthPenalty = age < 20 ? 2 : 0;
     const level = clamp(clubLevel + rng.int(-3, 2) - youthPenalty, 3, 18);
 
-    squad.players.push(generatePlayer(rng, playerId, slot.position, age, club, referenceDate));
+    squad.players.push(generatePlayer(rng, playerId, slot.position, age, club, referenceDate, usedLastNames));
     squad.attributes.push(generateAttributes(rng, playerId, slot.position, level));
     squad.contracts.push(generateContract(rng, `con_${serial}`, playerId, club, slot.squadNumber, level, referenceDate));
   });
@@ -177,14 +179,19 @@ function generatePlayer(
   age: number,
   club: Club,
   referenceDate: string,
+  usedLastNames: Set<string>,
 ): Player {
   const nationality = rng.chance(0.7) ? club.country : rng.pick(FOREIGN_NATIONS);
   const names = NAME_POOLS[nationality] ?? NAME_POOLS.ENG;
+  const unused = names.lastNames.filter((name) => !usedLastNames.has(name));
+  // Fall back to the full pool only if this nationality's surnames are exhausted.
+  const lastName = rng.pick(unused.length > 0 ? unused : names.lastNames);
+  usedLastNames.add(lastName);
 
   return {
     id,
     firstName: rng.pick(names.firstNames),
-    lastName: rng.pick(names.lastNames),
+    lastName,
     dateOfBirth: dateOfBirthForAge(rng, age, referenceDate),
     nationality,
     heightCm: TALL_ROLES.has(position)

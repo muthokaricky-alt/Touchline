@@ -26,6 +26,14 @@ const ICONS = {
   medical: { ios: 'cross.case.fill', android: 'medical_services', web: 'medical_services' },
   trendUp: { ios: 'chart.line.uptrend.xyaxis', android: 'trending_up', web: 'trending_up' },
   construction: { ios: 'hammer.fill', android: 'construction', web: 'construction' },
+  back: { ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' },
+  close: { ios: 'xmark', android: 'close', web: 'close' },
+  add: { ios: 'plus', android: 'add', web: 'add' },
+  remove: { ios: 'minus.circle.fill', android: 'do_not_disturb_on', web: 'do_not_disturb_on' },
+  autoPick: { ios: 'wand.and.stars', android: 'auto_awesome', web: 'auto_awesome' },
+  warning: { ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' },
+  error: { ios: 'exclamationmark.octagon.fill', android: 'error', web: 'error' },
+  person: { ios: 'person.fill', android: 'person', web: 'person' },
 } as const satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;

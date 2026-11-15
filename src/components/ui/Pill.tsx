@@ -6,15 +6,18 @@ import { AppText } from './AppText';
 
 type PillProps = {
   label: string;
-  tone?: 'accent' | 'neutral' | 'warning' | 'danger';
+  tone?: PillTone;
 };
 
 const TONES = {
   accent: { background: colors.accentMuted, text: 'accent' },
   neutral: { background: colors.surfaceRaised, text: 'textSecondary' },
-  warning: { background: 'rgba(245, 196, 81, 0.14)', text: 'warning' },
-  danger: { background: 'rgba(242, 109, 109, 0.14)', text: 'danger' },
+  warning: { background: colors.warningMuted, text: 'warning' },
+  danger: { background: colors.dangerMuted, text: 'danger' },
+  info: { background: colors.infoMuted, text: 'info' },
 } as const;
+
+export type PillTone = keyof typeof TONES;
 
 /** Small status label, e.g. competition name or "Coming soon". */
 export function Pill({ label, tone = 'neutral' }: PillProps) {

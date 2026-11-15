@@ -61,6 +61,13 @@ describe('fictional database', () => {
     }
   });
 
+  it('never repeats a surname within a club', () => {
+    for (const club of db.clubs) {
+      const surnames = squadOf(db, club.id).players.map((p) => p.lastName);
+      expect(new Set(surnames).size).toBe(surnames.length);
+    }
+  });
+
   it('generates realistic ages (17–36) relative to the reference date', () => {
     for (const player of db.players) {
       const age = ageOn(player.dateOfBirth, FICTIONAL_REFERENCE_DATE);

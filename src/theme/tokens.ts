@@ -32,6 +32,14 @@ export const colors = {
   warning: '#F5C451',
   danger: '#F26D6D',
   info: '#6BB7F3',
+  /** Tinted backgrounds behind semantic text (pills, badges). */
+  warningMuted: 'rgba(245, 196, 81, 0.14)',
+  dangerMuted: 'rgba(242, 109, 109, 0.14)',
+  infoMuted: 'rgba(107, 183, 243, 0.14)',
+
+  // Pitch (team selection)
+  pitch: '#13261F',
+  pitchLine: 'rgba(255, 255, 255, 0.14)',
 } as const;
 
 export type ColorToken = keyof typeof colors;

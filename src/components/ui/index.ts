@@ -1,11 +1,17 @@
 export { AppText } from './AppText';
 export { Button } from './Button';
 export { Card } from './Card';
+export { ChoiceChips } from './ChoiceChips';
+export { FitPill } from './FitPill';
 export { FormGuide } from './FormGuide';
 export { Icon, type IconName } from './Icon';
+export { IconButton } from './IconButton';
 export { ListRow } from './ListRow';
-export { Pill } from './Pill';
+export { PageHeader } from './PageHeader';
+export { Pill, type PillTone } from './Pill';
+export { PositionBadge } from './PositionBadge';
 export { ProgressBar } from './ProgressBar';
+export { RatingBadge } from './RatingBadge';
 export { Screen } from './Screen';
 export { SectionHeader } from './SectionHeader';
 export { StatTile } from './StatTile';

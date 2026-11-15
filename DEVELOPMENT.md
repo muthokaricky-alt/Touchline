@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 2 (Football data) complete._
+_Last updated: 15 Nov 2026 — Milestone 3 (Squad management) complete._
 
 ---
 
@@ -15,7 +15,7 @@ _Last updated: 15 Nov 2026 — Milestone 2 (Football data) complete._
 | UI | React Native + React Native Web | RN 0.88, React 19.3 |
 | Routing | Expo Router (file-based, routes in `src/app/`) | 58 |
 | Language | TypeScript, `strict: true` | 6.0 |
-| State | Zustand (installed, not used yet) | 5 |
+| State | Zustand (`src/store/game-store.ts`) | 5 |
 | Persistence | expo-sqlite (installed, not used yet) | 58 |
 | Validation | Zod (schemas in `src/data/schemas`) | 4 |
 | Icons | expo-symbols (SF Symbols on iOS, Material Symbols on Android/web) | 58 |
@@ -28,14 +28,27 @@ React Compiler and typed routes are enabled in `app.json` (`experiments`).
 ```
 src/
   app/                 PRESENTATION: routes only (Expo Router). Keep these files thin.
-    _layout.tsx          root providers + stack
-    (tabs)/              bottom-tab group: index (Home), squad, tactics, fixtures, club
+    _layout.tsx          root providers + stack (tabs, player profile, picker modal)
+    (tabs)/              bottom tabs: index (Home), squad, tactics (team selection),
+                         fixtures, club
+    player/[id].tsx      player profile (exports generateStaticParams for web)
+    select-player.tsx    modal picker: ?target=<slotId>|bench
   components/
-    ui/                  design-system primitives (AppText, Card, Button, StatTile…)
+    ui/                  design-system primitives (AppText, Card, Button, ListRow,
+                         RatingBadge, PositionBadge, ChoiceChips, PageHeader…)
     ComingSoonScreen.tsx placeholder for tabs belonging to later milestones
   features/
     dashboard/           a feature = its screen, components, view-model types,
-                         and pure helpers (+ tests)
+    squad/               and pure helpers (+ tests)
+    player/
+    team/                team selection screen, Pitch, player picker
+  game/                GAME SYSTEMS: pure TS, no React imports
+    positions.ts         position groups and names
+    ratings.ts           positionRating(): weighted 1–20 suitability per position
+    formations.ts        5 formations as 11 slots with pitch coordinates
+    lineup.ts            Lineup schema + immutable ops, autoPick, validateLineup
+    squad/               positionFit/effectiveRating, view-model selectors
+  store/               Zustand: game-store.ts (state + actions), hooks.ts (view-model hooks)
   data/                DATA: pure TS, no React imports
     schemas/             Zod schemas + inferred types (Player, PlayerAttributes,
                          Contract, Club, League, GameDatabase)
@@ -52,10 +65,12 @@ Planned (not created yet; don't create empty folders):
 
 ```
   engine/              SIMULATION ENGINE: pure TS, no React/RN imports (Milestone 5)
-  game/                GAME SYSTEMS: squad, tactics, transfers, competitions (M3+)
   persistence/         PERSISTENCE: SQLite repositories behind interfaces (M10, earlier if needed)
-  store/               Zustand stores: thin glue between game state and UI
 ```
+
+Data flow: `buildFictionalDatabase()` → **store** (raw state) → **selectors**
+in `src/game` (pure) → **view models** → feature **screens**. Store actions only
+call pure functions from `src/game` and save the result.
 
 ### Rules that keep the layers separate
 
@@ -120,6 +135,43 @@ Planned (not created yet; don't create empty folders):
 - **Competition is a league only.** `CompetitionSchema` becomes a
   discriminated union on `type` when cups arrive (M6).
 
+### Squad management (Milestone 3)
+
+- **User club = Greywater Town** (`DEFAULT_USER_CLUB_ID` in the store) until a
+  new-career flow exists (M9).
+- **Zustand selector rule:** select *raw* slices (`s.database`, `s.lineup`)
+  and build view models in `useMemo` (see `store/hooks.ts`). Building a new
+  object inside a Zustand selector makes every render look like a change →
+  infinite re-render loop.
+- **Lineup = `{ formationId, starters: slotId → playerId|null, substitutes }`**,
+  with a Zod schema ready for saving. All lineup functions are immutable
+  (return new objects) so React/Zustand detect changes by reference.
+- **Ratings:** `positionRating` = weighted average of the attributes each
+  position cares about. `effectiveRating` subtracts a familiarity penalty:
+  natural 0, accomplished (secondary position) 1, unfamiliar 5. The penalty
+  was raised from 3 to 5 after a test caught auto-pick playing a right winger
+  at LM over a natural LM: with 3, position choice barely mattered.
+- **Auto pick is greedy:** fill the scarcest slots first with the best
+  remaining player; bench = backup GK + 6 best. Deterministic (ID tie-break).
+- **Changing formation keeps the same XI** and re-seats them; it doesn't
+  auto-pick. Out-of-position players then show as warnings.
+- **Validation severity:** errors make a lineup unplayable (empty slot,
+  duplicates, other club's player, bench > 7); warnings don't (outfielder in
+  goal, unfamiliar position).
+- **Team selection lives on the Tactics tab**; M4 adds instructions there.
+- **Static web and dynamic routes:** `player/[id]` exports
+  `generateStaticParams` (the seeded DB makes the list deterministic). The
+  picker uses a search param instead of a path segment, and on web renders an
+  empty frame until mounted, because its pre-rendered HTML has no query
+  string (otherwise: hydration error on direct load).
+- **Dashboard:** `buildDashboardSummary(db, clubId, preview)` uses real club,
+  league/club names, squad size and finances; standings, form, dates and inbox
+  stay preview until M6/M8. Preview standings are mapped onto real clubs by
+  reputation so the user's club always appears.
+- **Typed routes need generated types:** `.expo/types` (git-ignored) is created
+  when `npx expo start` runs. On a fresh clone, start the dev server once
+  before `npm run typecheck`, or route paths won't be type-checked.
+
 ## 3. Commands
 
 ```
@@ -149,7 +201,7 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   with zero console errors.
 
 ### Milestone 2 — Football data ✅
-- Zod schemas + inferred types: Player, PlayerAttributes (22 attributes in 4
+- Zod schemas + inferred types: Player, PlayerAttributes (23 attributes in 4
   groups), Contract, Club, League, GameDatabase (`src/data/schemas`).
 - `checkIntegrity()` (8 cross-record rules) and `parseDatabase()` loader.
 - Fictional database: 8 invented clubs (reputation 9–16), 1 league
@@ -161,6 +213,26 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - No UI changes. Dashboard still uses `dashboard.preview.ts` (selector deferred
   to M3, when the squad screen needs real data).
 
+### Milestone 3 — Squad management ✅
+- Game logic (`src/game`): position ratings, position fit, 5 formations,
+  lineup model + operations, auto pick, validation, squad/profile/team-sheet/
+  picker selectors.
+- Zustand store with the fictional database, user club, current date and lineup.
+- Screens: Squad tab (grouped list), player profile (stack screen), Tactics
+  tab = team selection (formation chips, pitch, bench, issues, auto pick),
+  player picker (modal).
+- New UI primitives: RatingBadge, PositionBadge, FitPill, IconButton,
+  ChoiceChips, PageHeader; ListRow can be tapped; Screen `bottomInset`.
+- Dashboard partly real (see decisions). `formatDate` util.
+- Generator fix: no repeated surnames within a club (seen as four
+  "Pemberton"s on the pitch). This reshuffled the fictional players.
+- Tests: 216 total (105 new).
+- Verified: `tsc` clean (with generated typed-route types), tests pass,
+  Android + web exports bundle (web pre-renders all 176 player pages), web
+  build driven in headless Chrome at 412px and 1280px: squad → profile, slot →
+  picker → assign, formation change, direct loads of profile and picker. Zero
+  console errors, no horizontal overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -170,22 +242,25 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - App icon / splash images are still the Expo defaults (backgrounds recoloured to
   Touchline navy). Replace with real Touchline artwork later.
 - Fonts are system fonts. A custom typeface can be added via `expo-font` later.
+- **Lineup isn't saved**: it resets to the auto-picked XI on app reload
+  (persistence is M10, or earlier if it becomes annoying).
+- The modal picker and profile were checked on web only; native gestures
+  (swipe-to-dismiss on iOS, Android back button) still need checking in Expo Go.
+- Long names are truncated in the picker when a fit pill is shown (acceptable,
+  full name is in the accessibility label).
 
-## 5. Next steps — Milestone 3: Squad management
+## 5. Next steps — Milestone 4: Tactics
 
 Agree the plan with the user before coding. Likely shape:
 
-1. Decide how the UI gets data: a Zustand store holding the loaded
-   `GameDatabase` + the user's club ID (loaded from `buildFictionalDatabase()`
-   for now; SQLite later).
-2. Pure selectors in `src/game/squad/` (e.g. `selectSquad(db, clubId)`) that
-   join Player + PlayerAttributes + Contract into view models. Screens never
-   join raw records themselves.
-3. Squad screen (list, sort/filter by position) and player profile route
-   (`src/app/player/[id].tsx`) showing attribute groups.
-4. Formation definitions + starting XI / substitutes selection and position
-   assignment, as pure TS with tests.
-5. `buildDashboardSummary()` for the parts that real data can now supply
-   (club, squad count).
+1. `Tactics` model + Zod schema in `src/game/tactics.ts`: mentality, passing
+   style, defensive line, pressing intensity, tempo/width (small enums or 1–5
+   scales). Store it alongside the lineup.
+2. Pure helpers that describe a tactic's effects as numbers the match engine
+   (M5) will consume (e.g. risk, possession bias, stamina cost), with tests.
+   Keep them simple; tune in M5.
+3. Tactics UI on the Tactics tab (replace the "Coming in Milestone 4" card),
+   reusing `ChoiceChips`.
+4. Possibly presets ("Balanced", "Counter", "High press") to make it quick.
 
-Do **not** start the match engine until Milestones 3–4 are done.
+Do **not** start the match engine until Milestone 4 is done.

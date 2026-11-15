@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, spacing } from '@/theme';
+import { colors, layout, radii, spacing } from '@/theme';
 
 import { AppText } from './AppText';
 
@@ -14,11 +14,25 @@ type ListRowProps = {
   trailing?: ReactNode;
   /** Draw a divider above this row (skip for the first row). */
   divider?: boolean;
+  /** Makes the row tappable. */
+  onPress?: () => void;
+  /** Screen-reader label for tappable rows; defaults to title + subtitle. */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
-export function ListRow({ title, subtitle, leading, trailing, divider }: ListRowProps) {
-  return (
-    <View style={[styles.row, divider && styles.divider]}>
+export function ListRow({
+  title,
+  subtitle,
+  leading,
+  trailing,
+  divider,
+  onPress,
+  accessibilityLabel,
+  accessibilityHint,
+}: ListRowProps) {
+  const content = (
+    <>
       {leading}
       <View style={styles.text}>
         <AppText variant="bodyStrong" numberOfLines={1}>
@@ -31,12 +45,27 @@ export function ListRow({ title, subtitle, leading, trailing, divider }: ListRow
         ) : null}
       </View>
       {trailing}
-    </View>
+    </>
+  );
+
+  if (!onPress) return <View style={[styles.row, divider && styles.divider]}>{content}</View>;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? (subtitle ? `${title}, ${subtitle}` : title)}
+      accessibilityHint={accessibilityHint}
+      style={({ pressed }) => [styles.row, styles.pressable, divider && styles.divider, pressed && styles.pressed]}>
+      {content}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
+  pressable: { minHeight: layout.minTouchTarget, borderRadius: radii.sm },
+  pressed: { backgroundColor: colors.surfacePressed },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   text: { flex: 1, minWidth: 0, gap: spacing.xxs },
 });
