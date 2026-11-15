@@ -44,6 +44,7 @@ export default function RootLayout() {
             <Stack.Screen name="transfers" />
             <Stack.Screen name="negotiate" />
             <Stack.Screen name="inbox" />
+            <Stack.Screen name="training" />
             <Stack.Screen name="select-player" options={{ presentation: 'modal' }} />
           </Stack>
         ) : (

@@ -16,6 +16,8 @@ import type { LineupCandidate } from '../lineup';
 import { POSITION_GROUP, POSITION_GROUP_LABELS, POSITION_GROUP_ORDER, type PositionGroup } from '../positions';
 import { effectiveRating, positionFit, type PositionFit } from './position-fit';
 import { conditionOf, FULLY_FIT, type ConditionState, type PlayerCondition } from '../condition/condition';
+import { formatPotentialRange, potentialOf, potentialRange } from '../development/potential';
+import { playerAbility } from '../transfers/valuation';
 
 /**
  * Selectors: pure functions that join raw records (Player + PlayerAttributes
@@ -135,9 +137,17 @@ export type PlayerProfileView = {
   /** Attribute groups to show, in display order. Goalkeeping only appears for goalkeepers. */
   attributeGroups: { group: AttributeGroup; attributes: { key: AttributeKey; value: number }[] }[];
   condition: PlayerCondition;
+  /** Rating in his main position and the potential range the viewer is told (narrower for their own players). */
+  development: { rating: number; potential: string };
 };
 
-export function selectPlayerProfile(db: GameDatabase, playerId: PlayerId, onDate: string, condition?: ConditionState): PlayerProfileView | null {
+export function selectPlayerProfile(
+  db: GameDatabase,
+  playerId: PlayerId,
+  onDate: string,
+  condition?: ConditionState,
+  viewerClubId?: ClubId,
+): PlayerProfileView | null {
   const player = db.players.find((p) => p.id === playerId);
   const attributes = db.attributes.find((a) => a.playerId === playerId);
   if (!player || !attributes) return null;
@@ -178,5 +188,10 @@ export function selectPlayerProfile(db: GameDatabase, playerId: PlayerId, onDate
       attributes: Object.entries(attributes[group]).map(([key, value]) => ({ key: key as AttributeKey, value })),
     })),
     condition: condition ? conditionOf(condition, player.id) : FULLY_FIT,
+    development: (() => {
+      const ability = playerAbility(player, attributes);
+      const own = contract !== null && contract.clubId === viewerClubId;
+      return { rating: Math.round(ability), potential: formatPotentialRange(potentialRange(player.id, potentialOf(player, attributes), ability, own)) };
+    })(),
   };
 }

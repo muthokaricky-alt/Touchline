@@ -61,6 +61,13 @@ export function PlayerProfileScreen({ profile, onBack, extra }: PlayerProfileScr
             <Meter label="Morale" value={profile.condition.morale} detail={moraleLabel(profile.condition.morale)} />
           </Card>
 
+          <Card title="Development" icon="trendUp">
+            <View style={styles.tiles}>
+              <StatTile label="Rating" value={String(profile.development.rating)} detail={profile.primaryPosition} />
+              <StatTile label="Potential" value={profile.development.potential} detail="estimate" />
+            </View>
+          </Card>
+
           <Card title="Positions" icon="tactics">
             <View>
               {profile.positionRatings.map((r, index) => (

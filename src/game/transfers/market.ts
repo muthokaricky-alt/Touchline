@@ -63,7 +63,7 @@ export function searchMarket(
     const attrs = attributes.get(player.id);
     if (!attrs) continue;
     const ability = playerAbility(player, attrs);
-    const value = contract ? marketValue({ ability, age, yearsLeft: contractYearsLeft(contract, date) }) : 0;
+    const value = contract ? marketValue({ ability, age, yearsLeft: contractYearsLeft(contract, date), potential: player.potential }) : 0;
     if (filters.maxValue !== null && value > filters.maxValue) continue;
 
     const club = contract ? clubs.get(contract.clubId) : undefined;

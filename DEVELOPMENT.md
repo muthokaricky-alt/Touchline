@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — Milestone 8 step 8a (fitness, injuries, morale; save v4) complete; 8b (development) next._
+_Last updated: 16 Nov 2026 — Milestone 8 complete (8a condition, 8b development and training; save v5); Milestone 9 next._
 
 ---
 
@@ -37,6 +37,7 @@ src/
     transfers.tsx        transfer market search
     negotiate.tsx        ?player=<id>: bid → terms → signed (snapshot of the target)
     inbox.tsx            messages; offer messages can be accepted/rejected
+    training.tsx         training focus/intensity + young players' development
   components/
     ui/                  design-system primitives (AppText, Card, Button, ListRow,
                          RatingBadge, PositionBadge, ChoiceChips, PageHeader…)
@@ -53,6 +54,7 @@ src/
     transfers/           TransfersScreen, NegotiationScreen, TransferCard (others'
                          players), ContractCard (own: list, renew, release, offers)
     inbox/               InboxScreen
+    training/            TrainingScreen
     club/                ClubScreen (facts, transfers, career save)
   game/                GAME SYSTEMS: pure TS, no React imports
     positions.ts         position groups and names
@@ -65,6 +67,9 @@ src/
                          rotation (aiSetupOn): rests tired starters, drops injured
     condition/           fitness, morale, injuries between matches (lazy
                          recovery, applyMatch); squad-care (lineup + medical news)
+    development/         potential (assignPotential, ranges), monthly development
+                         and training, monthly orchestration + coaching report,
+                         training view (prospects)
     match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
     season/              Season/Fixture schemas, fixture generator, table, cup
                          (draws, rounds, ties), running player stats, season flow
@@ -546,6 +551,52 @@ too); training = team focus + intensity; potential shown as a range; 8a
   after the career date.
 - Suspensions still aren't modelled (dashboard shows 0).
 
+#### 8b: potential, development, training
+
+Decisions (user): monthly development; retirement deferred to M9 (with
+regens, otherwise the player pool shrinks); Training screen opened from
+the Squad tab.
+
+- **Potential is a game-layer judgement**, not generated data:
+  `assignPotential(db, seed, date)` gives each player `potential` (new
+  optional field on Player, ability scale 1–20) = ability + headroom by
+  age (17: 3–8 … 24: 0–1.5, 27+: 0, skewed low), from a per-player seeded
+  stream. It doesn't touch the generator's RNG, so every existing player
+  keeps their name and attributes and old saves still match (tested). The
+  data layer still never imports `src/game`. The store's base world is
+  `assignPotential(buildFictionalDatabase(seed))`.
+- **The user sees a range** (`potentialRange`): a fixed per-player offset,
+  ±1 for their own players, ±2 for others; it always contains the truth,
+  never starts below current ability. Scouting (M9) can narrow it later.
+- **Development is a chance of ±1 per attribute per month** (attributes are
+  integers): growth = 0.16 × age (1 at ≤18 … 0 from 28) × gap to potential
+  (full at ≥2) × playing time (0.6 benched … 1.2 every minute, from season
+  minutes) × intensity × focus (×1.6 trained / ×0.7 neglected) × relevance
+  to his position (POSITION_WEIGHTS). Decline from 30 (physical), 32
+  (technical/goalkeeping), 34 (mental); Physical focus slows physical
+  decline. Two RNG draws per attribute always, so one outcome never shifts
+  another's numbers.
+- **Calibrated over 4 simulated years** (test prints them): young players
+  with ≥3 headroom +1.3 after one year, +3.6 after four; ages 25–27 ±0.03;
+  31+ −0.5 a year; light vs heavy 0.93 vs 1.54 a year; benched vs regular
+  0.83 vs 1.58.
+- **Monthly step** (`developThrough`, called by the store on every calendar
+  move): develops all 880 players for each 1st crossed, training knocks
+  (per player per month: light 0.5%, normal 1.2%, heavy 3.5%; AI clubs
+  normal), Head of Coaching report (top improvers/decliners for the user).
+  Same db object when no month is crossed (keeps the AI setup cache).
+  Month-crossing kick-offs peak at ~280 ms in Chrome.
+- **Valuation:** `marketValue` prices part of a young player's headroom
+  (60% at ≤19, 45% at 20–21, 25% at 22–23). Takes potential as a number
+  (avoids a valuation ↔ potential import cycle).
+- **Save v5:** `attributeChanges` stores only attributes that differ from
+  the base world, flat (`{ plr_0007: { finishing: 13 } }`, diffed on save),
+  plus `training`. Unknown players / keys / out-of-range values are
+  rejected on load. v4 → v5: no changes, default training.
+- **A test that depended on one particular offer broke** when potential
+  changed player values; it now lists four players so it tests the rule,
+  not one outcome.
+
 ## 3. Commands
 
 ```
@@ -717,7 +768,7 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   in the inbox → accept → "sold to", squad 20, lineup without issues,
   all kept after reload. Zero console errors, no overflow.
 
-### Milestone 8 — Player development (in progress)
+### Milestone 8 — Player development ✅
 **8a — Fitness, injuries, morale ✅**
 - Engine: condition input, morale factor, injury event + forced subs.
 - `src/game/condition` (condition, squad-care); AI rotation; season flow
@@ -736,6 +787,22 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   injured players out of the XI and last in the picker; forcing one back
   in → "Team not ready · … is injured" and kick-off disabled; auto pick
   fixes it; condition survives a reload. Zero console errors, no overflow.
+
+**8b — Potential, development, training ✅**
+- `src/game/development` (potential, development, monthly, training-view);
+  potential in valuation; save v5 (attribute changes, training).
+- Store: `training`, `setTraining`, monthly step on every calendar move;
+  base world with potential.
+- UI: Training screen (focus, intensity, young players with potential
+  range and progress) from the Squad tab; Development card on profiles;
+  monthly coaching reports and training injuries in the inbox.
+- Tests: 638 total (23 new) incl. 4-year calibration, determinism,
+  potential ranges, save round-trip of a developed world, v4 → v5.
+- Verified: `tsc` clean, tests pass, Android + web export; headless Chrome
+  at 412px and 1280px: Training (Physical/Heavy) kept after reload,
+  prospects with ranges, profile Development card, August and September
+  reports ("Improving: … +0.3"), training knocks reported. Zero console
+  errors, no overflow.
 
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
@@ -762,22 +829,22 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 8 step 8b (development)
+## 5. Next steps — Milestone 9 (Career mode)
 
-Agreed: everyone develops (AI too); training = team focus + intensity;
-potential shown as a range. Plan details with the user first:
-1. **Potential** on players (data layer + generator; a hidden true value,
-   shown to the user as a range, narrower for their own players).
-2. **Progression** (weekly or per matchday): young players grow towards
-   potential (faster with minutes and training), from ~30 physical
-   attributes decline. Pure, seeded, tested for realistic rates.
-3. **Training screen:** focus (balanced / attacking / defending / physical
-   / recovery) and intensity (light / normal / heavy). Heavy = faster
-   growth, slower recovery, training injuries (the condition module from 8a).
-4. **Attributes become saved state** (save v5): store changed attributes
-   (sparse, like condition) over the generated base; check the size.
-5. **Valuation** uses potential for young players; season rollover:
-   ageing, retirement of players ~34+ (they leave contracts; new regens are
-   M9).
-6. Later ideas: `npm run test:calibration` (suite ~37 s); foreign leagues
-   (M9); user substitutions during a match; save slots (M10); suspensions.
+Brief: multiple seasons, manager reputation, job offers, club changes,
+youth academies, retirement and player generation. Plan with the user
+first (likely split 9a/9b). Things to decide / known constraints:
+1. **Retirement + regens together** (deferred from 8b): players ~34+
+   retire at season end; new youth players (with potential) are generated
+   so the pool doesn't shrink. New players can't be rebuilt from the seed
+   alone, so the save must store generated players (save v6).
+2. **Youth academy:** each club gets a yearly intake (quality by
+   reputation / facilities); the user's intake arrives in the inbox.
+3. **Manager reputation** from results vs expectations (board
+   expectations per season), **job offers** and changing clubs (the user
+   club is still fixed at Greywater Town: `DEFAULT_USER_CLUB_ID`).
+4. A new-career flow (choose club, manager name) replacing the fixed
+   default; the dashboard's manager name is still preview data.
+5. Scouting could narrow potential ranges (currently fixed ±1/±2).
+6. Later ideas: `npm run test:calibration` (suite ~40 s); foreign leagues;
+   user substitutions during a match; suspensions; save slots (M10).

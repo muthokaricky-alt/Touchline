@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
 import { availabilityFrom, conditionOn } from '@/game/condition/condition';
+import { selectProspects } from '@/game/development/training-view';
 import { lineupStrength } from '@/game/match/build-match-team';
 import { competitionName, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
 import { MAX_SQUAD, MIN_USER_SQUAD, releaseCost, renewalYears, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
@@ -66,8 +67,17 @@ export function useSquadGroups() {
 export function usePlayerProfile(playerId: PlayerId) {
   const database = useGameStore((s) => s.database);
   const date = useGameStore((s) => s.currentDate);
+  const clubId = useGameStore((s) => s.userClubId);
   const today = useConditionToday();
-  return useMemo(() => selectPlayerProfile(database, playerId, date, today), [database, playerId, date, today]);
+  return useMemo(() => selectPlayerProfile(database, playerId, date, today, clubId), [database, playerId, date, today, clubId]);
+}
+
+/** The user's young players and their potential, for the Training screen. */
+export function useProspects() {
+  const database = useGameStore((s) => s.database);
+  const date = useGameStore((s) => s.currentDate);
+  const clubId = useGameStore((s) => s.userClubId);
+  return useMemo(() => selectProspects(database, clubId, date), [database, clubId, date]);
 }
 
 export function useTeamSheet() {

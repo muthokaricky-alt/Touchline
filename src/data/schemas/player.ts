@@ -40,6 +40,13 @@ export const PlayerSchema = z
     preferredFoot: PreferredFootSchema,
     primaryPosition: PositionSchema,
     secondaryPositions: z.array(PositionSchema).max(4),
+    /**
+     * The ability (1–20, same scale as a position rating) this player can grow
+     * to. Hidden from the user, who sees an estimated range. Assigned by the
+     * game layer (game/development/potential.ts), not by data sources;
+     * missing = no headroom left.
+     */
+    potential: z.number().min(1).max(20).optional(),
   })
   .refine((p) => !p.secondaryPositions.includes(p.primaryPosition), {
     error: 'secondaryPositions must not repeat the primary position',

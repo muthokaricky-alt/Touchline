@@ -4,6 +4,7 @@ import { advanceToUserFixture, createSeason } from '@/game/season/season-flow';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
+import { DEFAULT_TRAINING, developWorld } from '@/game/development/development';
 import { completeTransfer } from '@/game/transfers/complete';
 
 import { applyWorldChanges, checkSave, migrateSave, worldChanges, type GameSave } from '../save';
@@ -20,12 +21,13 @@ const valid: GameSave = {
   lineup,
   tactics: DEFAULT_TACTICS,
   season,
-  ...worldChanges(db),
+  ...worldChanges(db, db),
   transferHistory: [],
   transferListed: [],
   offers: [],
   inbox: [],
   condition,
+  training: DEFAULT_TRAINING,
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -90,17 +92,41 @@ describe('world changes', () => {
   it('a transferred world survives save → load', () => {
     const reserve = db.contracts.find((c) => c.clubId === 'club_westhaven_albion' && c.squadNumber === 31)!.playerId;
     const { db: changed } = completeTransfer(db, { playerId: reserve, buyerId: USER, fee: 100_000, weeklyWage: 2000, years: 2, date: '2026-07-01' });
-    const check = checkSave(roundTrip({ ...valid, ...worldChanges(changed) }), db, FICTIONAL_SEED);
+    const check = checkSave(roundTrip({ ...valid, ...worldChanges(changed, db) }), db, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
     if (!check.ok) return;
     expect(check.database.contracts.find((c) => c.playerId === reserve)!.clubId).toBe(USER);
     expect(check.database.clubs.find((c) => c.id === USER)!.finances).toEqual(changed.clubs.find((c) => c.id === USER)!.finances);
-    expect(check.database).toEqual(applyWorldChanges(db, worldChanges(changed)));
+    expect(check.database).toEqual(applyWorldChanges(db, worldChanges(changed, db)));
+  });
+});
+
+describe('development in the save (v5)', () => {
+  const developed = developWorld(db, '2026-09-01', season, () => ({ focus: 'balanced', intensity: 'heavy' }), 1).db;
+  const changes = worldChanges(developed, db).attributeChanges;
+
+  it('stores only changed attributes, and they survive save → load', () => {
+    const changedPlayers = Object.keys(changes);
+    expect(changedPlayers.length).toBeGreaterThan(0);
+    expect(changedPlayers.length).toBeLessThan(db.players.length);
+    const check = checkSave(roundTrip({ ...valid, attributeChanges: changes, training: { focus: 'physical', intensity: 'heavy' } }), db, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) {
+      expect(check.database.attributes).toEqual(developed.attributes);
+      expect(check.save.training).toEqual({ focus: 'physical', intensity: 'heavy' });
+    }
+  });
+
+  it('rejects changes for unknown players or out-of-range values', () => {
+    expect(checkSave(roundTrip({ ...valid, attributeChanges: { plr_9999: { pace: 12 } } }), db, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, attributeChanges: { [db.players[0].id]: { pace: 25 } } }), db, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, attributeChanges: { [db.players[0].id]: { flying: 12 } } }), db, FICTIONAL_SEED).ok).toBe(false);
   });
 });
 
 describe('migrateSave', () => {
-  const v3 = (({ condition: _c, ...rest }) => rest)(valid);
+  const v4 = (({ attributeChanges: _a, training: _t, ...rest }) => rest)(valid);
+  const v3 = (({ condition: _c, ...rest }) => rest)(v4);
   const v2 = (({ transferListed: _l, offers: _o, inbox: _i, ...rest }) => rest)(v3);
   const v1 = (({ contracts: _c, clubFinances: _f, transferHistory: _t, ...rest }) => rest)(v2);
 
@@ -127,8 +153,14 @@ describe('migrateSave', () => {
     if (check.ok) expect(check.save.condition).toEqual({ date: valid.currentDate, players: {} });
   });
 
+  it('upgrades a version 4 save with no development yet and default training', () => {
+    const check = checkSave(migrateSave(roundTrip(v4), 4), db, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save).toEqual(valid);
+  });
+
   it('rejects a current-version save passed to migrate', () => {
-    expect(migrateSave(roundTrip(valid), 4)).toEqual({ incompatibleVersion: 4 });
+    expect(migrateSave(roundTrip(valid), 5)).toEqual({ incompatibleVersion: 5 });
   });
 
   it('marks unknown versions as incompatible', () => {

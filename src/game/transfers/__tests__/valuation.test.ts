@@ -72,3 +72,15 @@ describe('transferWindow', () => {
     expect(transferWindow('2027-03-10')).toEqual({ open: false, name: 'Summer', opensNext: '2027-07-01' });
   });
 });
+
+describe('potential in valuation (Milestone 8b)', () => {
+  it("pays for part of a young player's headroom, and none of a 25-year-old's", () => {
+    const plain = marketValue({ ability: 11, age: 19, yearsLeft: 3 });
+    const talent = marketValue({ ability: 11, age: 19, yearsLeft: 3, potential: 16 });
+    expect(talent).toBeGreaterThan(plain * 5);
+    expect(talent).toBeLessThan(marketValue({ ability: 16, age: 19, yearsLeft: 3 }));
+    expect(marketValue({ ability: 11, age: 25, yearsLeft: 3, potential: 16 })).toBe(marketValue({ ability: 11, age: 25, yearsLeft: 3 }));
+    // Potential below ability (a player who has peaked) never lowers the value.
+    expect(marketValue({ ability: 14, age: 20, yearsLeft: 3, potential: 12 })).toBe(marketValue({ ability: 14, age: 20, yearsLeft: 3 }));
+  });
+});

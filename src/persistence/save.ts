@@ -3,15 +3,21 @@ import { z } from 'zod';
 import { buildFictionalDatabase } from '@/data/fictional';
 import { checkIntegrity } from '@/data/integrity';
 import {
+  ATTRIBUTE_KEYS,
+  AttributeValueSchema,
   ClubIdSchema,
   ContractSchema,
   IsoDateSchema,
   MoneySchema,
   NonNegativeMoneySchema,
   PlayerIdSchema,
+  type AttributeGroup,
+  type AttributeKey,
   type GameDatabase,
+  type PlayerAttributes,
 } from '@/data/schemas';
 import { ConditionStateSchema, emptyConditions } from '@/game/condition/condition';
+import { DEFAULT_TRAINING, TrainingSchema } from '@/game/development/development';
 import { InboxMessageSchema } from '@/game/inbox/inbox';
 import { LineupSchema } from '@/game/lineup';
 import { TransferOfferSchema } from '@/game/transfers/offers';
@@ -32,10 +38,11 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   2  + contracts, club finances, transfer history (Milestone 7a)
  *   3  + transfer list, pending offers, inbox (Milestone 7b)
  *   4  + player condition: fitness, morale, injuries (Milestone 8a)
+ *   5  + changed attributes (development), training settings (Milestone 8b)
  */
 
 export const SAVE_KEY = 'touchline-save';
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -43,6 +50,16 @@ const ClubFinancesSchema = z.strictObject({
   transferBudget: NonNegativeMoneySchema,
   weeklyWageBudget: NonNegativeMoneySchema,
 });
+
+/** Which group each attribute lives in (to rebuild the nested record from a flat change list). */
+const GROUP_OF = new Map<AttributeKey, AttributeGroup>(
+  (Object.entries(ATTRIBUTE_KEYS) as [AttributeGroup, readonly AttributeKey[]][]).flatMap(([group, keys]) => keys.map((k) => [k, group] as const)),
+);
+const AttributeKeySchema = z.enum([...GROUP_OF.keys()] as [AttributeKey, ...AttributeKey[]]);
+
+/** Only attributes that differ from the generated world, e.g. { plr_0007: { finishing: 13 } }. */
+const AttributeChangesSchema = z.record(PlayerIdSchema, z.partialRecord(AttributeKeySchema, AttributeValueSchema));
+export type AttributeChanges = z.infer<typeof AttributeChangesSchema>;
 
 export const GameSaveSchema = z.strictObject({
   worldSeed: z.int(),
@@ -58,6 +75,8 @@ export const GameSaveSchema = z.strictObject({
   offers: z.array(TransferOfferSchema),
   inbox: z.array(InboxMessageSchema),
   condition: ConditionStateSchema,
+  attributeChanges: AttributeChangesSchema,
+  training: TrainingSchema,
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -69,16 +88,45 @@ export type IncompatibleSave = { incompatibleVersion: number };
 export const isIncompatible = (value: unknown): value is IncompatibleSave =>
   typeof value === 'object' && value !== null && 'incompatibleVersion' in value;
 
+type WorldChanges = Pick<GameSave, 'contracts' | 'clubFinances' | 'attributeChanges'>;
+
+/** Attributes that differ from the base world (players unchanged since generation aren't listed). */
+export function attributeChanges(db: GameDatabase, base: GameDatabase): AttributeChanges {
+  const baseById = new Map(base.attributes.map((a) => [a.playerId, a]));
+  const changes: AttributeChanges = {};
+  for (const attrs of db.attributes) {
+    const original = baseById.get(attrs.playerId);
+    if (!original) continue;
+    const changed: Partial<Record<AttributeKey, number>> = {};
+    for (const [key, group] of GROUP_OF) {
+      const value = (attrs[group] as Record<AttributeKey, number>)[key];
+      if (value !== (original[group] as Record<AttributeKey, number>)[key]) changed[key] = value;
+    }
+    if (Object.keys(changed).length) changes[attrs.playerId] = changed;
+  }
+  return changes;
+}
+
 /** The parts of a database that a save stores. */
-export function worldChanges(db: GameDatabase): Pick<GameSave, 'contracts' | 'clubFinances'> {
+export function worldChanges(db: GameDatabase, base: GameDatabase): WorldChanges {
   return {
     contracts: db.contracts,
     clubFinances: db.clubs.map((c) => ({ clubId: c.id, ...c.finances })),
+    attributeChanges: attributeChanges(db, base),
   };
 }
 
-/** Lays saved contracts and finances over the generated base world. */
-export function applyWorldChanges(base: GameDatabase, save: Pick<GameSave, 'contracts' | 'clubFinances'>): GameDatabase {
+function applyAttributeChanges(attrs: PlayerAttributes, changed: Partial<Record<AttributeKey, number>>): PlayerAttributes {
+  const next = { ...attrs } as Record<AttributeGroup, Record<AttributeKey, number>> & PlayerAttributes;
+  for (const [key, value] of Object.entries(changed) as [AttributeKey, number][]) {
+    const group = GROUP_OF.get(key)!;
+    next[group] = { ...next[group], [key]: value };
+  }
+  return next;
+}
+
+/** Lays saved contracts, finances and attribute changes over the generated base world. */
+export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameDatabase {
   const finances = new Map(save.clubFinances.map((f) => [f.clubId, f]));
   return {
     ...base,
@@ -86,6 +134,10 @@ export function applyWorldChanges(base: GameDatabase, save: Pick<GameSave, 'cont
     clubs: base.clubs.map((club) => {
       const f = finances.get(club.id);
       return f ? { ...club, finances: { balance: f.balance, transferBudget: f.transferBudget, weeklyWageBudget: f.weeklyWageBudget } } : club;
+    }),
+    attributes: base.attributes.map((a) => {
+      const changed = save.attributeChanges[a.playerId];
+      return changed ? applyAttributeChanges(a, changed) : a;
     }),
   };
 }
@@ -97,6 +149,7 @@ export function applyWorldChanges(base: GameDatabase, save: Pick<GameSave, 'cont
  *            contracts and finances ARE the v1 world.
  *   v2 → v3: no transfer list, offers or inbox existed yet: start empty.
  *   v3 → v4: condition didn't exist: everyone fully fit on the save's date.
+ *   v4 → v5: no development yet: no attribute changes, default training.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -104,13 +157,16 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
   let save: Record<string, unknown> = { ...raw };
   if (fromVersion < 2) {
     if (!('worldSeed' in save) || typeof save.worldSeed !== 'number') return incompatible;
-    save = { ...save, ...worldChanges(buildFictionalDatabase(save.worldSeed)), transferHistory: [] };
+    const generated = buildFictionalDatabase(save.worldSeed);
+    const { contracts, clubFinances } = worldChanges(generated, generated);
+    save = { ...save, contracts, clubFinances, transferHistory: [] };
   }
   if (fromVersion < 3) save = { ...save, transferListed: [], offers: [], inbox: [] };
   if (fromVersion < 4) {
     if (typeof save.currentDate !== 'string') return incompatible;
     save = { ...save, condition: emptyConditions(save.currentDate) };
   }
+  if (fromVersion < 5) save = { ...save, attributeChanges: {}, training: DEFAULT_TRAINING };
   return save;
 }
 
@@ -150,6 +206,9 @@ export function checkSave(raw: unknown, base: GameDatabase, worldSeed: number): 
     return { ok: false, reason: 'Your saved season refers to clubs or competitions that no longer exist.' };
   }
   const playerIds = new Set(db.players.map((p) => p.id));
+  if (Object.keys(save.attributeChanges).some((id) => !playerIds.has(id))) {
+    return { ok: false, reason: "Your save's player development records don't match this world." };
+  }
   if (Object.keys(save.condition.players).some((id) => !playerIds.has(id)) || save.condition.date > save.currentDate) {
     return { ok: false, reason: "Your save's player fitness records don't match this world." };
   }

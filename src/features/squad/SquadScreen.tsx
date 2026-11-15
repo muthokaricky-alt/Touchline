@@ -11,16 +11,24 @@ type SquadScreenProps = {
   groups: readonly SquadGroupView[];
   onPlayerPress: (playerId: PlayerId) => void;
   onOpenMarket: () => void;
+  onOpenTraining: () => void;
 };
 
 /** The user's squad, one card per position group. Layout only: data arrives ready-made. */
-export function SquadScreen({ clubName, groups, onPlayerPress, onOpenMarket }: SquadScreenProps) {
+export function SquadScreen({ clubName, groups, onPlayerPress, onOpenMarket, onOpenTraining }: SquadScreenProps) {
   const playerCount = groups.reduce((sum, g) => sum + g.players.length, 0);
 
   return (
     <Screen>
       <PageHeader overline={clubName} title="Squad" subtitle={`${playerCount} players · rating shown for each player's main position`} />
-      <Button label="Transfer market" icon="transfers" variant="secondary" onPress={onOpenMarket} />
+      <View style={styles.actions}>
+        <View style={styles.action}>
+          <Button label="Training" icon="trendUp" variant="secondary" onPress={onOpenTraining} />
+        </View>
+        <View style={styles.action}>
+          <Button label="Transfer market" icon="transfers" variant="secondary" onPress={onOpenMarket} />
+        </View>
+      </View>
       <View style={styles.columns}>
         {groups.map((group) => (
           <Card key={group.group} title={`${group.label} · ${group.players.length}`} style={styles.card}>
@@ -66,6 +74,8 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
 }
 
 const styles = StyleSheet.create({
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  action: { flexGrow: 1, flexBasis: 160 },
   // Same wrapping two-column layout as the dashboard (no window measuring → safe for static web).
   columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, alignItems: 'flex-start' },
   card: { flexGrow: 1, flexBasis: 340, minWidth: 0 },

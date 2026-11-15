@@ -132,8 +132,10 @@ describe('game store', () => {
   });
 
   it('accepts an offer for a listed player and refills the lineup', () => {
-    const listed = state().lineup.starters.LST!;
-    state().toggleTransferListed(listed);
+    // A starter and three squad players: listing several makes a bid by September near-certain
+    // without depending on one particular club's needs (values shift as the game evolves).
+    const listed = [state().lineup.starters.LST!, ...state().lineup.substitutes.slice(1, 4)];
+    listed.forEach((id) => state().toggleTransferListed(id));
     // Move through the summer until a club bids (offers are seeded, so this is deterministic).
     while (state().offers.length === 0 && state().currentDate < '2026-09-01') state().playNextFixture();
     const offer = state().offers[0];
@@ -202,5 +204,20 @@ describe('player condition in the store', () => {
     expect(conditionOf(state().condition, id).morale).toBe(NEUTRAL_MORALE - 10);
     state().toggleTransferListed(id);
     expect(conditionOf(state().condition, id).morale).toBe(NEUTRAL_MORALE - 5);
+  });
+});
+
+describe('development in the store', () => {
+  it('a new month develops players and sends the coaching report', () => {
+    state().setTraining({ intensity: 'heavy' });
+    const before = state().database.attributes;
+    while (state().currentDate < '2026-09-01') state().playNextFixture();
+    expect(state().database.attributes).not.toBe(before);
+    expect(state().inbox.some((m) => m.from === 'Head of Coaching' && m.title === 'Development report: September')).toBe(true);
+    expect(state().training).toEqual({ focus: 'balanced', intensity: 'heavy' });
+  });
+
+  it('every player has a potential in the live world', () => {
+    expect(state().database.players.every((p) => p.potential !== undefined)).toBe(true);
   });
 });

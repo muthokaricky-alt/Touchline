@@ -26,8 +26,8 @@ export function contractYearsLeft(contract: Pick<Contract, 'endDate'>, onDate: s
 }
 
 /**
- * Peak value at 22–28; cheaper every year after (no potential modelled until
- * M8). Keeps falling into the late 30s: a flat tail made a 35-year-old cost
+ * Peak value at 22–28; cheaper every year after (a small youth premium on
+ * top of potential, which marketValue prices separately). Keeps falling into the late 30s: a flat tail made a 35-year-old cost
  * the same as a 34-year-old (caught by a test).
  */
 export function ageFactor(age: number): number {
@@ -53,13 +53,23 @@ export function roundFee(amount: number): number {
   return Math.max(25_000, Math.round(amount / magnitude) * magnitude);
 }
 
+/** Share of a young player's headroom (potential − ability) that the market already pays for. */
+export function potentialWeight(age: number): number {
+  if (age <= 19) return 0.6;
+  if (age <= 21) return 0.45;
+  if (age <= 23) return 0.25;
+  return 0;
+}
+
 /**
  * Market value. Exponential in ability: each rating point is worth ~77% more
  * (e^0.57), so the jump from good to elite costs far more than from poor to
- * decent, as in real football.
+ * decent, as in real football. Young players are priced partly on what they
+ * can become (`potential`, Milestone 8b).
  */
-export function marketValue({ ability, age, yearsLeft }: { ability: number; age: number; yearsLeft: number | null }): number {
-  const base = 100_000 * Math.exp(0.57 * (ability - 6));
+export function marketValue({ ability, age, yearsLeft, potential }: { ability: number; age: number; yearsLeft: number | null; potential?: number }): number {
+  const priced = ability + Math.max(0, (potential ?? ability) - ability) * potentialWeight(age);
+  const base = 100_000 * Math.exp(0.57 * (priced - 6));
   const contract = yearsLeft === null ? 1 : contractFactor(yearsLeft);
   return roundFee(base * ageFactor(age) * contract);
 }

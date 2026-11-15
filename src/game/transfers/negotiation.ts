@@ -42,7 +42,7 @@ export function playerContext(db: GameDatabase, playerId: PlayerId, date: string
     club,
     ability,
     age,
-    value: contract ? marketValue({ ability, age, yearsLeft: contractYearsLeft(contract, date) }) : 0,
+    value: contract ? marketValue({ ability, age, yearsLeft: contractYearsLeft(contract, date), potential: player.potential }) : 0,
     isKeyPlayer: club ? starterIds(aiSetup(db, club.id).lineup).includes(playerId) : false,
   };
 }

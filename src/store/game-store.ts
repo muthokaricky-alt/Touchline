@@ -16,6 +16,9 @@ import {
 import { simulateMatch } from '@/engine/simulate';
 import { adjustMorale, conditionOn, emptyConditions, isInjured, type ConditionState } from '@/game/condition/condition';
 import { injuryMessages, withoutInjured } from '@/game/condition/squad-care';
+import { DEFAULT_TRAINING, type Training } from '@/game/development/development';
+import { developmentReport, developThrough } from '@/game/development/monthly';
+import { assignPotential } from '@/game/development/potential';
 import type { MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
 import type { Season } from '@/game/season/season';
@@ -97,6 +100,8 @@ export type GameState = {
    * (the last matchday). Read it through `conditionOn(condition, currentDate)`.
    */
   condition: ConditionState;
+  /** The user's training (AI clubs always train with DEFAULT_TRAINING). */
+  training: Training;
 };
 
 /**
@@ -152,6 +157,7 @@ export type GameActions = {
   renewContract: (offer: { playerId: PlayerId; weeklyWage: number; years: number }) => void;
   markMessageRead: (id: string) => void;
   markAllMessagesRead: () => void;
+  setTraining: (change: Partial<Training>) => void;
 };
 
 /** The transfer slice of the state, as the pure `career` functions expect it. */
@@ -182,13 +188,38 @@ function fromCareer(c: TransferCareer): Partial<GameState> {
 }
 
 /**
- * The generated world, built once. The live `database` in state is this plus
- * whatever transfers changed; a new game or a loaded save starts from here.
+ * The generated world (with every player's potential), built once. The live
+ * `database` in state is this plus whatever transfers and development
+ * changed; a new game or a loaded save starts from here.
  */
 let baseDatabase: GameDatabase | null = null;
 export function getBaseDatabase(): GameDatabase {
-  baseDatabase ??= buildFictionalDatabase(FICTIONAL_SEED);
+  baseDatabase ??= assignPotential(buildFictionalDatabase(FICTIONAL_SEED), FICTIONAL_SEED, FICTIONAL_REFERENCE_DATE);
   return baseDatabase;
+}
+
+/**
+ * The monthly step (development, training knocks, the coaching report) for a
+ * move of the calendar from `from` to `to`. A no-op unless a 1st of the month
+ * is crossed.
+ */
+function monthlyStep(s: GameState, from: string, to: string, season: Season, condition: ConditionState) {
+  const outcome = developThrough({
+    db: s.database,
+    from,
+    to,
+    season,
+    condition,
+    userClubId: s.userClubId,
+    userTraining: s.training,
+    seed: FICTIONAL_SEED,
+  });
+  const report = developmentReport(outcome.db, s.userClubId, outcome, to);
+  const messages = [
+    ...(report ? [report] : []),
+    ...injuryMessages(outcome.db, s.userClubId, outcome.trainingInjuries, to, 'training'),
+  ];
+  return { database: outcome.db, condition: outcome.condition, messages };
 }
 
 /**
@@ -208,12 +239,13 @@ function toSave(state: GameState): GameSave {
     lineup: state.lineup,
     tactics: state.tactics,
     season: state.season,
-    ...worldChanges(state.database),
+    ...worldChanges(state.database, getBaseDatabase()),
     transferHistory: state.transferHistory,
     transferListed: state.transferListed,
     offers: state.offers,
     inbox: state.inbox,
     condition: state.condition,
+    training: state.training,
   };
 }
 
@@ -234,6 +266,7 @@ export function createInitialGameState(database: GameDatabase = getBaseDatabase(
     offers: [],
     inbox: [],
     condition: emptyConditions(FICTIONAL_REFERENCE_DATE),
+    training: DEFAULT_TRAINING,
   };
 }
 
@@ -271,8 +304,10 @@ export const useGameStore = create<Store>()(
         const { database, userClubId, lineup, tactics, season } = state;
         const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics }, state.condition);
         const date = played.fixture.date;
+        // A new month: players develop, some pick up training knocks.
+        const monthly = monthlyStep(state, state.currentDate, date, played.season, played.condition);
         // The calendar moved: offers expire / arrive, contract warnings.
-        const career = afterCalendarMove({ ...transferCareer(state), date }, state.currentDate, season.seed);
+        const career = afterCalendarMove({ ...transferCareer(state), db: monthly.database, date }, state.currentDate, season.seed);
         set({
           ...fromCareer(career),
           // Players still injured at the next kick-off leave the lineup; the Head of Medical reports every injury.
@@ -280,10 +315,10 @@ export const useGameStore = create<Store>()(
             career.db,
             userClubId,
             career.lineup,
-            conditionAtKickOff({ condition: played.condition, currentDate: date, season: played.season, userClubId }),
+            conditionAtKickOff({ condition: monthly.condition, currentDate: date, season: played.season, userClubId }),
           ),
-          inbox: addMessages(career.inbox, injuryMessages(career.db, userClubId, played.injuries, date)),
-          condition: played.condition,
+          inbox: addMessages(career.inbox, [...injuryMessages(career.db, userClubId, played.injuries, date), ...monthly.messages]),
+          condition: monthly.condition,
           season: played.season,
           lastMatch: played.result,
           lastMatchFixtureId: played.fixture.id,
@@ -295,8 +330,14 @@ export const useGameStore = create<Store>()(
         if (nextFixtureFor(state.season, state.userClubId)) throw new RangeError('You still have fixtures to play');
         const finished = playRemaining(state.database, state.season, state.condition);
         const lastDate = finished.season.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), state.currentDate);
-        const career = afterCalendarMove({ ...transferCareer(state), date: lastDate }, state.currentDate, state.season.seed);
-        set({ ...fromCareer(career), season: finished.season, condition: finished.condition ?? state.condition });
+        const monthly = monthlyStep(state, state.currentDate, lastDate, finished.season, finished.condition ?? state.condition);
+        const career = afterCalendarMove({ ...transferCareer(state), db: monthly.database, date: lastDate }, state.currentDate, state.season.seed);
+        set({
+          ...fromCareer(career),
+          inbox: addMessages(career.inbox, monthly.messages),
+          season: finished.season,
+          condition: monthly.condition,
+        });
       },
       startNextSeason: () => {
         const state = get();
@@ -304,11 +345,13 @@ export const useGameStore = create<Store>()(
         // 1 July: contracts expire first (promotion/relegation doesn't depend on them), then the new
         // fixture list; the summer window is open, so offers may arrive straight away.
         const seasonStart = `${state.season.startYear + 1}-07-01`;
-        const rolled = seasonRollover(transferCareer(state), seasonStart);
+        // June and July's development happens first (with the finished season's playing time).
+        const monthly = monthlyStep(state, state.currentDate, seasonStart, state.season, state.condition);
+        const rolled = seasonRollover({ ...transferCareer(state), db: monthly.database, inbox: addMessages(state.inbox, monthly.messages) }, seasonStart);
         const next = startNextSeason(rolled.db, state.season);
         const career = afterCalendarMove(rolled, state.currentDate, next.seed);
         // Over the summer most players recover and heal; anyone still injured at the first kick-off stays out of the lineup.
-        const condition = conditionOn(state.condition, seasonStart);
+        const condition = conditionOn(monthly.condition, seasonStart);
         set({
           ...fromCareer(career),
           lineup: withoutInjured(
@@ -373,6 +416,7 @@ export const useGameStore = create<Store>()(
         })),
       markMessageRead: (id) => set((s) => ({ inbox: markRead(s.inbox, id) })),
       markAllMessagesRead: () => set((s) => ({ inbox: markAllRead(s.inbox) })),
+      setTraining: (change) => set((s) => ({ training: { ...s.training, ...change } })),
     }),
     {
       name: SAVE_KEY,
@@ -396,7 +440,7 @@ export const useGameStore = create<Store>()(
           return current;
         }
         saveStatus.loaded();
-        const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, ...career } = check.save;
+        const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, attributeChanges: _attributes, ...career } = check.save;
         return { ...current, ...career, database: check.database, lastMatch: null, lastMatchFixtureId: null };
       },
       // Unreadable JSON etc.

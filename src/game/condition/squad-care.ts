@@ -26,7 +26,13 @@ export function durationLabel(days: number): string {
   return weeks < 8 ? `about ${weeks} weeks` : `about ${Math.round(days / 30)} months`;
 }
 
-export function injuryMessages(db: GameDatabase, clubId: ClubId, injuries: readonly NewInjury[], date: string): NewMessage[] {
+export function injuryMessages(
+  db: GameDatabase,
+  clubId: ClubId,
+  injuries: readonly NewInjury[],
+  date: string,
+  where: 'match' | 'training' = 'match',
+): NewMessage[] {
   const nameOf = (id: PlayerId) => {
     const p = db.players.find((x) => x.id === id);
     return p ? fullName(p) : id;
@@ -37,7 +43,7 @@ export function injuryMessages(db: GameDatabase, clubId: ClubId, injuries: reado
       date,
       category: 'medical' as const,
       from: 'Head of Medical',
-      title: `${nameOf(i.playerId)} injured: ${i.injury.name}`,
+      title: `${nameOf(i.playerId)} injured${where === 'training' ? ' in training' : ''}: ${i.injury.name}`,
       body: `He'll be out for ${durationLabel(i.days)} and should be available again on ${formatDate(i.injury.returns)}. He has been taken out of your lineup.`,
     }));
 }
