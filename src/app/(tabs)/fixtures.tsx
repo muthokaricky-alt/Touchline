@@ -1,13 +1,14 @@
-import { ComingSoonScreen } from '@/components/ComingSoonScreen';
+import { useMemo } from 'react';
 
+import { FixturesScreen } from '@/features/fixtures/FixturesScreen';
+import { buildSeasonView } from '@/features/fixtures/season-view';
+import { useGameStore } from '@/store/game-store';
+
+/** Route: the league season (fixtures, table, leaderboards). */
 export default function FixturesRoute() {
-  return (
-    <ComingSoonScreen
-      title="Fixtures"
-      icon="fixtures"
-      milestone="Milestone 6"
-      description="Your season schedule, results and league standings."
-      planned={['League fixtures and results', 'Full league table', 'Cup competitions', 'Promotion and relegation']}
-    />
-  );
+  const database = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+  const clubId = useGameStore((s) => s.userClubId);
+  const view = useMemo(() => buildSeasonView(database, season, clubId), [database, season, clubId]);
+  return <FixturesScreen season={view} />;
 }

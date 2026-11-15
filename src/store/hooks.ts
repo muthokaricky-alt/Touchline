@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
 import { lineupStrength } from '@/game/match/build-match-team';
+import { findLeague, nextFixtureFor, totalMatchdays } from '@/game/season/season-flow';
 import {
   findClub,
   fullName,
@@ -75,6 +76,30 @@ export function useOpponentPreview(opponentId: ClubId | null) {
     const ai = buildAiTeam(database, opponentId, lineupStrength(lineup, selectSquadCandidates(database, clubId)));
     return `${ai.lineup.formationId} · ${matchPlayingStyle(ai.tactics)?.name ?? 'Custom'}`;
   }, [database, clubId, lineup, opponentId]);
+}
+
+/** The user's next league fixture, shaped for the pre-match screen, or null when the season is over. */
+export function useNextFixture() {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const season = useGameStore((s) => s.season);
+  return useMemo(() => {
+    const fixture = nextFixtureFor(season, clubId);
+    if (!fixture) return null;
+    const nameOf = (id: ClubId) => findClub(database, id)?.name ?? id;
+    const venue = fixture.homeId === clubId ? ('home' as const) : ('away' as const);
+    return {
+      fixtureId: fixture.id,
+      competitionName: findLeague(database, season.competitionId).name,
+      matchday: fixture.matchday,
+      totalMatchdays: totalMatchdays(season),
+      date: fixture.date,
+      venue,
+      opponentId: venue === 'home' ? fixture.awayId : fixture.homeId,
+      homeName: nameOf(fixture.homeId),
+      awayName: nameOf(fixture.awayId),
+    };
+  }, [database, clubId, season]);
 }
 
 /** Lookup from player id to full name, for commentary and ratings. */

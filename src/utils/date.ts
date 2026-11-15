@@ -22,6 +22,34 @@ export function ageOn(dateOfBirth: string, onDate: string): number {
   return on.year - birth.year - (hadBirthdayThisYear ? 0 : 1);
 }
 
+/**
+ * Calendar arithmetic via UTC timestamps: UTC has no daylight-saving jumps,
+ * so adding 7 days always lands on the same weekday.
+ */
+function toUtc(iso: string): number {
+  const { year, month, day } = parseIsoDate(iso);
+  return Date.UTC(year, month - 1, day);
+}
+
+function fromUtc(ms: number): string {
+  const d = new Date(ms);
+  return toIsoDate({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() });
+}
+
+export function addDays(iso: string, days: number): string {
+  return fromUtc(toUtc(iso) + days * 86_400_000);
+}
+
+/** 0 = Sunday … 6 = Saturday. */
+export function weekdayOf(iso: string): number {
+  return new Date(toUtc(iso)).getUTCDay();
+}
+
+/** First date on or after `iso` that falls on `weekday` (0 = Sunday). */
+export function nextWeekday(iso: string, weekday: number): string {
+  return addDays(iso, (weekday - weekdayOf(iso) + 7) % 7);
+}
+
 /** Formats parts as `YYYY-MM-DD`. */
 export function toIsoDate({ year, month, day }: DateParts): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;

@@ -2,30 +2,41 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 
 import type { ClubId } from '@/data/schemas';
-import { buildDashboardSummary } from '@/features/dashboard/build-dashboard-summary';
-import { previewDashboard } from '@/features/dashboard/dashboard.preview';
-import { MatchCentreScreen } from '@/features/match/MatchCentreScreen';
+import type { MatchResult } from '@/engine/types';
+import { FixtureSetupScreen } from '@/features/match/FixtureSetupScreen';
+import { MatchCentreScreen, type OtherResult } from '@/features/match/MatchCentreScreen';
 import { MatchSetupScreen } from '@/features/match/MatchSetupScreen';
 import { buildRatingRows, buildStatRows, buildTimeline } from '@/features/match/timeline';
-import type { MatchResult } from '@/engine/types';
 import type { MatchVenue } from '@/game/match/friendly';
+import { findClub } from '@/game/squad/squad-selectors';
 import { useGameStore } from '@/store/game-store';
-import { useLeagueOpponents, useOpponentPreview, usePlayerNames, useTacticsView, useTeamSheet, useUserClub } from '@/store/hooks';
+import {
+  useLeagueOpponents,
+  useNextFixture,
+  useOpponentPreview,
+  usePlayerNames,
+  useTacticsView,
+  useTeamSheet,
+  useUserClub,
+} from '@/store/hooks';
 
 /**
- * Route: friendly match. Two states, decided by the store:
- *   no lastMatch → setup (opponent, venue, kick off)
- *   lastMatch    → match centre (live replay, then report)
+ * Route: match day. State decides what shows (no URL params, so the static
+ * web export's pre-rendered page matches the browser's first render):
  *
- * No URL params: the static web export pre-renders this page once, with
- * no match, which is exactly what the browser also renders first.
+ *   lastMatch set              → match centre (replay, then report)
+ *   else, league fixture due   → fixture pre-match (unless the user chose a friendly)
+ *   else                       → friendly setup
  */
 export default function MatchRoute() {
   const router = useRouter();
   const lastMatch = useGameStore((s) => s.lastMatch);
+  const lastMatchFixtureId = useGameStore((s) => s.lastMatchFixtureId);
   const clearMatch = useGameStore((s) => s.clearMatch);
-  // Held here (not in MatchSetup) so "Play another" remembers the last choice:
-  // MatchSetup unmounts while the match centre is showing.
+  const nextFixture = useNextFixture();
+
+  // Held here (not in the setup screens) so choices survive the match centre.
+  const [wantsFriendly, setWantsFriendly] = useState(false);
   const [chosenOpponent, setChosenOpponent] = useState<ClubId | null>(null);
   const [venue, setVenue] = useState<MatchVenue>('home');
 
@@ -34,50 +45,93 @@ export default function MatchRoute() {
     if (router.canGoBack()) router.back();
     else router.replace('/');
   };
+  const editTeam = () => router.navigate('/tactics');
 
-  return lastMatch ? (
-    // key: a new match remounts the centre, restarting the replay.
-    <MatchCentre key={`${lastMatch.seed}-${lastMatch.home.clubId}-${lastMatch.away.clubId}`} result={lastMatch} onPlayAgain={clearMatch} onDone={done} />
-  ) : (
-    <MatchSetup
+  if (lastMatch) {
+    return (
+      <MatchCentre
+        // A new match remounts the centre, restarting the replay.
+        key={`${lastMatch.seed}-${lastMatch.home.clubId}-${lastMatch.away.clubId}`}
+        result={lastMatch}
+        fixtureId={lastMatchFixtureId}
+        // After the final league match there's nothing left to set up: go to the dashboard's season summary.
+        onContinue={lastMatchFixtureId && !nextFixture ? done : clearMatch}
+        onDone={done}
+      />
+    );
+  }
+  if (nextFixture && !wantsFriendly) {
+    return <LeagueSetup onPlayFriendly={() => setWantsFriendly(true)} onEditTeam={editTeam} onBack={done} />;
+  }
+  return (
+    <FriendlySetup
       chosenOpponent={chosenOpponent}
       onOpponentChange={setChosenOpponent}
       venue={venue}
       onVenueChange={setVenue}
       onBack={done}
-      onEditTeam={() => router.navigate('/tactics')}
+      onEditTeam={editTeam}
+      onBackToLeague={nextFixture ? () => setWantsFriendly(false) : undefined}
     />
   );
 }
 
-type MatchSetupProps = {
+/** Formation · style · rating line and lineup errors, shared by both setups. */
+function useTeamReadiness() {
+  const sheet = useTeamSheet();
+  const { style } = useTacticsView();
+  return {
+    teamSummary: [sheet.formationId, style?.name ?? 'Custom', `avg rating ${sheet.averageRating ?? '–'}`].join(' · '),
+    blockingIssues: sheet.issues.filter((i) => i.severity === 'error').map((i) => i.message),
+  };
+}
+
+function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: () => void; onEditTeam: () => void; onBack: () => void }) {
+  const fixture = useNextFixture();
+  const playNextFixture = useGameStore((s) => s.playNextFixture);
+  const opponentPreview = useOpponentPreview(fixture?.opponentId ?? null);
+  const { teamSummary, blockingIssues } = useTeamReadiness();
+  if (!fixture) return null;
+
+  return (
+    <FixtureSetupScreen
+      competitionName={fixture.competitionName}
+      matchday={fixture.matchday}
+      totalMatchdays={fixture.totalMatchdays}
+      date={fixture.date}
+      homeName={fixture.homeName}
+      awayName={fixture.awayName}
+      userIsHome={fixture.venue === 'home'}
+      teamSummary={teamSummary}
+      opponentPreview={opponentPreview}
+      blockingIssues={blockingIssues}
+      onKickOff={playNextFixture}
+      onEditTeam={onEditTeam}
+      onPlayFriendly={onPlayFriendly}
+      onBack={onBack}
+    />
+  );
+}
+
+type FriendlySetupProps = {
   chosenOpponent: ClubId | null;
   onOpponentChange: (id: ClubId) => void;
   venue: MatchVenue;
   onVenueChange: (venue: MatchVenue) => void;
   onBack: () => void;
   onEditTeam: () => void;
+  onBackToLeague?: () => void;
 };
 
-function MatchSetup({ chosenOpponent, onOpponentChange, venue, onVenueChange, onBack, onEditTeam }: MatchSetupProps) {
-  const database = useGameStore((s) => s.database);
-  const userClubId = useGameStore((s) => s.userClubId);
+function FriendlySetup({ chosenOpponent, onOpponentChange, venue, onVenueChange, onBack, onEditTeam, onBackToLeague }: FriendlySetupProps) {
   const playFriendly = useGameStore((s) => s.playFriendly);
   const club = useUserClub();
   const opponents = useLeagueOpponents();
-  const sheet = useTeamSheet();
-  const { style } = useTacticsView();
-
-  // Default to the dashboard's "next match" opponent.
-  const defaultOpponent = useMemo(
-    () => buildDashboardSummary(database, userClubId, previewDashboard).nextMatch.opponentId ?? opponents[0]?.id ?? null,
-    [database, userClubId, opponents],
-  );
-  const opponentId = chosenOpponent ?? defaultOpponent;
+  const nextFixture = useNextFixture();
+  // Default: the next league opponent, else the strongest club.
+  const opponentId = chosenOpponent ?? nextFixture?.opponentId ?? opponents[0]?.id ?? null;
   const opponentPreview = useOpponentPreview(opponentId);
-
-  const blockingIssues = sheet.issues.filter((i) => i.severity === 'error').map((i) => i.message);
-  const teamSummary = [sheet.formationId, style?.name ?? 'Custom', `avg rating ${sheet.averageRating ?? '–'}`].join(' · ');
+  const { teamSummary, blockingIssues } = useTeamReadiness();
 
   return (
     <MatchSetupScreen
@@ -93,31 +147,59 @@ function MatchSetup({ chosenOpponent, onOpponentChange, venue, onVenueChange, on
       onKickOff={() => opponentId && playFriendly(opponentId, venue)}
       onEditTeam={onEditTeam}
       onBack={onBack}
+      onBackToLeague={onBackToLeague}
     />
   );
 }
 
-function MatchCentre({ result, onPlayAgain, onDone }: { result: MatchResult; onPlayAgain: () => void; onDone: () => void }) {
+type MatchCentreProps = {
+  result: MatchResult;
+  /** Set for league matches. */
+  fixtureId: string | null;
+  onContinue: () => void;
+  onDone: () => void;
+};
+
+function MatchCentre({ result, fixtureId, onContinue, onDone }: MatchCentreProps) {
   const playerName = usePlayerNames();
-  const view = useMemo(
-    () => ({
+  const database = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+
+  const view = useMemo(() => {
+    const fixture = fixtureId ? season.fixtures.find((f) => f.id === fixtureId) : undefined;
+    const league = fixture ? database.competitions.find((c) => c.id === fixture.competitionId) : undefined;
+    const otherResults: OtherResult[] = fixture
+      ? season.fixtures
+          .filter((f) => f.matchday === fixture.matchday && f.id !== fixture.id && f.result)
+          .map((f) => ({
+            key: f.id,
+            homeName: findClub(database, f.homeId)?.name ?? f.homeId,
+            awayName: findClub(database, f.awayId)?.name ?? f.awayId,
+            score: f.result!.score,
+          }))
+      : [];
+    return {
+      overline: fixture && league ? `${league.name} · Matchday ${fixture.matchday}` : 'Friendly',
+      otherResults,
       timeline: buildTimeline(result, playerName),
       statRows: buildStatRows(result.stats),
       ratings: { home: buildRatingRows(result, 'home', playerName), away: buildRatingRows(result, 'away', playerName) },
       playerOfTheMatch: result.playerOfTheMatch ? playerName(result.playerOfTheMatch) : null,
-    }),
-    [result, playerName],
-  );
+    };
+  }, [result, fixtureId, season, database, playerName]);
 
   return (
     <MatchCentreScreen
+      overline={view.overline}
+      continueLabel={fixtureId ? 'Continue' : 'Play another'}
+      otherResults={view.otherResults}
       homeName={result.home.name}
       awayName={result.away.name}
       timeline={view.timeline}
       statRows={view.statRows}
       ratings={view.ratings}
       playerOfTheMatch={view.playerOfTheMatch}
-      onPlayAgain={onPlayAgain}
+      onPlayAgain={onContinue}
       onDone={onDone}
     />
   );

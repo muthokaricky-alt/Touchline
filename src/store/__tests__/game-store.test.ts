@@ -71,6 +71,28 @@ describe('game store', () => {
     expect(state().lastMatch).toBeNull();
   });
 
+  it('plays league fixtures matchday by matchday and moves the date on', () => {
+    expect(state().season.fixtures.every((f) => f.result === null)).toBe(true);
+    const result = state().playNextFixture();
+    expect([result.home.clubId, result.away.clubId]).toContain(DEFAULT_USER_CLUB_ID);
+    const md1 = state().season.fixtures.filter((f) => f.matchday === 1);
+    expect(md1.every((f) => f.result)).toBe(true);
+    expect(state().lastMatchFixtureId).toBe(md1.find((f) => f.result && (f.homeId === DEFAULT_USER_CLUB_ID || f.awayId === DEFAULT_USER_CLUB_ID))!.id);
+    expect(state().currentDate).toBe(md1[0].date);
+    // A friendly afterwards is not a league match.
+    state().playFriendly('club_kestrel_bay', 'home', 1);
+    expect(state().lastMatchFixtureId).toBeNull();
+  });
+
+  it('only starts a new season when the current one is complete', () => {
+    expect(() => state().startNextSeason()).toThrow(/still in progress/);
+    for (let i = 0; i < 14; i++) state().playNextFixture();
+    expect(() => state().playNextFixture()).toThrow();
+    state().startNextSeason();
+    expect(state().season.label).toBe('2027/28');
+    expect(state().season.fixtures.every((f) => f.result === null)).toBe(true);
+  });
+
   it('replaces the lineup object on change (so React re-renders)', () => {
     const before = state().lineup;
     state().clearSlot('LM');

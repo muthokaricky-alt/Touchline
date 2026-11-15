@@ -19,7 +19,15 @@ const REPORT_SEGMENTS = [
   { value: 'ratings', label: 'Ratings' },
 ] as const satisfies readonly { value: ReportView; label: string }[];
 
+export type OtherResult = { key: string; homeName: string; awayName: string; score: { home: number; away: number } };
+
 type MatchCentreScreenProps = {
+  /** e.g. "Friendly" or "First Division · Matchday 3" */
+  overline: string;
+  /** Label of the primary button after full time ("Continue", "Play another"). */
+  continueLabel: string;
+  /** League only: the rest of the matchday, revealed at full time. */
+  otherResults?: readonly OtherResult[];
   homeName: string;
   awayName: string;
   timeline: readonly TimelineItem[];
@@ -35,6 +43,9 @@ type MatchCentreScreenProps = {
  * Give it a `key` per match so a new match restarts the replay.
  */
 export function MatchCentreScreen({
+  overline,
+  continueLabel,
+  otherResults,
   homeName,
   awayName,
   timeline,
@@ -52,7 +63,7 @@ export function MatchCentreScreen({
   return (
     <Screen bottomInset>
       <PageHeader
-        overline="Friendly"
+        overline={overline}
         title={replay.finished ? 'Match report' : 'Match centre'}
         leading={<IconButton icon="back" accessibilityLabel="Back" onPress={onDone} />}
       />
@@ -90,6 +101,23 @@ export function MatchCentreScreen({
               Player of the match: <AppText variant="bodyStrong">{playerOfTheMatch}</AppText>
             </AppText>
           ) : null}
+          {otherResults && otherResults.length > 0 ? (
+            <Card title="Other results" icon="fixtures">
+              {otherResults.map((r) => (
+                <View key={r.key} style={styles.result} accessible accessibilityLabel={`${r.homeName} ${r.score.home}, ${r.awayName} ${r.score.away}`}>
+                  <AppText style={styles.resultTeam} numberOfLines={1} align="right">
+                    {r.homeName}
+                  </AppText>
+                  <AppText variant="bodyStrong" style={styles.resultScore}>
+                    {r.score.home} – {r.score.away}
+                  </AppText>
+                  <AppText style={styles.resultTeam} numberOfLines={1}>
+                    {r.awayName}
+                  </AppText>
+                </View>
+              ))}
+            </Card>
+          ) : null}
           <SegmentedControl segments={REPORT_SEGMENTS} value={view} onChange={setView} accessibilityLabel="Match report" />
           {view === 'timeline' ? (
             <Card>
@@ -114,7 +142,7 @@ export function MatchCentreScreen({
               <Button label="Done" variant="secondary" onPress={onDone} />
             </View>
             <View style={styles.flex}>
-              <Button label="Play another" icon="match" onPress={onPlayAgain} />
+              <Button label={continueLabel} icon="match" onPress={onPlayAgain} />
             </View>
           </View>
         </>
@@ -128,4 +156,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, alignItems: 'flex-start' },
   column: { flexGrow: 1, flexBasis: 340, minWidth: 0 },
+  result: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  resultTeam: { flex: 1 },
+  resultScore: { minWidth: 56, textAlign: 'center', fontVariant: ['tabular-nums'] },
 });

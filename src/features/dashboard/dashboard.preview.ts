@@ -26,6 +26,7 @@ export const previewDashboard: DashboardSummary = {
     opponentPosition: 3,
     opponentForm: ['W', 'W', 'D', 'W', 'L'],
   },
+  seasonEnd: null,
   form: ['W', 'D', 'W', 'L', 'W'],
   table: [
     { position: 1, clubId: 'northgate', clubName: 'Northgate United', played: 11, goalDifference: 15, points: 27 },

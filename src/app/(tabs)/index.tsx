@@ -13,6 +13,12 @@ import { useGameStore } from '@/store/game-store';
 export default function HomeRoute() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
-  const summary = useMemo(() => buildDashboardSummary(database, clubId, previewDashboard), [database, clubId]);
-  return <DashboardScreen summary={summary} />;
+  const season = useGameStore((s) => s.season);
+  const currentDate = useGameStore((s) => s.currentDate);
+  const startNextSeason = useGameStore((s) => s.startNextSeason);
+  const summary = useMemo(
+    () => buildDashboardSummary(database, clubId, season, currentDate, previewDashboard),
+    [database, clubId, season, currentDate],
+  );
+  return <DashboardScreen summary={summary} onStartNextSeason={startNextSeason} />;
 }

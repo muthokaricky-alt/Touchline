@@ -11,7 +11,10 @@ export type DashboardSummary = {
   manager: { name: string };
   club: { id: string; name: string; shortName: string; leagueName: string };
   season: { label: string; currentDate: string; matchday: number; totalMatchdays: number };
-  nextMatch: NextMatchSummary;
+  /** null once the season's fixtures are all played. */
+  nextMatch: NextMatchSummary | null;
+  /** Set when the season is complete. */
+  seasonEnd: SeasonEndSummary | null;
   form: readonly MatchOutcome[];
   table: readonly LeagueTableRow[];
   squad: SquadStatusSummary;
@@ -27,8 +30,15 @@ export type NextMatchSummary = {
   competition: string;
   date: string;
   kickOff: string;
-  opponentPosition: number;
+  /** null before any league match has been played (no meaningful position yet). */
+  opponentPosition: number | null;
   opponentForm: readonly MatchOutcome[];
+};
+
+export type SeasonEndSummary = {
+  championName: string;
+  userPosition: number;
+  userZone: 'champion' | 'promotion' | 'relegation' | null;
 };
 
 export type LeagueTableRow = {

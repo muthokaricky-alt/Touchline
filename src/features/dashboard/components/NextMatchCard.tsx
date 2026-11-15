@@ -9,7 +9,7 @@ import type { DashboardSummary } from '../dashboard.types';
 type NextMatchCardProps = {
   club: DashboardSummary['club'];
   clubForm: DashboardSummary['form'];
-  match: DashboardSummary['nextMatch'];
+  match: NonNullable<DashboardSummary['nextMatch']>;
   onViewFixtures: () => void;
   onPlayMatch: () => void;
 };
@@ -39,7 +39,9 @@ export function NextMatchCard({ club, clubForm, match, onViewFixtures, onPlayMat
       </View>
 
       <AppText variant="caption" color="textSecondary" align="center">
-        {match.opponentName} are {formatOrdinal(match.opponentPosition)} in the table
+        {match.opponentPosition === null
+          ? 'Opening day of the season'
+          : `${match.opponentName} are ${formatOrdinal(match.opponentPosition)} in the table`}
       </AppText>
 
       <View style={styles.actions}>

@@ -39,6 +39,8 @@ type MatchSetupScreenProps = {
   onKickOff: () => void;
   onEditTeam: () => void;
   onBack: () => void;
+  /** Shown when a league fixture is waiting. */
+  onBackToLeague?: () => void;
 };
 
 /** Choose opponent and venue, check your team, kick off. */
@@ -55,6 +57,7 @@ export function MatchSetupScreen({
   onKickOff,
   onEditTeam,
   onBack,
+  onBackToLeague,
 }: MatchSetupScreenProps) {
   const ready = blockingIssues.length === 0 && opponentId !== null;
 
@@ -90,6 +93,9 @@ export function MatchSetupScreen({
             <AppText variant="caption" color="danger" align="center">
               Fix your lineup before kick-off.
             </AppText>
+          ) : null}
+          {onBackToLeague ? (
+            <Button label="Back to league fixture" variant="secondary" icon="fixtures" onPress={onBackToLeague} />
           ) : null}
         </View>
 

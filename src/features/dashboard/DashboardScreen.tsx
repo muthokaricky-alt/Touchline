@@ -9,10 +9,14 @@ import { FinanceCard } from './components/FinanceCard';
 import { InboxCard } from './components/InboxCard';
 import { LeagueSnapshotCard } from './components/LeagueSnapshotCard';
 import { NextMatchCard } from './components/NextMatchCard';
+import { SeasonCompleteCard } from './components/SeasonCompleteCard';
 import { SquadStatusCard } from './components/SquadStatusCard';
 import type { DashboardSummary } from './dashboard.types';
 
-type DashboardScreenProps = { summary: DashboardSummary };
+type DashboardScreenProps = {
+  summary: DashboardSummary;
+  onStartNextSeason: () => void;
+};
 
 /**
  * Manager's home screen. Receives a ready-made `DashboardSummary` and only
@@ -22,17 +26,26 @@ type DashboardScreenProps = { summary: DashboardSummary };
  * instead of measuring the window width so the statically pre-rendered web
  * HTML matches what the browser renders (no hydration mismatch).
  */
-export function DashboardScreen({ summary }: DashboardScreenProps) {
+export function DashboardScreen({ summary, onStartNextSeason }: DashboardScreenProps) {
   const router = useRouter();
   const primary = (
     <>
-      <NextMatchCard
-        club={summary.club}
-        clubForm={summary.form}
-        match={summary.nextMatch}
-        onViewFixtures={() => router.navigate('/fixtures')}
-        onPlayMatch={() => router.push('/match')}
-      />
+      {summary.nextMatch ? (
+        <NextMatchCard
+          club={summary.club}
+          clubForm={summary.form}
+          match={summary.nextMatch}
+          onViewFixtures={() => router.navigate('/fixtures')}
+          onPlayMatch={() => router.push('/match')}
+        />
+      ) : summary.seasonEnd ? (
+        <SeasonCompleteCard
+          seasonLabel={summary.season.label}
+          summary={summary.seasonEnd}
+          onStartNextSeason={onStartNextSeason}
+          onViewTable={() => router.navigate('/fixtures')}
+        />
+      ) : null}
       <LeagueSnapshotCard leagueName={summary.club.leagueName} table={summary.table} clubId={summary.club.id} />
     </>
   );

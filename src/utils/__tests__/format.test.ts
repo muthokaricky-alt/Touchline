@@ -3,10 +3,19 @@ import {
   formatCompactCurrency,
   formatDate,
   formatGoalDifference,
+  formatMatchDate,
   formatOrdinal,
   formatWeeklyWage,
 } from '../format';
 import { clamp } from '../math';
+
+describe('formatMatchDate', () => {
+  it('includes the weekday', () => {
+    expect(formatMatchDate('2026-11-21')).toBe('Sat 21 Nov');
+    expect(formatMatchDate('2026-11-21', true)).toBe('Sat 21 Nov 2026');
+    expect(formatMatchDate('nope')).toBe('nope');
+  });
+});
 
 describe('formatDate', () => {
   it.each([

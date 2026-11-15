@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 5 (Match engine + match screen) complete._
+_Last updated: 15 Nov 2026 — Milestone 6 step 6a (league season) complete; 6b (second division, promotion/relegation, cup) next._
 
 ---
 
@@ -33,7 +33,7 @@ src/
                          Instructions views), fixtures, club
     player/[id].tsx      player profile (exports generateStaticParams for web)
     select-player.tsx    modal picker: ?target=<slotId>|bench
-    match.tsx            friendly: setup → live replay → report (state in store)
+    match.tsx            match day: league fixture or friendly → live replay → report
   components/
     ui/                  design-system primitives (AppText, Card, Button, ListRow,
                          RatingBadge, PositionBadge, ChoiceChips, PageHeader…)
@@ -44,8 +44,9 @@ src/
     player/
     team/                TeamSelectionPanel, Pitch, player picker
     tactics/             TacticsScreen shell, InstructionsPanel, option labels
-    match/               MatchSetupScreen, MatchCentreScreen, timeline.ts (pure:
-                         feed items, stat rows, rating rows), useReplay
+    match/               FixtureSetupScreen (league), MatchSetupScreen (friendly),
+                         MatchCentreScreen, timeline.ts (pure), useReplay
+    fixtures/            FixturesScreen (fixtures / table / stats), season-view.ts (pure)
   game/                GAME SYSTEMS: pure TS, no React imports
     positions.ts         position groups and names
     ratings.ts           positionRating(): weighted 1–20 suitability per position
@@ -55,6 +56,8 @@ src/
     tactics/             Tactics schema, playing-style presets, assistant analysis
     ai/opponent.ts       AI club setup: best formation + style for the strength gap
     match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
+    season/              Season/Fixture schemas, fixture generator, table,
+                         player season stats, season flow (play, record, roll over)
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
     simulate.ts          minute loop: possession → fouls → chance/shot → fatigue → subs
     team-state.ts        on-pitch players, energy, unit strengths, replacements
@@ -265,7 +268,39 @@ call pure functions from `src/game` and save the result.
 - **AI preview:** setup shows how the opponent will line up
   (`buildAiTeam` against the user's current XI strength).
 - **Kick-off is blocked** while the lineup has errors (empty slots etc.).
-- Friendlies aren't recorded anywhere until fixtures exist (M6).
+- Friendlies aren't recorded anywhere.
+
+### Competitions (Milestone 6)
+
+- **Season state** (`src/game/season/season.ts`, Zod schemas ready for
+  saving): label, start year, competition, seed, fixtures. Each fixture
+  stores a **compact result** (score, goals, cards, per-player lines, POTM),
+  not the engine's full event list. The table and player season stats are
+  **always derived** from results, never stored.
+- **Fixture generator:** polygon/circle method. Venue rule gives at most 2
+  home/away in a row; the second leg is mirrored *and rotated one round*
+  (plain mirroring created 3-in-a-row at the half-way point; reversing
+  would schedule the same tie on consecutive weekends). Found by a probe
+  across league sizes after the first version gave a club 7 home games
+  in a row. Club order is shuffled per season with the season seed.
+- **Dates:** Saturdays weekly from the first Saturday on/after 8 August.
+  Date maths in UTC (`addDays`, `weekdayOf`) so time zones can't shift days.
+- **Table order:** points → GD → goals for → head-to-head points among the
+  tied clubs → club id. Zones: champion (tier 1, 1st), promotion, relegation.
+- **Determinism:** fixture seed = hash(season seed, fixture id); next season's
+  seed derives from the previous. Same season seed + same user choices →
+  identical season (tested over a full season).
+- **Flow:** `playUserFixture` plays the user's fixture, records it, then plays
+  the matchday's AI-v-AI games (`buildAiTeam` both sides). Matchdays must be
+  completed in order. `startNextSeason` only when complete.
+- **Store:** `season`, `lastMatchFixtureId`, `playNextFixture`,
+  `startNextSeason`; `currentDate` moves to the matchday's date.
+- **Match route modes:** league fixture pre-match by default when one is due
+  (opponent/venue fixed), "Play a friendly instead" toggle; after a league
+  match the report adds the matchday's other results and "Continue". After
+  the final matchday, Continue returns to the dashboard's season summary.
+- **Dashboard** is now real apart from manager name, kick-off time,
+  fitness/morale/injuries and inbox (preview until M8).
 
 ## 3. Commands
 
@@ -366,6 +401,22 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   skip → stats/ratings → play another remembers choice → done; direct load
   of `/match`). Zero console errors, no overflow.
 
+### Milestone 6 — Competitions (in progress)
+**6a — League season ✅**
+- `src/game/season`: schemas, fixtures, table (+ tiebreakers), player season
+  stats, season flow. Date utils (`addDays`, `weekdayOf`, `nextWeekday`),
+  `formatMatchDate`.
+- Store + dashboard on real season data; season-complete card with "Next
+  season". Fixtures tab: matchdays, full table with zones + legend, top
+  scorers / assists. League pre-match screen; friendly still available.
+- Tests: 385 total (47 new) incl. a full simulated season (totals
+  consistent, deterministic, rollover).
+- Verified: `tsc` clean, tests pass, Android + web export; a complete
+  14-matchday season played in headless Chrome at 412px and 1280px, then
+  rolled over to 2027/28. Zero console errors, no overflow.
+
+**6b — Next:** second division, promotion/relegation, cup (see section 5).
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -375,26 +426,29 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - App icon / splash images are still the Expo defaults (backgrounds recoloured to
   Touchline navy). Replace with real Touchline artwork later.
 - Fonts are system fonts. A custom typeface can be added via `expo-font` later.
-- **Lineup and tactics aren't saved**: they reset on app reload
-  (persistence is M10, or earlier if it becomes annoying).
+- **Nothing is saved yet**: lineup, tactics and the season reset on app
+  reload or web refresh. Agreed: an autosave step straight after M6.
+- Pre-season, the table is in alphabetical order (all on 0 points), so the
+  user's club can appear "1st" before a ball is kicked.
 - The modal picker and profile were checked on web only; native gestures
   (swipe-to-dismiss on iOS, Android back button) still need checking in Expo Go.
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 6: Competitions
+## 5. Next steps — Milestone 6 step 6b
 
-Agree the plan with the user before coding. Likely shape:
-
-1. Season model: fixtures (double round-robin from `League.rules`,
-   home/away balanced, dated matchdays) as pure TS with tests.
-2. Results + league table: points from `rules.points`, tiebreakers (GD,
-   goals scored, head-to-head?), recorded `MatchResult` summaries.
-3. Simulate the other matches of a matchday with AI v AI (`buildAiTeam`);
-   the user's match via the existing match screen.
-4. Replace dashboard preview data with real next fixture, table, form.
-   Fixtures tab: list by matchday with results.
-5. Cups and promotion/relegation: decide scope with the user (the fictional
-   DB has one league, so promotion/relegation needs a second division).
-6. Consider: separate `npm run test:calibration` if the suite gets slow;
-   user substitutions during a match (interactive mode); injuries (M8).
+Agreed with the user (all recommendations accepted):
+1. **Second Division**: 8 more generated fictional clubs (lower reputation)
+   in a tier-2 league, simulated AI v AI each matchday alongside the top
+   flight. Season state will need to hold *several* competitions (today
+   `Season` has one `competitionId`): plan the shape change first.
+2. **Promotion/relegation** at season end: bottom 2 of tier 1 swap with top
+   2 of tier 2 (update league `clubIds` for the new season); the user's club
+   can go down. Show it on the season-complete card and table zones.
+3. **Cup**: all 16 clubs, single-leg knockout, 4 rounds on midweek dates,
+   seeded draw per round. **Draws → penalty shootout** (no extra time):
+   needs a small pure shootout function (taker skill vs keeper), tested.
+4. Then: the **autosave step** (Zustand persist + validated load with the
+   Zod schemas; native vs web storage; hydration-safe on static web).
+5. Later ideas: `npm run test:calibration` if the suite gets slow; user
+   substitutions during a match; injuries (M8).

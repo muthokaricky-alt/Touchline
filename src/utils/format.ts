@@ -67,6 +67,18 @@ export function formatDate(iso: string): string {
   return month ? `${Number(match[3])} ${month} ${match[1]}` : iso;
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** ISO date → "Sat 21 Nov" (with `withYear`: "Sat 21 Nov 2026"). Weekday computed in UTC. */
+export function formatMatchDate(iso: string, withYear = false): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  const label = `${weekday} ${day} ${MONTHS[month - 1]}`;
+  return withYear ? `${label} ${year}` : label;
+}
+
 function trimTrailingZero(value: number): string {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
 }
