@@ -1,5 +1,6 @@
 import { starterIds, validateLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
+import { PLAYING_STYLES } from '@/game/tactics/presets';
 
 import { createInitialGameState, DEFAULT_USER_CLUB_ID, useGameStore } from '../game-store';
 
@@ -45,6 +46,17 @@ describe('game store', () => {
     state().clearSlot('GK');
     state().autoPick();
     expect(state().lineup.starters.GK).not.toBeNull();
+  });
+
+  it('starts with balanced tactics, applies a style and changes single instructions', () => {
+    expect(state().tactics).toEqual(PLAYING_STYLES.balanced.tactics);
+
+    state().applyPlayingStyle('counter');
+    expect(state().tactics).toEqual(PLAYING_STYLES.counter.tactics);
+
+    state().setInstruction('width', 'wide');
+    expect(state().tactics.width).toBe('wide');
+    expect(state().tactics.passing).toBe(PLAYING_STYLES.counter.tactics.passing);
   });
 
   it('replaces the lineup object on change (so React re-renders)', () => {

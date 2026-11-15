@@ -34,6 +34,8 @@ const ICONS = {
   warning: { ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' },
   error: { ios: 'exclamationmark.octagon.fill', android: 'error', web: 'error' },
   person: { ios: 'person.fill', android: 'person', web: 'person' },
+  check: { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' },
+  assistant: { ios: 'bubble.left.and.text.bubble.right.fill', android: 'forum', web: 'forum' },
 } as const satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;

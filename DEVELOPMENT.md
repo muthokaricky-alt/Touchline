@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 3 (Squad management) complete._
+_Last updated: 15 Nov 2026 — Milestone 4 (Tactics) complete._
 
 ---
 
@@ -29,8 +29,8 @@ React Compiler and typed routes are enabled in `app.json` (`experiments`).
 src/
   app/                 PRESENTATION: routes only (Expo Router). Keep these files thin.
     _layout.tsx          root providers + stack (tabs, player profile, picker modal)
-    (tabs)/              bottom tabs: index (Home), squad, tactics (team selection),
-                         fixtures, club
+    (tabs)/              bottom tabs: index (Home), squad, tactics (Lineup /
+                         Instructions views), fixtures, club
     player/[id].tsx      player profile (exports generateStaticParams for web)
     select-player.tsx    modal picker: ?target=<slotId>|bench
   components/
@@ -41,13 +41,15 @@ src/
     dashboard/           a feature = its screen, components, view-model types,
     squad/               and pure helpers (+ tests)
     player/
-    team/                team selection screen, Pitch, player picker
+    team/                TeamSelectionPanel, Pitch, player picker
+    tactics/             TacticsScreen shell, InstructionsPanel, option labels
   game/                GAME SYSTEMS: pure TS, no React imports
     positions.ts         position groups and names
     ratings.ts           positionRating(): weighted 1–20 suitability per position
     formations.ts        5 formations as 11 slots with pitch coordinates
     lineup.ts            Lineup schema + immutable ops, autoPick, validateLineup
     squad/               positionFit/effectiveRating, view-model selectors
+    tactics/             Tactics schema, playing-style presets, assistant analysis
   store/               Zustand: game-store.ts (state + actions), hooks.ts (view-model hooks)
   data/                DATA: pure TS, no React imports
     schemas/             Zod schemas + inferred types (Player, PlayerAttributes,
@@ -172,6 +174,30 @@ call pure functions from `src/game` and save the result.
   when `npx expo start` runs. On a fresh clone, start the dev server once
   before `npm run typecheck`, or route paths won't be type-checked.
 
+### Tactics (Milestone 4)
+
+- **Six instructions, each a small ordered enum:** mentality (5 levels),
+  passing, tempo, width, defensive line, pressing (3 each). Enums, not
+  numbers: easy to show and explain; the engine maps them to effects in M5.
+- **Formation stays on the Lineup**; `Tactics` is only *how* the team plays.
+  Both live side by side in the store.
+- **Playing style is derived, never stored.** `matchPlayingStyle(tactics)`
+  finds the preset whose instructions match exactly, else null ("Custom").
+  Six presets with our own names: Balanced, Possession, Counter-attack, High
+  press, Low block, Wing play. Tested: valid, distinct, self-consistent.
+- **No numeric effects yet (deliberate).** Turning tactics into engine
+  numbers is M5's job, where they can be tuned against simulated results.
+- **Assistant analysis** (`analyseTactics`) instead: consistency rules
+  (contradictory instructions) + suitability rules comparing the instruction
+  with the attributes of the unit it relies on, judged by the *slot* a player
+  fills. Average < 10 → warning, ≥ 14 → positive. Weaker clubs see more
+  warnings, which is intended.
+- **`INSTRUCTION_OPTIONS` uses a mapped type** (`{ [K in Instruction]:
+  readonly Tactics[K][] }`) so generic code can index it with a key `K` and
+  get `Tactics[K][]` without casts.
+- **Lineup / Instructions switch is local state**, not a URL param, for the
+  same static-web hydration reason as the picker.
+
 ## 3. Commands
 
 ```
@@ -233,6 +259,22 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   picker → assign, formation change, direct loads of profile and picker. Zero
   console errors, no horizontal overflow.
 
+### Milestone 4 — Tactics ✅
+- `src/game/tactics`: Tactics schema + `setInstruction`, 6 playing styles +
+  `matchPlayingStyle`, `analyseTactics` (4 consistency + 5 suitability rules).
+- Store: `tactics` state, `setInstruction` and `applyPlayingStyle` actions;
+  `useTacticsView()` hook.
+- Tactics tab: header summary (formation · style · avg rating), Lineup /
+  Instructions switch. Instructions view: style chips (Custom badge when no
+  match), assistant notes, six instruction rows with a hint for the
+  selected option. `TeamSelectionScreen` became `TeamSelectionPanel`.
+- New UI: `SegmentedControl`; `ChoiceChips` accepts `null` (nothing selected);
+  check and assistant icons.
+- Tests: 257 total (41 new).
+- Verified: `tsc` clean, tests pass, Android + web export, web driven in
+  headless Chrome at 412px and 1280px (style apply, instruction change →
+  Custom + warnings, view switching). Zero console errors, no overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -242,25 +284,30 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - App icon / splash images are still the Expo defaults (backgrounds recoloured to
   Touchline navy). Replace with real Touchline artwork later.
 - Fonts are system fonts. A custom typeface can be added via `expo-font` later.
-- **Lineup isn't saved**: it resets to the auto-picked XI on app reload
+- **Lineup and tactics aren't saved**: they reset on app reload
   (persistence is M10, or earlier if it becomes annoying).
 - The modal picker and profile were checked on web only; native gestures
   (swipe-to-dismiss on iOS, Android back button) still need checking in Expo Go.
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 4: Tactics
+## 5. Next steps — Milestone 5: Match engine
 
-Agree the plan with the user before coding. Likely shape:
+The most important system. Agree the plan with the user before coding.
+Likely shape:
 
-1. `Tactics` model + Zod schema in `src/game/tactics.ts`: mentality, passing
-   style, defensive line, pressing intensity, tempo/width (small enums or 1–5
-   scales). Store it alongside the lineup.
-2. Pure helpers that describe a tactic's effects as numbers the match engine
-   (M5) will consume (e.g. risk, possession bias, stamina cost), with tests.
-   Keep them simple; tune in M5.
-3. Tactics UI on the Tactics tab (replace the "Coming in Milestone 4" card),
-   reusing `ChoiceChips`.
-4. Possibly presets ("Balanced", "Counter", "High press") to make it quick.
-
-Do **not** start the match engine until Milestone 4 is done.
+1. `src/engine/`: pure TS, no React/RN imports, seeded with `createRng`.
+   Input: two teams (lineup + tactics + candidates), output: a match result
+   with events. Same seed → same match (tested).
+2. Probability-based "phase" simulation (e.g. ~90 minute ticks or possession
+   chains): possession share, chance creation, shot quality, goalkeeper
+   saves. Attributes via `positionRating`/`flattenAttributes`; tactics via a
+   new `tacticalEffects(tactics)` mapping (the numbers deferred from M4).
+3. Events: goals + assists, shots, fouls/cards; commentary lines; player
+   ratings; match stats. Injuries, fatigue and substitutions are probably
+   later passes; decide scope with the user.
+4. Statistical tests: simulate many matches and assert sane averages
+   (goals per game, home advantage, stronger team wins more often, tactics
+   shift possession/shots in the expected direction).
+5. A minimal match screen (result + events), probably reachable from the
+   dashboard's "Play match" button, against a real league opponent.

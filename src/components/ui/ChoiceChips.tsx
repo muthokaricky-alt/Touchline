@@ -6,7 +6,8 @@ import { AppText } from './AppText';
 
 type ChoiceChipsProps<T extends string> = {
   options: readonly { value: T; label: string }[];
-  value: T;
+  /** null = nothing selected (e.g. custom tactics that match no playing style). */
+  value: T | null;
   onChange: (value: T) => void;
   /** Describes the group for screen readers, e.g. "Formation". */
   accessibilityLabel: string;

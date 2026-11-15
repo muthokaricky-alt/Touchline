@@ -13,5 +13,6 @@ export { PositionBadge } from './PositionBadge';
 export { ProgressBar } from './ProgressBar';
 export { RatingBadge } from './RatingBadge';
 export { Screen } from './Screen';
+export { SegmentedControl } from './SegmentedControl';
 export { SectionHeader } from './SectionHeader';
 export { StatTile } from './StatTile';

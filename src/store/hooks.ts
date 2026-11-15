@@ -1,8 +1,16 @@
 import { useMemo } from 'react';
 
 import type { PlayerId } from '@/data/schemas';
-import { findClub, groupSquad, selectPlayerProfile, selectSquad } from '@/game/squad/squad-selectors';
+import {
+  findClub,
+  groupSquad,
+  selectPlayerProfile,
+  selectSquad,
+  selectSquadCandidates,
+} from '@/game/squad/squad-selectors';
 import { selectPlayerPicker, selectTeamSheet, type PickerTarget } from '@/game/squad/team-sheet';
+import { analyseTactics } from '@/game/tactics/analysis';
+import { matchPlayingStyle } from '@/game/tactics/presets';
 
 import { useGameStore } from './game-store';
 
@@ -39,6 +47,22 @@ export function useTeamSheet() {
   const clubId = useGameStore((s) => s.userClubId);
   const lineup = useGameStore((s) => s.lineup);
   return useMemo(() => selectTeamSheet(database, clubId, lineup), [database, clubId, lineup]);
+}
+
+/** Current tactics, the playing style they match (null = custom) and the assistant's notes. */
+export function useTacticsView() {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const lineup = useGameStore((s) => s.lineup);
+  const tactics = useGameStore((s) => s.tactics);
+  return useMemo(
+    () => ({
+      tactics,
+      style: matchPlayingStyle(tactics),
+      notes: analyseTactics(tactics, lineup, selectSquadCandidates(database, clubId)),
+    }),
+    [database, clubId, lineup, tactics],
+  );
 }
 
 export function usePlayerPicker(target: PickerTarget | null) {

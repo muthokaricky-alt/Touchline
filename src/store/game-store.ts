@@ -13,6 +13,8 @@ import {
   type Lineup,
 } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
+import { PLAYING_STYLES, type PlayingStyleId } from '@/game/tactics/presets';
+import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from '@/game/tactics/tactics';
 
 /**
  * The app's game state.
@@ -39,6 +41,7 @@ export type GameState = {
   /** Current in-game date (ISO). Fixed until the calendar exists (Milestone 6). */
   currentDate: string;
   lineup: Lineup;
+  tactics: Tactics;
 };
 
 export type GameActions = {
@@ -48,6 +51,8 @@ export type GameActions = {
   addSubstitute: (playerId: PlayerId) => void;
   removeFromLineup: (playerId: PlayerId) => void;
   autoPick: () => void;
+  setInstruction: <K extends Instruction>(key: K, value: Tactics[K]) => void;
+  applyPlayingStyle: (styleId: PlayingStyleId) => void;
 };
 
 export function createInitialGameState(): GameState {
@@ -58,6 +63,7 @@ export function createInitialGameState(): GameState {
     userClubId,
     currentDate: FICTIONAL_REFERENCE_DATE,
     lineup: autoPickLineup(selectSquadCandidates(database, userClubId), DEFAULT_FORMATION_ID),
+    tactics: DEFAULT_TACTICS,
   };
 }
 
@@ -72,4 +78,6 @@ export const useGameStore = create<GameState & GameActions>()((set) => ({
   removeFromLineup: (playerId) => set((s) => ({ lineup: removeFromLineup(s.lineup, playerId) })),
   autoPick: () =>
     set((s) => ({ lineup: autoPickLineup(selectSquadCandidates(s.database, s.userClubId), s.lineup.formationId) })),
+  setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
+  applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
 }));
