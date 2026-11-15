@@ -6,12 +6,17 @@ import { useGameStore } from '@/store/game-store';
 import { usePlayerProfile } from '@/store/hooks';
 
 /**
- * Web static export pre-renders one HTML page per player. The build runs this
- * in Node; it works because the store's database is deterministic (seeded),
- * so the build and the browser agree on which players exist.
+ * Web static export pre-renders an HTML page per player listed here. The
+ * build runs this in Node; it works because the store's initial state is
+ * deterministic (seeded).
+ *
+ * Only the user's squad is pre-rendered: with 880 players, rendering every
+ * profile made the export huge. Other profiles still open fine via in-app
+ * navigation; only a direct URL load of them isn't supported on web.
  */
 export async function generateStaticParams(): Promise<Record<string, string>[]> {
-  return useGameStore.getState().database.players.map((player) => ({ id: player.id }));
+  const { database, userClubId } = useGameStore.getState();
+  return database.contracts.filter((c) => c.clubId === userClubId).map((c) => ({ id: c.playerId }));
 }
 
 export default function PlayerRoute() {

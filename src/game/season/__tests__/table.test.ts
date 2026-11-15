@@ -1,7 +1,9 @@
 import type { League } from '@/data/schemas';
 
-import { seasonPlayerStats, topAssists, topScorers } from '../player-stats';
-import type { Fixture, FixtureResult } from '../season';
+import type { MatchResult, PlayerMatchStats } from '@/engine/types';
+
+import { addMatchToStats, seasonPlayerStats, topAssists, topScorers } from '../player-stats';
+import type { Fixture, FixtureResult, PlayerSeasonLine, Season } from '../season';
 import { computeTable, zoneFor } from '../table';
 
 const league: League = {
@@ -17,7 +19,7 @@ const league: League = {
 
 let nextId = 0;
 function result(home: number, away: number, extras: Partial<FixtureResult> = {}): FixtureResult {
-  return { score: { home, away }, goals: [], cards: [], players: [], playerOfTheMatch: null, ...extras };
+  return { score: { home, away }, goals: [], cards: [], playerOfTheMatch: null, ...extras };
 }
 function fx(homeId: string, awayId: string, home: number | null, away = 0, matchday = 1, extras: Partial<FixtureResult> = {}): Fixture {
   return {
@@ -96,15 +98,24 @@ describe('computeTable', () => {
   });
 });
 
-describe('player season stats', () => {
-  const line = (playerId: string, side: 'home' | 'away', goals: number, assists: number, rating: number) => ({
-    playerId, side, position: 'ST' as const, started: true, minutes: 90, goals, assists, yellowCards: 0, redCard: false, rating,
+describe('player season stats (running totals)', () => {
+  const line = (playerId: string, side: 'home' | 'away', goals: number, assists: number, rating: number): PlayerMatchStats => ({
+    playerId, side, position: 'ST', started: true, minutesPlayed: 90, goals, assists, shots: goals, shotsOnTarget: goals,
+    saves: 0, tackles: 0, fouls: 0, yellowCards: 0, redCard: false, goalsConceded: 0, energy: 60, rating,
   });
-  const fixtures = [
-    fx('club_a', 'club_b', 2, 0, 1, { players: [line('plr_1', 'home', 2, 0, 8.5), line('plr_2', 'away', 0, 0, 6)], playerOfTheMatch: 'plr_1' }),
-    fx('club_b', 'club_a', 1, 1, 2, { players: [line('plr_1', 'away', 1, 1, 7.5), line('plr_2', 'home', 1, 0, 7)] }),
-  ];
-  const stats = seasonPlayerStats(fixtures);
+  /** Only the fields addMatchToStats reads; the cast keeps the test short. */
+  const match = (players: PlayerMatchStats[], potm: string | null) => ({ players, playerOfTheMatch: potm }) as unknown as MatchResult;
+
+  let lines: PlayerSeasonLine[] = [];
+  lines = addMatchToStats(lines, fx('club_a', 'club_b', 2, 0, 1), match([line('plr_1', 'home', 2, 0, 8.5), line('plr_2', 'away', 0, 0, 6)], 'plr_1'));
+  lines = addMatchToStats(lines, fx('club_b', 'club_a', 1, 1, 2), match([line('plr_1', 'away', 1, 1, 7.5), line('plr_2', 'home', 1, 0, 7)], null));
+  const season = { playerStats: lines } as Season;
+  const stats = seasonPlayerStats(season, 'comp_test');
+
+  it('keeps one line per player per competition', () => {
+    expect(lines).toHaveLength(2);
+    expect(seasonPlayerStats(season, 'comp_other')).toEqual([]);
+  });
 
   it('totals appearances, goals, assists and averages ratings', () => {
     const p1 = stats.find((s) => s.playerId === 'plr_1')!;

@@ -6,8 +6,10 @@ import { formatMatchDate } from '@/utils/format';
 
 type FixtureSetupScreenProps = {
   competitionName: string;
-  matchday: number;
-  totalMatchdays: number;
+  /** "Matchday 3 of 38" or a cup round such as "Quarter-finals". */
+  roundLabel: string;
+  /** Cup ties can't end level: a note about penalties is shown. */
+  isCup: boolean;
   date: string;
   homeName: string;
   awayName: string;
@@ -21,11 +23,11 @@ type FixtureSetupScreenProps = {
   onBack: () => void;
 };
 
-/** Pre-match for the user's next league fixture: opponent and venue are fixed by the schedule. */
+/** Pre-match for the user's next competitive fixture: opponent and venue are fixed by the schedule. */
 export function FixtureSetupScreen({
   competitionName,
-  matchday,
-  totalMatchdays,
+  roundLabel,
+  isCup,
   date,
   homeName,
   awayName,
@@ -43,9 +45,9 @@ export function FixtureSetupScreen({
   return (
     <Screen bottomInset>
       <PageHeader
-        overline={`${competitionName} · Matchday ${matchday} of ${totalMatchdays}`}
-        title="Match day"
-        subtitle={formatMatchDate(date, true)}
+        overline={`${competitionName} · ${roundLabel}`}
+        title={isCup ? 'Cup tie' : 'Match day'}
+        subtitle={isCup ? `${formatMatchDate(date, true)} · level at full time goes to penalties` : formatMatchDate(date, true)}
         leading={<IconButton icon="back" accessibilityLabel="Back" onPress={onBack} />}
       />
 

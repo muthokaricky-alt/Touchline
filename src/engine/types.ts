@@ -139,4 +139,6 @@ export type MatchResult = {
   stats: Record<Side, TeamMatchStats>;
   players: PlayerMatchStats[];
   playerOfTheMatch: PlayerId | null;
+  /** Knockout ties level after 90 minutes: shootout score (added by the competition layer, not the engine). */
+  penalties?: { home: number; away: number };
 };

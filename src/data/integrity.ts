@@ -1,4 +1,4 @@
-import type { GameDatabase } from './schemas';
+import { isLeague, type GameDatabase } from './schemas';
 
 /**
  * Cross-record rules. Zod validates each record in isolation ("is this a valid
@@ -70,17 +70,16 @@ export function checkIntegrity(db: GameDatabase): IntegrityIssue[] {
     report('duplicate-squad-number', `Squad number used twice: ${key}`);
   }
 
-  // Leagues: clubs exist, and no club plays in two leagues.
-  for (const competition of db.competitions) {
-    for (const clubId of competition.clubIds) {
+  // Leagues: clubs exist, and no club plays in two leagues. (Cups have no fixed club list.)
+  const leagues = db.competitions.filter(isLeague);
+  for (const league of leagues) {
+    for (const clubId of league.clubIds) {
       if (!clubIds.has(clubId)) {
-        report('unknown-club', `Competition "${competition.id}" references unknown club "${clubId}"`);
+        report('unknown-club', `Competition "${league.id}" references unknown club "${clubId}"`);
       }
     }
   }
-  const leagueMemberships = db.competitions
-    .filter((c) => c.type === 'league')
-    .flatMap((c) => c.clubIds);
+  const leagueMemberships = leagues.flatMap((c) => c.clubIds);
   for (const clubId of findDuplicates(leagueMemberships)) {
     report('club-in-multiple-leagues', `Club "${clubId}" is in more than one league`);
   }

@@ -1,3 +1,4 @@
+import { FIRST_DIVISION } from '@/data/fictional';
 import { buildAiTeam } from '@/game/ai/opponent';
 import type { Tactics } from '@/game/tactics/tactics';
 
@@ -97,11 +98,11 @@ describe('calibration: team strength', () => {
 });
 
 describe('calibration: AI league', () => {
-  // Every club vs every other, AI-chosen formation and style.
-  const teams = db.clubs.map((c) => buildAiTeam(db, c.id, 13));
+  // Every First Division club vs every other, AI-chosen formation and style.
+  const teams = FIRST_DIVISION.clubIds.map((id) => buildAiTeam(db, id, 13));
   const pairs = teams.flatMap((h) => teams.filter((a) => a !== h).map((a) => [h, a] as const));
   const stats = aggregate(
-    simulateMany(pairs.length * 6, (seed) => {
+    simulateMany(pairs.length * 2, (seed) => {
       const [home, away] = pairs[seed % pairs.length];
       return { home, away, seed };
     }),

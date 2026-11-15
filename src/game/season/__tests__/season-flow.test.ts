@@ -3,125 +3,169 @@ import { autoPickLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
+import { cupFixtures, cupWinner, tieWinner } from '../cup';
 import { seasonPlayerStats } from '../player-stats';
-import { SeasonSchema, type Season } from '../season';
+import { mixSeed, SeasonSchema, type Season } from '../season';
 import {
+  advanceToUserFixture,
   createSeason,
-  currentMatchday,
-  findLeague,
   isSeasonComplete,
+  leagueOfClub,
+  leagueTable,
+  nextDate,
   nextFixtureFor,
-  playUserFixture,
-  recordResult,
+  nextMemberships,
+  playRemaining,
+  seasonOutcome,
   startNextSeason,
   totalMatchdays,
   type UserTeam,
 } from '../season-flow';
-import { computeTable } from '../table';
 
 const db = buildFictionalDatabase();
-const LEAGUE = 'comp_first_division';
 const USER = 'club_greywater_town';
+const FIRST = 'comp_first_division';
+const SECOND = 'comp_second_division';
+const CUP = 'comp_national_cup';
 const user: UserTeam = { clubId: USER, lineup: autoPickLineup(selectSquadCandidates(db, USER), '4-4-2'), tactics: DEFAULT_TACTICS };
 
-/** Plays a whole season through the user's fixtures. */
+/** Plays the user's fixtures until none are left, then everything else. */
 function playFullSeason(start: Season): Season {
   let season = start;
-  while (!isSeasonComplete(season)) season = playUserFixture(db, season, user).season;
-  return season;
+  while (nextFixtureFor(season, USER)) season = advanceToUserFixture(db, season, user).season;
+  return playRemaining(db, season);
 }
 
 describe('createSeason', () => {
-  const season = createSeason(db, LEAGUE, 2026, 1234);
+  const season = createSeason(db, 2026, 1234);
 
-  it('creates a valid, unplayed 14-matchday season', () => {
+  it('schedules two 20-club leagues (38 matchdays) and the first cup round', () => {
     expect(SeasonSchema.safeParse(season).success).toBe(true);
-    expect(season.label).toBe('2026/27');
-    expect(totalMatchdays(season)).toBe(14);
-    expect(currentMatchday(season)).toBe(1);
-    expect(nextFixtureFor(season, USER)?.matchday).toBe(1);
+    expect(season.leagues.map((l) => [l.competitionId, l.clubIds.length])).toEqual([[FIRST, 20], [SECOND, 20]]);
+    expect(totalMatchdays(season, FIRST)).toBe(38);
+    expect(totalMatchdays(season, SECOND)).toBe(38);
+    expect(season.fixtures.filter((f) => f.competitionId === FIRST)).toHaveLength(380);
+    expect(cupFixtures(season)).toHaveLength(8);
+    expect(leagueOfClub(season, USER)).toBe(FIRST);
   });
 
-  it('rejects an unknown competition', () => {
-    expect(() => findLeague(db, 'comp_nowhere')).toThrow(RangeError);
+  it('starts with the earliest fixture date first', () => {
+    expect(nextDate(season)).toBe('2026-08-08');
   });
 });
 
-describe('playUserFixture', () => {
-  const start = createSeason(db, LEAGUE, 2026, 1234);
-  const { season, fixture, result } = playUserFixture(db, start, user);
+describe('advanceToUserFixture', () => {
+  const start = createSeason(db, 2026, 1234);
+  const { season, fixture, result } = advanceToUserFixture(db, start, user);
 
-  it("plays the user's match and the rest of the matchday", () => {
-    expect(fixture.matchday).toBe(1);
+  it("plays the user's match and everything else on that date", () => {
+    expect(fixture.date).toBe('2026-08-08');
     expect([result.home.clubId, result.away.clubId]).toContain(USER);
-    const md1 = season.fixtures.filter((f) => f.matchday === 1);
-    expect(md1.every((f) => f.result !== null)).toBe(true);
-    expect(season.fixtures.filter((f) => f.matchday === 2).every((f) => f.result === null)).toBe(true);
-    expect(currentMatchday(season)).toBe(2);
+    const sameDay = season.fixtures.filter((f) => f.date === fixture.date);
+    expect(sameDay).toHaveLength(20); // 10 First + 10 Second Division
+    expect(sameDay.every((f) => f.result)).toBe(true);
+    expect(season.fixtures.filter((f) => f.date > fixture.date).every((f) => !f.result)).toBe(true);
   });
 
-  it('stores a compact result matching the full one', () => {
-    const stored = season.fixtures.find((f) => f.id === fixture.id)!.result!;
-    expect(stored.score).toEqual(result.score);
-    expect(stored.goals).toHaveLength(result.score.home + result.score.away);
-    expect(stored.players).toHaveLength(result.players.length);
-    expect(SeasonSchema.safeParse(season).success).toBe(true);
+  it('keeps running player totals instead of per-match lines', () => {
+    const stats = seasonPlayerStats(season, FIRST);
+    const goals = season.fixtures.filter((f) => f.competitionId === FIRST && f.result).reduce((s, f) => s + f.result!.score.home + f.result!.score.away, 0);
+    expect(stats.reduce((s, p) => s + p.goals, 0)).toBe(goals);
+    expect(stats.every((p) => p.appearances === 1)).toBe(true);
   });
 
   it('does not modify the season it was given', () => {
     expect(start.fixtures.every((f) => f.result === null)).toBe(true);
   });
-
-  it('refuses to record a fixture twice', () => {
-    const stored = season.fixtures.find((f) => f.id === fixture.id)!.result!;
-    expect(() => recordResult(season, fixture.id, stored)).toThrow(/already been played/);
-  });
 });
 
 describe('a full season', () => {
-  const start = createSeason(db, LEAGUE, 2026, 99);
-  const finished = playFullSeason(start);
-  const league = findLeague(db, LEAGUE);
-  const table = computeTable(finished.fixtures, league);
+  const finished = playFullSeason(createSeason(db, 2026, 99));
+  const outcome = seasonOutcome(db, finished);
 
-  it('plays every fixture', () => {
+  it('plays every league fixture and the whole cup', () => {
     expect(isSeasonComplete(finished)).toBe(true);
     expect(finished.fixtures.every((f) => f.result)).toBe(true);
-    expect(nextFixtureFor(finished, USER)).toBeNull();
-    expect(() => playUserFixture(db, finished, user)).toThrow(RangeError);
+    // 40 entrants: 8 + 16 + 8 + 4 + 2 + 1 ties.
+    expect(cupFixtures(finished)).toHaveLength(39);
+    expect(cupWinner(finished)).not.toBeNull();
+    expect(cupFixtures(finished).every((f) => tieWinner(f) !== null)).toBe(true);
+    expect(SeasonSchema.safeParse(finished).success).toBe(true);
   });
 
-  it('produces a consistent table', () => {
-    expect(table.every((r) => r.played === 14)).toBe(true);
-    const goalsFor = table.reduce((s, r) => s + r.goalsFor, 0);
-    const goalsAgainst = table.reduce((s, r) => s + r.goalsAgainst, 0);
-    expect(goalsFor).toBe(goalsAgainst);
-    const wins = table.reduce((s, r) => s + r.won, 0);
-    const losses = table.reduce((s, r) => s + r.lost, 0);
-    expect(wins).toBe(losses);
-    const points = table.reduce((s, r) => s + r.points, 0);
-    const draws = table.reduce((s, r) => s + r.drawn, 0) / 2;
-    expect(points).toBe(wins * 3 + draws * 2);
+  it('gives consistent tables', () => {
+    for (const id of [FIRST, SECOND]) {
+      const table = leagueTable(db, finished, id);
+      expect(table.every((r) => r.played === 38)).toBe(true);
+      expect(table.reduce((s, r) => s + r.goalsFor, 0)).toBe(table.reduce((s, r) => s + r.goalsAgainst, 0));
+    }
   });
 
-  it('gives sensible season stats', () => {
-    const stats = seasonPlayerStats(finished.fixtures);
-    const totalGoals = finished.fixtures.reduce((s, f) => s + f.result!.score.home + f.result!.score.away, 0);
-    expect(stats.reduce((s, p) => s + p.goals, 0)).toBe(totalGoals);
-    expect(totalGoals / 56).toBeGreaterThan(1.8);
-    expect(totalGoals / 56).toBeLessThan(4);
+  it('identifies 3 relegated and 3 promoted clubs', () => {
+    const first = outcome.leagues.find((l) => l.competitionId === FIRST)!;
+    const second = outcome.leagues.find((l) => l.competitionId === SECOND)!;
+    expect(first.relegated).toHaveLength(3);
+    expect(first.promoted).toHaveLength(0);
+    expect(second.promoted).toHaveLength(3);
+    expect(second.relegated).toHaveLength(0);
   });
 
-  it('is deterministic for the same seed and team', () => {
-    expect(playFullSeason(createSeason(db, LEAGUE, 2026, 99))).toEqual(finished);
+  it('swaps them for next season and keeps both leagues at 20', () => {
+    const memberships = nextMemberships(db, finished);
+    const first = memberships.find((m) => m.competitionId === FIRST)!;
+    const second = memberships.find((m) => m.competitionId === SECOND)!;
+    expect(first.clubIds).toHaveLength(20);
+    expect(second.clubIds).toHaveLength(20);
+    const out = outcome.leagues.find((l) => l.competitionId === FIRST)!.relegated;
+    const up = outcome.leagues.find((l) => l.competitionId === SECOND)!.promoted;
+    out.forEach((id) => expect(second.clubIds).toContain(id));
+    up.forEach((id) => expect(first.clubIds).toContain(id));
   });
 
-  it('rolls over into next season', () => {
+  it('rolls over with promotion applied', () => {
     const next = startNextSeason(db, finished);
     expect(next.label).toBe('2027/28');
-    expect(next.startYear).toBe(2027);
+    expect(next.leagues).toEqual(nextMemberships(db, finished));
     expect(next.fixtures.every((f) => f.result === null)).toBe(true);
-    expect(next.fixtures[0].date.startsWith('2027-08')).toBe(true);
-    expect(next.seed).not.toBe(finished.seed);
+    expect(next.playerStats).toEqual([]);
+    expect(SeasonSchema.safeParse(next).success).toBe(true);
+  });
+
+  it('keeps a season small enough to save', () => {
+    expect(JSON.stringify(finished).length).toBeLessThan(1_000_000);
+  });
+
+  it('averages a believable number of goals', () => {
+    const league = finished.fixtures.filter((f) => f.competitionId !== CUP);
+    const goals = league.reduce((s, f) => s + f.result!.score.home + f.result!.score.away, 0) / league.length;
+    expect(goals).toBeGreaterThan(2.2);
+    expect(goals).toBeLessThan(3.6);
+  });
+});
+
+describe('mixSeed', () => {
+  it('always gives a non-negative 31-bit integer', () => {
+    for (let seed = 0; seed < 2000; seed += 7) {
+      for (const salt of [0, 1, 99, 4242, 1006]) {
+        const s = mixSeed(seed * 104_729, salt);
+        expect(Number.isInteger(s)).toBe(true);
+        expect(s).toBeGreaterThanOrEqual(0);
+        expect(s).toBeLessThan(2_147_483_647);
+      }
+    }
+  });
+});
+
+describe('rules', () => {
+  it('cannot start the next season early or play past the end', () => {
+    const season = createSeason(db, 2026, 3);
+    expect(() => startNextSeason(db, season)).toThrow(/still in progress/);
+  });
+
+  it('is deterministic for the same seed and choices', () => {
+    const a = advanceToUserFixture(db, createSeason(db, 2026, 21), user);
+    const b = advanceToUserFixture(db, createSeason(db, 2026, 21), user);
+    expect(b.season).toEqual(a.season);
+    expect(b.result).toEqual(a.result);
   });
 });

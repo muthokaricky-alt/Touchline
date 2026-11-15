@@ -16,9 +16,10 @@ export default function HomeRoute() {
   const season = useGameStore((s) => s.season);
   const currentDate = useGameStore((s) => s.currentDate);
   const startNextSeason = useGameStore((s) => s.startNextSeason);
+  const finishSeason = useGameStore((s) => s.finishSeason);
   const summary = useMemo(
     () => buildDashboardSummary(database, clubId, season, currentDate, previewDashboard),
     [database, clubId, season, currentDate],
   );
-  return <DashboardScreen summary={summary} onStartNextSeason={startNextSeason} />;
+  return <DashboardScreen summary={summary} onStartNextSeason={startNextSeason} onFinishSeason={finishSeason} />;
 }

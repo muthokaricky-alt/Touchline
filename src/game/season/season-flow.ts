@@ -1,81 +1,134 @@
-import type { ClubId, CompetitionId, GameDatabase, League } from '@/data/schemas';
+import { isCup, isLeague, type ClubId, type CompetitionId, type GameDatabase, type League } from '@/data/schemas';
+import { simulateShootout, type ShootoutPlayer } from '@/engine/penalties';
 import { simulateMatch } from '@/engine/simulate';
-import type { MatchInput, MatchResult } from '@/engine/types';
+import type { MatchInput, MatchResult, Side } from '@/engine/types';
 
-import { buildAiTeam, chooseAiLineup } from '../ai/opponent';
+import { aiSetup, buildAiTeam } from '../ai/opponent';
 import type { Lineup } from '../lineup';
 import { buildMatchTeam, lineupStrength } from '../match/build-match-team';
+import { flattenAttributes } from '../ratings';
 import { selectSquadCandidates } from '../squad/squad-selectors';
 import type { Tactics } from '../tactics/tactics';
+import { cupEntrants, cupRoundCount, cupRoundName, cupWinner, firstCupRound, nextCupRound } from './cup';
 import { scheduleLeague } from './fixtures';
-import { seasonLabel, type Fixture, type FixtureResult, type Season } from './season';
+import { addMatchToStats } from './player-stats';
+import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season } from './season';
+import { computeTable, type TableRow } from './table';
 
 /**
- * The season loop as pure functions. Each returns a NEW Season (immutable,
- * like the lineup functions), so the store can just swap it in.
+ * The season loop as pure functions, each returning a NEW Season.
  *
- *   createSeason → [ playUserFixture → (AI fixtures of that matchday) ]× → startNextSeason
+ * Play is ordered by DATE across all competitions (league Saturdays, cup
+ * Wednesdays). Playing the user's next fixture first plays every earlier
+ * date they're not involved in, then that whole date.
+ *
+ *   createSeason → advanceToUserFixture × n → playRemaining → startNextSeason
  */
 
 export type UserTeam = { clubId: ClubId; lineup: Lineup; tactics: Tactics };
 
-export function findLeague(db: GameDatabase, competitionId: CompetitionId): League {
-  const league = db.competitions.find((c) => c.id === competitionId);
-  if (!league) throw new RangeError(`Unknown competition "${competitionId}"`);
-  return league;
+// --- Competitions this season ---------------------------------------------------
+
+/** A league as configured in the database, with THIS season's clubs. */
+export function leagueForSeason(db: GameDatabase, season: Season, competitionId: CompetitionId): League {
+  const base = db.competitions.find((c) => c.id === competitionId);
+  if (!base || !isLeague(base)) throw new RangeError(`Unknown league "${competitionId}"`);
+  const membership = season.leagues.find((l) => l.competitionId === competitionId);
+  return { ...base, clubIds: membership ? membership.clubIds : base.clubIds };
 }
 
-export function createSeason(db: GameDatabase, competitionId: CompetitionId, startYear: number, seed: number): Season {
-  const league = findLeague(db, competitionId);
-  return {
-    label: seasonLabel(startYear),
-    startYear,
-    competitionId,
-    seed,
-    fixtures: scheduleLeague({
-      competitionId,
-      clubIds: league.clubIds,
+export function competitionName(db: GameDatabase, competitionId: CompetitionId): string {
+  return db.competitions.find((c) => c.id === competitionId)?.name ?? competitionId;
+}
+
+/** The league a club plays in this season, or null. */
+export function leagueOfClub(season: Season, clubId: ClubId): CompetitionId | null {
+  return season.leagues.find((l) => l.clubIds.includes(clubId))?.competitionId ?? null;
+}
+
+/** Number of league matchdays (all leagues share the calendar; the longest decides). */
+function leagueWeeks(season: Season): number {
+  const leagueIds = new Set(season.leagues.map((l) => l.competitionId));
+  return Math.max(0, ...season.fixtures.filter((f) => leagueIds.has(f.competitionId)).map((f) => f.matchday));
+}
+
+export function totalMatchdays(season: Season, competitionId: CompetitionId): number {
+  return Math.max(0, ...season.fixtures.filter((f) => f.competitionId === competitionId).map((f) => f.matchday));
+}
+
+// --- Creating seasons ----------------------------------------------------------------
+
+/**
+ * A new season. Leagues come from `memberships` (after promotion/relegation)
+ * or, for the first season, from the database. Leagues are ordered by tier.
+ */
+export function createSeason(db: GameDatabase, startYear: number, seed: number, memberships?: LeagueMembership[]): Season {
+  const dbLeagues = db.competitions.filter(isLeague).sort((a, b) => a.tier - b.tier);
+  const leagues = memberships ?? dbLeagues.map((l) => ({ competitionId: l.id, clubIds: [...l.clubIds] }));
+  const cup = db.competitions.find(isCup) ?? null;
+
+  const fixtures = leagues.flatMap((membership, index) => {
+    const league = dbLeagues.find((l) => l.id === membership.competitionId);
+    if (!league) throw new RangeError(`Unknown league "${membership.competitionId}"`);
+    return scheduleLeague({
+      competitionId: membership.competitionId,
+      clubIds: membership.clubIds,
       roundsPerOpponent: league.rules.roundsPerOpponent,
       startYear,
-      seed,
-    }),
-  };
+      seed: mixSeed(seed, index),
+    });
+  });
+
+  const season: Season = { label: seasonLabel(startYear), startYear, seed, leagues, cupId: cup?.id ?? null, fixtures, playerStats: [] };
+  return { ...season, fixtures: [...fixtures, ...firstCupRound(season, leagueWeeks(season))] };
 }
 
-/** A new season one year on, with a fresh fixture list (seed derived, so it's still deterministic). */
-export function startNextSeason(db: GameDatabase, season: Season): Season {
-  const seed = (Math.imul(season.seed, 31) + 7) >>> 1;
-  return createSeason(db, season.competitionId, season.startYear + 1, seed);
+// --- Queries -----------------------------------------------------------------------
+
+/** Earliest date with an unplayed fixture, or null when everything is played. */
+export function nextDate(season: Season): string | null {
+  let earliest: string | null = null;
+  for (const f of season.fixtures) if (!f.result && (earliest === null || f.date < earliest)) earliest = f.date;
+  return earliest;
 }
 
-// --- Queries -----------------------------------------------------------------
+/** Complete when every fixture is played (the cup's next round is always drawn as soon as possible). */
+export const isSeasonComplete = (season: Season) => nextDate(season) === null;
 
-export const totalMatchdays = (season: Season) => Math.max(0, ...season.fixtures.map((f) => f.matchday));
+const involves = (f: Fixture, clubId: ClubId) => f.homeId === clubId || f.awayId === clubId;
 
-/** The lowest matchday with an unplayed fixture, or null when the season is over. */
-export function currentMatchday(season: Season): number | null {
-  const unplayed = season.fixtures.filter((f) => !f.result).map((f) => f.matchday);
+/** The club's next unplayed fixture in any competition (earliest date). */
+export function nextFixtureFor(season: Season, clubId: ClubId): Fixture | null {
+  let next: Fixture | null = null;
+  for (const f of season.fixtures) {
+    if (!f.result && involves(f, clubId) && (next === null || f.date < next.date)) next = f;
+  }
+  return next;
+}
+
+/** The lowest unplayed matchday of a league, or null when it's finished. */
+export function currentMatchday(season: Season, competitionId: CompetitionId): number | null {
+  const unplayed = season.fixtures.filter((f) => f.competitionId === competitionId && !f.result).map((f) => f.matchday);
   return unplayed.length ? Math.min(...unplayed) : null;
 }
 
-export const isSeasonComplete = (season: Season) => currentMatchday(season) === null;
-
-export function nextFixtureFor(season: Season, clubId: ClubId): Fixture | null {
-  return (
-    season.fixtures
-      .filter((f) => !f.result && (f.homeId === clubId || f.awayId === clubId))
-      .sort((a, b) => a.matchday - b.matchday)[0] ?? null
-  );
+/**
+ * Display labels for a fixture's round: "Matchday 3 of 38" for leagues,
+ * "Quarter-finals" for the cup.
+ */
+export function roundLabel(season: Season, fixture: Fixture): string {
+  if (fixture.competitionId === season.cupId) {
+    const entrants = cupEntrants(season).length;
+    return cupRoundName(fixture.matchday, cupRoundCount(entrants), entrants);
+  }
+  return `Matchday ${fixture.matchday} of ${totalMatchdays(season, fixture.competitionId)}`;
 }
 
-/** Played fixtures of a club, oldest first. */
-export function playedFixturesOf(season: Season, clubId: ClubId): Fixture[] {
-  return season.fixtures
-    .filter((f) => f.result && (f.homeId === clubId || f.awayId === clubId))
-    .sort((a, b) => a.matchday - b.matchday);
+export function leagueTable(db: GameDatabase, season: Season, competitionId: CompetitionId): TableRow[] {
+  return computeTable(season.fixtures, leagueForSeason(db, season, competitionId));
 }
 
-// --- Playing -----------------------------------------------------------------
+// --- Playing ----------------------------------------------------------------------
 
 /** Per-fixture seed: season seed mixed with a hash of the fixture id. */
 export function fixtureSeed(season: Season, fixture: Fixture): number {
@@ -84,97 +137,175 @@ export function fixtureSeed(season: Season, fixture: Fixture): number {
   return h % 2_147_483_647;
 }
 
-/**
- * Engine input for a fixture. The user's side uses their lineup and tactics;
- * AI sides set up against their opponent's strength.
- */
+/** Engine input. The user's side uses their lineup/tactics; AI sides set up against their opponent's strength. */
 export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam): MatchInput {
-  const strengthOf = (clubId: ClubId) => {
-    const squad = selectSquadCandidates(db, clubId);
-    return user && clubId === user.clubId ? lineupStrength(user.lineup, squad) : lineupStrength(chooseAiLineup(squad), squad);
-  };
+  const isUser = (clubId: ClubId) => user !== undefined && clubId === user.clubId;
+  const strengthOf = (clubId: ClubId) =>
+    isUser(clubId) ? lineupStrength(user!.lineup, selectSquadCandidates(db, clubId)) : aiSetup(db, clubId).strength;
   const teamFor = (clubId: ClubId, opponentId: ClubId) =>
-    user && clubId === user.clubId
-      ? buildMatchTeam(db, clubId, user.lineup, user.tactics)
-      : buildAiTeam(db, clubId, strengthOf(opponentId));
-  return {
-    home: teamFor(fixture.homeId, fixture.awayId),
-    away: teamFor(fixture.awayId, fixture.homeId),
-    seed: fixtureSeed(season, fixture),
+    isUser(clubId) ? buildMatchTeam(db, clubId, user!.lineup, user!.tactics) : buildAiTeam(db, clubId, strengthOf(opponentId));
+  return { home: teamFor(fixture.homeId, fixture.awayId), away: teamFor(fixture.awayId, fixture.homeId), seed: fixtureSeed(season, fixture) };
+}
+
+/** Simulates a fixture; a level cup tie goes to penalties taken by the players who finished the match. */
+export function simulateFixture(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam): MatchResult {
+  const input = buildFixtureInput(db, season, fixture, user);
+  const result = simulateMatch(input);
+  if (fixture.competitionId !== season.cupId || result.score.home !== result.score.away) return result;
+
+  const finishers = (side: Side) => {
+    const squad = new Map(input[side].squad.map((c) => [c.player.id, c]));
+    const onPitch = result.players.filter((p) => p.side === side && !p.redCard && (!p.started || p.minutesPlayed === 90));
+    const toShooter = (id: string): ShootoutPlayer | null => {
+      const c = squad.get(id);
+      return c ? { id, attrs: flattenAttributes(c.attributes) } : null;
+    };
+    const keeper = onPitch.find((p) => p.position === 'GK');
+    const takers = onPitch.filter((p) => p.position !== 'GK').map((p) => toShooter(p.playerId)).filter((s): s is ShootoutPlayer => s !== null);
+    return { takers, keeper: keeper ? toShooter(keeper.playerId) : null };
   };
+  const home = finishers('home');
+  const away = finishers('away');
+  const shootout = simulateShootout({
+    home: home.takers,
+    away: away.takers,
+    homeKeeper: home.keeper,
+    awayKeeper: away.keeper,
+    seed: mixSeed(input.seed, 77),
+  });
+  return { ...result, penalties: { home: shootout.home, away: shootout.away } };
 }
 
 /** Shrinks a full MatchResult to what a season stores. */
 export function compactResult(result: MatchResult): FixtureResult {
+  const at = (e: { minute: number; addedTime?: number }) => ({ minute: e.minute, ...(e.addedTime ? { addedTime: e.addedTime } : {}) });
   return {
     score: result.score,
-    goals: result.events.flatMap((e) =>
-      e.type === 'goal'
-        ? [{ minute: e.minute, ...(e.addedTime ? { addedTime: e.addedTime } : {}), side: e.side, scorerId: e.scorerId, assistId: e.assistId }]
-        : [],
-    ),
-    cards: result.events.flatMap((e) =>
-      e.type === 'card'
-        ? [{ minute: e.minute, ...(e.addedTime ? { addedTime: e.addedTime } : {}), side: e.side, playerId: e.playerId, card: e.card }]
-        : [],
-    ),
-    players: result.players.map((p) => ({
-      playerId: p.playerId,
-      side: p.side,
-      position: p.position,
-      started: p.started,
-      minutes: p.minutesPlayed,
-      goals: p.goals,
-      assists: p.assists,
-      yellowCards: p.yellowCards,
-      redCard: p.redCard,
-      rating: p.rating,
-    })),
+    goals: result.events.flatMap((e) => (e.type === 'goal' ? [{ ...at(e), side: e.side, scorerId: e.scorerId, assistId: e.assistId }] : [])),
+    cards: result.events.flatMap((e) => (e.type === 'card' ? [{ ...at(e), side: e.side, playerId: e.playerId, card: e.card }] : [])),
     playerOfTheMatch: result.playerOfTheMatch,
+    ...(result.penalties ? { penalties: result.penalties } : {}),
   };
 }
 
-export function recordResult(season: Season, fixtureId: string, result: FixtureResult): Season {
+/** Stores a result and adds it to the player totals. */
+export function recordResult(season: Season, fixtureId: string, result: MatchResult): Season {
   const fixture = season.fixtures.find((f) => f.id === fixtureId);
   if (!fixture) throw new RangeError(`Unknown fixture "${fixtureId}"`);
   if (fixture.result) throw new RangeError(`Fixture "${fixtureId}" has already been played`);
-  return { ...season, fixtures: season.fixtures.map((f) => (f.id === fixtureId ? { ...f, result } : f)) };
+  return {
+    ...season,
+    fixtures: season.fixtures.map((f) => (f.id === fixtureId ? { ...f, result: compactResult(result) } : f)),
+    playerStats: addMatchToStats(season.playerStats, fixture, result),
+  };
 }
 
-/** Simulates every unplayed fixture of a matchday that doesn't involve the user. */
-export function playAiFixtures(db: GameDatabase, season: Season, matchday: number, userClubId: ClubId | null): Season {
-  let next = season;
-  for (const fixture of season.fixtures) {
-    if (fixture.matchday !== matchday || fixture.result) continue;
-    if (fixture.homeId === userClubId || fixture.awayId === userClubId) continue;
-    next = recordResult(next, fixture.id, compactResult(simulateMatch(buildFixtureInput(db, season, fixture))));
-  }
-  return next;
+/** Draws the next cup round if the previous one has just finished. */
+function advanceCup(season: Season): Season {
+  const drawn = nextCupRound(season, leagueWeeks(season));
+  return drawn.length ? { ...season, fixtures: [...season.fixtures, ...drawn] } : season;
 }
 
 /**
- * Plays the user's next fixture, then the rest of that matchday.
- * Returns the updated season and the full result of the user's match (for
- * the match centre; the season keeps only the compact version).
+ * Plays every unplayed fixture on `date`. The user's fixture (if any) uses
+ * their team; its full result is returned for the match centre.
  */
-export function playUserFixture(
+export function playDate(
+  db: GameDatabase,
+  season: Season,
+  date: string,
+  user?: UserTeam,
+): { season: Season; userMatch: { fixture: Fixture; result: MatchResult } | null } {
+  let next = season;
+  let userMatch: { fixture: Fixture; result: MatchResult } | null = null;
+  for (const fixture of season.fixtures) {
+    if (fixture.date !== date || fixture.result) continue;
+    const mine = user !== undefined && involves(fixture, user.clubId);
+    const result = simulateFixture(db, season, fixture, mine ? user : undefined);
+    next = recordResult(next, fixture.id, result);
+    if (mine) userMatch = { fixture, result };
+  }
+  return { season: advanceCup(next), userMatch };
+}
+
+/**
+ * Plays everything up to and including the user's next fixture's date.
+ * Earlier dates (e.g. cup rounds after the user was knocked out) are played
+ * AI-only first.
+ */
+export function advanceToUserFixture(
   db: GameDatabase,
   season: Season,
   user: UserTeam,
 ): { season: Season; fixture: Fixture; result: MatchResult } {
-  const fixture = nextFixtureFor(season, user.clubId);
-  if (!fixture) throw new RangeError('No fixture left to play this season');
-  const matchday = currentMatchday(season);
-  if (matchday !== null && fixture.matchday !== matchday) {
-    throw new RangeError(`Matchday ${matchday} must be completed before matchday ${fixture.matchday}`);
+  const target = nextFixtureFor(season, user.clubId);
+  if (!target) throw new RangeError('No fixture left to play this season');
+  let current = season;
+  for (let date = nextDate(current); date !== null && date < target.date; date = nextDate(current)) {
+    current = playDate(db, current, date).season;
   }
-  const result = simulateMatch(buildFixtureInput(db, season, fixture, user));
-  const recorded = recordResult(season, fixture.id, compactResult(result));
-  return { season: playAiFixtures(db, recorded, fixture.matchday, user.clubId), fixture, result };
+  const played = playDate(db, current, target.date, user);
+  if (!played.userMatch) throw new Error(`Expected the user's fixture on ${target.date}`);
+  return { season: played.season, fixture: played.userMatch.fixture, result: played.userMatch.result };
 }
 
-/** For a matchday the user isn't involved in (odd league sizes, a bye): just play the AI games. */
-export function playMatchdayWithoutUser(db: GameDatabase, season: Season, userClubId: ClubId): Season {
-  const matchday = currentMatchday(season);
-  return matchday === null ? season : playAiFixtures(db, season, matchday, userClubId);
+/** Plays every remaining date (used once the user has no fixtures left). */
+export function playRemaining(db: GameDatabase, season: Season): Season {
+  let current = season;
+  for (let date = nextDate(current); date !== null; date = nextDate(current)) current = playDate(db, current, date).season;
+  return current;
+}
+
+// --- End of season -----------------------------------------------------------------
+
+export type LeagueOutcome = {
+  competitionId: CompetitionId;
+  tier: number;
+  table: TableRow[];
+  champion: ClubId;
+  promoted: ClubId[];
+  relegated: ClubId[];
+};
+
+export type SeasonOutcome = { leagues: LeagueOutcome[]; cupWinner: ClubId | null };
+
+export function seasonOutcome(db: GameDatabase, season: Season): SeasonOutcome {
+  return {
+    leagues: season.leagues.map((m) => {
+      const league = leagueForSeason(db, season, m.competitionId);
+      const table = computeTable(season.fixtures, league);
+      return {
+        competitionId: m.competitionId,
+        tier: league.tier,
+        table,
+        champion: table[0].clubId,
+        promoted: table.filter((r) => r.zone === 'promotion').map((r) => r.clubId),
+        relegated: table.filter((r) => r.zone === 'relegation').map((r) => r.clubId),
+      };
+    }),
+    cupWinner: cupWinner(season),
+  };
+}
+
+/**
+ * Next season's league memberships: each tier's relegated clubs drop one
+ * tier, the tier below's promoted clubs go up. Leagues keep their size as
+ * long as the places match (3 down, 3 up).
+ */
+export function nextMemberships(db: GameDatabase, season: Season): LeagueMembership[] {
+  const outcome = seasonOutcome(db, season).leagues.sort((a, b) => a.tier - b.tier);
+  return outcome.map((league, i) => {
+    const above = outcome[i - 1];
+    const below = outcome[i + 1];
+    const leaving = new Set([...(below ? league.relegated : []), ...(above ? league.promoted : [])]);
+    const staying = league.table.map((r) => r.clubId).filter((id) => !leaving.has(id));
+    const arriving = [...(above ? above.relegated : []), ...(below ? below.promoted : [])];
+    return { competitionId: league.competitionId, clubIds: [...staying, ...arriving] };
+  });
+}
+
+/** A new season one year on, with promotion/relegation applied and a fresh (derived) seed. */
+export function startNextSeason(db: GameDatabase, season: Season): Season {
+  if (!isSeasonComplete(season)) throw new RangeError('The current season is still in progress');
+  return createSeason(db, season.startYear + 1, mixSeed(season.seed, 4242), nextMemberships(db, season));
 }

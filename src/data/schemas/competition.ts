@@ -40,9 +40,26 @@ export const LeagueSchema = z
 export type League = z.infer<typeof LeagueSchema>;
 
 /**
- * Every competition type. Only leagues exist for now; in Milestone 6 this
- * becomes `z.discriminatedUnion('type', [LeagueSchema, CupSchema])`, and the
- * `type` field tells TypeScript which shape it's looking at.
+ * A knockout cup. Who enters is decided per season (every league club of
+ * the cup's country), so it has no fixed club list: promotion and
+ * relegation don't affect it.
  */
-export const CompetitionSchema = LeagueSchema;
+export const CupSchema = z.strictObject({
+  id: CompetitionIdSchema,
+  type: z.literal('cup'),
+  name: z.string().min(1),
+  shortName: z.string().min(1).max(12),
+  country: NationCodeSchema,
+});
+
+export type Cup = z.infer<typeof CupSchema>;
+
+/**
+ * Every competition type. The `type` field is the *discriminant*: after
+ * `if (c.type === 'league')`, TypeScript knows `c` has `clubIds` and `rules`.
+ */
+export const CompetitionSchema = z.discriminatedUnion('type', [LeagueSchema, CupSchema]);
 export type Competition = z.infer<typeof CompetitionSchema>;
+
+export const isLeague = (c: Competition): c is League => c.type === 'league';
+export const isCup = (c: Competition): c is Cup => c.type === 'cup';

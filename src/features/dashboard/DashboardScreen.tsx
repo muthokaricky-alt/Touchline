@@ -9,13 +9,14 @@ import { FinanceCard } from './components/FinanceCard';
 import { InboxCard } from './components/InboxCard';
 import { LeagueSnapshotCard } from './components/LeagueSnapshotCard';
 import { NextMatchCard } from './components/NextMatchCard';
-import { SeasonCompleteCard } from './components/SeasonCompleteCard';
+import { SeasonCompleteCard, SeasonFinishingCard } from './components/SeasonCompleteCard';
 import { SquadStatusCard } from './components/SquadStatusCard';
 import type { DashboardSummary } from './dashboard.types';
 
 type DashboardScreenProps = {
   summary: DashboardSummary;
   onStartNextSeason: () => void;
+  onFinishSeason: () => void;
 };
 
 /**
@@ -26,7 +27,7 @@ type DashboardScreenProps = {
  * instead of measuring the window width so the statically pre-rendered web
  * HTML matches what the browser renders (no hydration mismatch).
  */
-export function DashboardScreen({ summary, onStartNextSeason }: DashboardScreenProps) {
+export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason }: DashboardScreenProps) {
   const router = useRouter();
   const primary = (
     <>
@@ -38,6 +39,8 @@ export function DashboardScreen({ summary, onStartNextSeason }: DashboardScreenP
           onViewFixtures={() => router.navigate('/fixtures')}
           onPlayMatch={() => router.push('/match')}
         />
+      ) : summary.awaitingSeasonEnd ? (
+        <SeasonFinishingCard onFinishSeason={onFinishSeason} />
       ) : summary.seasonEnd ? (
         <SeasonCompleteCard
           seasonLabel={summary.season.label}

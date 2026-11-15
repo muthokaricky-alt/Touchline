@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
 import { lineupStrength } from '@/game/match/build-match-team';
-import { findLeague, nextFixtureFor, totalMatchdays } from '@/game/season/season-flow';
+import { competitionName, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
 import {
   findClub,
   fullName,
@@ -53,17 +53,19 @@ export function useTeamSheet() {
   return useMemo(() => selectTeamSheet(database, clubId, lineup), [database, clubId, lineup]);
 }
 
-/** Other clubs in the user's league, strongest first: friendly opponents. */
+/** Other clubs in the user's league this season, strongest first: friendly opponents. */
 export function useLeagueOpponents() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
+  const season = useGameStore((s) => s.season);
   return useMemo(() => {
-    const league = database.competitions.find((c) => c.clubIds.includes(clubId));
+    const leagueId = leagueOfClub(season, clubId);
+    const members = new Set(season.leagues.find((l) => l.competitionId === leagueId)?.clubIds ?? []);
     return database.clubs
-      .filter((c) => c.id !== clubId && (league ? league.clubIds.includes(c.id) : true))
+      .filter((c) => c.id !== clubId && members.has(c.id))
       .sort((a, b) => b.reputation - a.reputation || a.name.localeCompare(b.name))
       .map((c) => ({ id: c.id, name: c.name, reputation: c.reputation }));
-  }, [database, clubId]);
+  }, [database, clubId, season]);
 }
 
 /** How the AI opponent would line up against the user's current XI (formation + style), or null. */
@@ -78,7 +80,7 @@ export function useOpponentPreview(opponentId: ClubId | null) {
   }, [database, clubId, lineup, opponentId]);
 }
 
-/** The user's next league fixture, shaped for the pre-match screen, or null when the season is over. */
+/** The user's next fixture in any competition, shaped for the pre-match screen, or null when they have none left. */
 export function useNextFixture() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
@@ -90,9 +92,9 @@ export function useNextFixture() {
     const venue = fixture.homeId === clubId ? ('home' as const) : ('away' as const);
     return {
       fixtureId: fixture.id,
-      competitionName: findLeague(database, season.competitionId).name,
-      matchday: fixture.matchday,
-      totalMatchdays: totalMatchdays(season),
+      competitionName: competitionName(database, fixture.competitionId),
+      isCup: fixture.competitionId === season.cupId,
+      roundLabel: roundLabel(season, fixture),
       date: fixture.date,
       venue,
       opponentId: venue === 'home' ? fixture.awayId : fixture.homeId,

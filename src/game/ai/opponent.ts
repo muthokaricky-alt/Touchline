@@ -63,9 +63,38 @@ export function chooseAiTactics(squad: readonly LineupCandidate[], lineup: Lineu
   return PLAYING_STYLES[best].tactics;
 }
 
+type AiSetup = { squad: LineupCandidate[]; lineup: Lineup; strength: number };
+
+/**
+ * Cache of each AI club's squad, best lineup and strength (~9 ms to compute
+ * per club, and needed for every match).
+ *
+ * Keyed by the database *object* in a WeakMap: the database is immutable, so
+ * as long as it's the same object the answer can't change; when squads do
+ * change (transfers, injuries), the store will hold a new database object,
+ * which starts with an empty cache. WeakMap also lets an old database and
+ * its cache be garbage-collected.
+ */
+const setupCache = new WeakMap<GameDatabase, Map<ClubId, AiSetup>>();
+
+export function aiSetup(db: GameDatabase, clubId: ClubId): AiSetup {
+  let perDb = setupCache.get(db);
+  if (!perDb) {
+    perDb = new Map();
+    setupCache.set(db, perDb);
+  }
+  let setup = perDb.get(clubId);
+  if (!setup) {
+    const squad = selectSquadCandidates(db, clubId);
+    const lineup = chooseAiLineup(squad);
+    setup = { squad, lineup, strength: lineupStrength(lineup, squad) };
+    perDb.set(clubId, setup);
+  }
+  return setup;
+}
+
 /** Full engine input for an AI club facing an opponent of the given strength. */
 export function buildAiTeam(db: GameDatabase, clubId: ClubId, opponentStrength: number): MatchTeamInput {
-  const squad = selectSquadCandidates(db, clubId);
-  const lineup = chooseAiLineup(squad);
+  const { squad, lineup } = aiSetup(db, clubId);
   return buildMatchTeam(db, clubId, lineup, chooseAiTactics(squad, lineup, opponentStrength));
 }

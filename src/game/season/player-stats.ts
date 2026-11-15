@@ -1,10 +1,12 @@
-import type { ClubId, PlayerId } from '@/data/schemas';
+import type { ClubId, CompetitionId, PlayerId } from '@/data/schemas';
+import type { MatchResult } from '@/engine/types';
 
-import type { Fixture } from './season';
+import type { Fixture, PlayerSeasonLine, Season } from './season';
 
 /**
- * Season statistics per player, derived from stored fixture results
- * (never stored themselves, so they can't disagree with the results).
+ * Season statistics per player per competition, kept as running totals on
+ * the Season (see season.ts for why: storing every player's line from every
+ * match would make a save ~4 MB).
  */
 export type PlayerSeasonStats = {
   playerId: PlayerId;
@@ -21,31 +23,63 @@ export type PlayerSeasonStats = {
   averageRating: number;
 };
 
-export function seasonPlayerStats(fixtures: readonly Fixture[]): PlayerSeasonStats[] {
-  const stats = new Map<PlayerId, PlayerSeasonStats & { ratingTotal: number }>();
-  for (const fixture of fixtures) {
-    if (!fixture.result) continue;
-    for (const line of fixture.result.players) {
-      const clubId = line.side === 'home' ? fixture.homeId : fixture.awayId;
-      const s =
-        stats.get(line.playerId) ??
-        { playerId: line.playerId, clubId, appearances: 0, starts: 0, minutes: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, playerOfTheMatch: 0, averageRating: 0, ratingTotal: 0 };
-      s.clubId = clubId;
-      s.appearances++;
-      if (line.started) s.starts++;
-      s.minutes += line.minutes;
-      s.goals += line.goals;
-      s.assists += line.assists;
-      s.yellowCards += line.yellowCards;
-      if (line.redCard) s.redCards++;
-      if (fixture.result.playerOfTheMatch === line.playerId) s.playerOfTheMatch++;
-      s.ratingTotal += line.rating;
-      stats.set(line.playerId, s);
-    }
+/** Adds one match's player lines to the running totals. Returns a new array (immutable). */
+export function addMatchToStats(
+  lines: readonly PlayerSeasonLine[],
+  fixture: Fixture,
+  result: MatchResult,
+): PlayerSeasonLine[] {
+  const key = (playerId: PlayerId) => `${fixture.competitionId}|${playerId}`;
+  const byKey = new Map(lines.map((l) => [`${l.competitionId}|${l.playerId}`, l]));
+  for (const p of result.players) {
+    const clubId = p.side === 'home' ? fixture.homeId : fixture.awayId;
+    const previous = byKey.get(key(p.playerId));
+    byKey.set(key(p.playerId), {
+      competitionId: fixture.competitionId,
+      playerId: p.playerId,
+      clubId,
+      appearances: (previous?.appearances ?? 0) + 1,
+      starts: (previous?.starts ?? 0) + (p.started ? 1 : 0),
+      minutes: (previous?.minutes ?? 0) + p.minutesPlayed,
+      goals: (previous?.goals ?? 0) + p.goals,
+      assists: (previous?.assists ?? 0) + p.assists,
+      yellowCards: (previous?.yellowCards ?? 0) + p.yellowCards,
+      redCards: (previous?.redCards ?? 0) + (p.redCard ? 1 : 0),
+      playerOfTheMatch: (previous?.playerOfTheMatch ?? 0) + (result.playerOfTheMatch === p.playerId ? 1 : 0),
+      ratingTotal: Math.round(((previous?.ratingTotal ?? 0) + p.rating) * 10) / 10,
+    });
   }
-  return [...stats.values()].map(({ ratingTotal, ...s }) => ({
+  return [...byKey.values()];
+}
+
+/** One competition's player stats (or all competitions combined, per player, when no id is given). */
+export function seasonPlayerStats(season: Season, competitionId?: CompetitionId): PlayerSeasonStats[] {
+  const relevant = competitionId ? season.playerStats.filter((l) => l.competitionId === competitionId) : season.playerStats;
+  const merged = new Map<PlayerId, PlayerSeasonLine>();
+  for (const line of relevant) {
+    const m = merged.get(line.playerId);
+    merged.set(
+      line.playerId,
+      m
+        ? {
+            ...m,
+            clubId: line.clubId,
+            appearances: m.appearances + line.appearances,
+            starts: m.starts + line.starts,
+            minutes: m.minutes + line.minutes,
+            goals: m.goals + line.goals,
+            assists: m.assists + line.assists,
+            yellowCards: m.yellowCards + line.yellowCards,
+            redCards: m.redCards + line.redCards,
+            playerOfTheMatch: m.playerOfTheMatch + line.playerOfTheMatch,
+            ratingTotal: m.ratingTotal + line.ratingTotal,
+          }
+        : line,
+    );
+  }
+  return [...merged.values()].map(({ competitionId: _c, ratingTotal, ...s }) => ({
     ...s,
-    averageRating: Math.round((ratingTotal / s.appearances) * 10) / 10,
+    averageRating: s.appearances ? Math.round((ratingTotal / s.appearances) * 10) / 10 : 0,
   }));
 }
 

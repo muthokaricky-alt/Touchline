@@ -26,6 +26,7 @@ export const previewDashboard: DashboardSummary = {
     opponentPosition: 3,
     opponentForm: ['W', 'W', 'D', 'W', 'L'],
   },
+  awaitingSeasonEnd: false,
   seasonEnd: null,
   form: ['W', 'D', 'W', 'L', 'W'],
   table: [

@@ -17,7 +17,7 @@ import {
   validateLineup,
   type Lineup,
 } from '../lineup';
-import { positionFit } from '../squad/position-fit';
+import { effectiveRating, positionFit } from '../squad/position-fit';
 import { selectSquadCandidates } from '../squad/squad-selectors';
 
 const db = buildFictionalDatabase();
@@ -50,17 +50,44 @@ describe('autoPickLineup', () => {
     expect(benchKeepers).toHaveLength(1);
   });
 
+  /*
+   * The squad template fits 4-4-2, but weak clubs can have very poor
+   * naturals, so a much better player can rightly start out of position
+   * even after the −5 penalty. The rule that must hold: an out-of-position
+   * pick is never made while an unused natural is at least as good.
+   */
   it.each(db.clubs.map((c) => c.id))(
-    'plays nobody out of position in 4-4-2 for %s (the squad template fits it)',
+    'never prefers an out-of-position player over an equally good unused natural in 4-4-2 for %s',
     (clubId) => {
       const squad = selectSquadCandidates(db, clubId);
       const lineup = autoPickLineup(squad, '4-4-2');
+      const starting = new Set(Object.values(lineup.starters));
       for (const slot of getFormation('4-4-2').slots) {
-        const player = squad.find((c) => c.player.id === lineup.starters[slot.id])!.player;
-        expect(positionFit(player, slot.position)).not.toBe('unfamiliar');
+        const picked = squad.find((c) => c.player.id === lineup.starters[slot.id])!;
+        if (positionFit(picked.player, slot.position) !== 'unfamiliar') continue;
+        const pickedRating = effectiveRating(picked.player, picked.attributes, slot.position);
+        const unusedNaturals = squad.filter((c) => !starting.has(c.player.id) && c.player.primaryPosition === slot.position);
+        for (const natural of unusedNaturals) {
+          expect(effectiveRating(natural.player, natural.attributes, slot.position)).toBeLessThan(pickedRating);
+        }
       }
     },
   );
+
+  it('plays the vast majority of slots with natural or accomplished players across all clubs', () => {
+    let slots = 0;
+    let unfamiliar = 0;
+    for (const club of db.clubs) {
+      const squad = selectSquadCandidates(db, club.id);
+      const lineup = autoPickLineup(squad, '4-4-2');
+      for (const slot of getFormation('4-4-2').slots) {
+        const player = squad.find((c) => c.player.id === lineup.starters[slot.id])!.player;
+        slots++;
+        if (positionFit(player, slot.position) === 'unfamiliar') unfamiliar++;
+      }
+    }
+    expect(unfamiliar / slots).toBeLessThan(0.05);
+  });
 
   it('is deterministic', () => {
     expect(picked()).toEqual(picked());

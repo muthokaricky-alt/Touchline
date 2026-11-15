@@ -8,6 +8,7 @@ import { MatchCentreScreen, type OtherResult } from '@/features/match/MatchCentr
 import { MatchSetupScreen } from '@/features/match/MatchSetupScreen';
 import { buildRatingRows, buildStatRows, buildTimeline } from '@/features/match/timeline';
 import type { MatchVenue } from '@/game/match/friendly';
+import { competitionName, roundLabel } from '@/game/season/season-flow';
 import { findClub } from '@/game/squad/squad-selectors';
 import { useGameStore } from '@/store/game-store';
 import {
@@ -96,8 +97,8 @@ function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: (
   return (
     <FixtureSetupScreen
       competitionName={fixture.competitionName}
-      matchday={fixture.matchday}
-      totalMatchdays={fixture.totalMatchdays}
+      roundLabel={fixture.roundLabel}
+      isCup={fixture.isCup}
       date={fixture.date}
       homeName={fixture.homeName}
       awayName={fixture.awayName}
@@ -167,19 +168,20 @@ function MatchCentre({ result, fixtureId, onContinue, onDone }: MatchCentreProps
 
   const view = useMemo(() => {
     const fixture = fixtureId ? season.fixtures.find((f) => f.id === fixtureId) : undefined;
-    const league = fixture ? database.competitions.find((c) => c.id === fixture.competitionId) : undefined;
+    // Same competition AND same round: matchday 3 exists in both leagues and the cup.
     const otherResults: OtherResult[] = fixture
       ? season.fixtures
-          .filter((f) => f.matchday === fixture.matchday && f.id !== fixture.id && f.result)
+          .filter((f) => f.competitionId === fixture.competitionId && f.matchday === fixture.matchday && f.id !== fixture.id && f.result)
           .map((f) => ({
             key: f.id,
             homeName: findClub(database, f.homeId)?.name ?? f.homeId,
             awayName: findClub(database, f.awayId)?.name ?? f.awayId,
             score: f.result!.score,
+            penalties: f.result!.penalties,
           }))
       : [];
     return {
-      overline: fixture && league ? `${league.name} · Matchday ${fixture.matchday}` : 'Friendly',
+      overline: fixture ? `${competitionName(database, fixture.competitionId)} · ${roundLabel(season, fixture)}` : 'Friendly',
       otherResults,
       timeline: buildTimeline(result, playerName),
       statRows: buildStatRows(result.stats),
@@ -195,6 +197,7 @@ function MatchCentre({ result, fixtureId, onContinue, onDone }: MatchCentreProps
       otherResults={view.otherResults}
       homeName={result.home.name}
       awayName={result.away.name}
+      penalties={result.penalties}
       timeline={view.timeline}
       statRows={view.statRows}
       ratings={view.ratings}

@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Card, Pill } from '@/components/ui';
+import { AppText, Card, IconButton, Pill } from '@/components/ui';
 import { colors, radii, spacing, type ColorToken } from '@/theme';
 import { formatMatchDate } from '@/utils/format';
 
@@ -8,12 +8,32 @@ import type { FixtureRowView, MatchdayView } from '../season-view';
 
 const OUTCOME_COLOR: Record<'W' | 'D' | 'L', ColorToken> = { W: 'win', D: 'draw', L: 'loss' };
 
-export function MatchdayCard({ day }: { day: MatchdayView }) {
+type MatchdayPagerProps = {
+  day: MatchdayView;
+  total: number;
+  onPrevious: () => void;
+  onNext: () => void;
+};
+
+/** One matchday at a time with previous/next: 38 cards in a row would be a very long scroll. */
+export function MatchdayPager({ day, total, onPrevious, onNext }: MatchdayPagerProps) {
   return (
-    <Card
-      title={`Matchday ${day.matchday} · ${formatMatchDate(day.date)}`}
-      headerAction={day.isCurrent ? <Pill label="Next" tone="accent" /> : null}
-      highlighted={day.isCurrent}>
+    <Card highlighted={day.isCurrent}>
+      <View style={styles.pagerHeader}>
+        <IconButton icon="chevronLeft" accessibilityLabel="Previous matchday" onPress={onPrevious} disabled={day.matchday <= 1} />
+        <View style={styles.pagerTitle}>
+          <AppText variant="heading" align="center">
+            Matchday {day.matchday} of {total}
+          </AppText>
+          <View style={styles.pagerMeta}>
+            <AppText variant="caption" color="textSecondary">
+              {formatMatchDate(day.date, true)}
+            </AppText>
+            {day.isCurrent ? <Pill label="Next" tone="accent" /> : null}
+          </View>
+        </View>
+        <IconButton icon="chevronRight" accessibilityLabel="Next matchday" onPress={onNext} disabled={day.matchday >= total} />
+      </View>
       <View>
         {day.fixtures.map((f) => (
           <FixtureRow key={f.id} fixture={f} />
@@ -23,9 +43,10 @@ export function MatchdayCard({ day }: { day: MatchdayView }) {
   );
 }
 
-function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
+export function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
+  const penalties = fixture.penalties ? `, ${fixture.penalties.home}–${fixture.penalties.away} on penalties` : '';
   const label = fixture.score
-    ? `${fixture.homeName} ${fixture.score.home}, ${fixture.awayName} ${fixture.score.away}`
+    ? `${fixture.homeName} ${fixture.score.home}, ${fixture.awayName} ${fixture.score.away}${penalties}`
     : `${fixture.homeName} versus ${fixture.awayName}, not played yet`;
   return (
     <View style={[styles.row, fixture.involvesUser && styles.userRow]} accessible accessibilityLabel={label}>
@@ -36,6 +57,11 @@ function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
         <AppText variant="bodyStrong" color={fixture.score ? 'textPrimary' : 'textMuted'}>
           {fixture.score ? `${fixture.score.home} – ${fixture.score.away}` : 'v'}
         </AppText>
+        {fixture.penalties ? (
+          <AppText variant="caption" color="textSecondary">
+            {fixture.penalties.home}–{fixture.penalties.away} pens
+          </AppText>
+        ) : null}
       </View>
       <AppText variant={fixture.involvesUser ? 'bodyStrong' : 'body'} numberOfLines={1} style={styles.team}>
         {fixture.awayName}
@@ -45,6 +71,9 @@ function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
 }
 
 const styles = StyleSheet.create({
+  pagerHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  pagerTitle: { flex: 1, alignItems: 'center', gap: spacing.xxs },
+  pagerMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.xs },
   userRow: { backgroundColor: colors.accentMuted, borderRadius: radii.sm },
   team: { flex: 1, minWidth: 0 },

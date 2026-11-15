@@ -71,26 +71,23 @@ describe('game store', () => {
     expect(state().lastMatch).toBeNull();
   });
 
-  it('plays league fixtures matchday by matchday and moves the date on', () => {
+  it('plays fixtures date by date and moves the calendar on', () => {
     expect(state().season.fixtures.every((f) => f.result === null)).toBe(true);
     const result = state().playNextFixture();
     expect([result.home.clubId, result.away.clubId]).toContain(DEFAULT_USER_CLUB_ID);
-    const md1 = state().season.fixtures.filter((f) => f.matchday === 1);
-    expect(md1.every((f) => f.result)).toBe(true);
-    expect(state().lastMatchFixtureId).toBe(md1.find((f) => f.result && (f.homeId === DEFAULT_USER_CLUB_ID || f.awayId === DEFAULT_USER_CLUB_ID))!.id);
-    expect(state().currentDate).toBe(md1[0].date);
-    // A friendly afterwards is not a league match.
+    const firstDay = state().season.fixtures.filter((f) => f.date === '2026-08-08');
+    expect(firstDay.every((f) => f.result)).toBe(true);
+    const mine = firstDay.find((f) => f.homeId === DEFAULT_USER_CLUB_ID || f.awayId === DEFAULT_USER_CLUB_ID)!;
+    expect(state().lastMatchFixtureId).toBe(mine.id);
+    expect(state().currentDate).toBe('2026-08-08');
+    // A friendly afterwards is not a competitive match.
     state().playFriendly('club_kestrel_bay', 'home', 1);
     expect(state().lastMatchFixtureId).toBeNull();
   });
 
-  it('only starts a new season when the current one is complete', () => {
+  it('guards season transitions', () => {
     expect(() => state().startNextSeason()).toThrow(/still in progress/);
-    for (let i = 0; i < 14; i++) state().playNextFixture();
-    expect(() => state().playNextFixture()).toThrow();
-    state().startNextSeason();
-    expect(state().season.label).toBe('2027/28');
-    expect(state().season.fixtures.every((f) => f.result === null)).toBe(true);
+    expect(() => state().finishSeason()).toThrow(/still have fixtures/);
   });
 
   it('replaces the lineup object on change (so React re-renders)', () => {

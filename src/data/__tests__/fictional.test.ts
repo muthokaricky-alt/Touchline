@@ -3,7 +3,7 @@ import { ageOn } from '@/utils/date';
 import { buildFictionalDatabase, FICTIONAL_CLUBS, FICTIONAL_REFERENCE_DATE } from '../fictional';
 import { SQUAD_TEMPLATE } from '../fictional/generate-squads';
 import { checkIntegrity } from '../integrity';
-import { GameDatabaseSchema, type GameDatabase, type PlayerAttributes } from '../schemas';
+import { GameDatabaseSchema, isCup, isLeague, type GameDatabase, type PlayerAttributes } from '../schemas';
 
 const db = buildFictionalDatabase();
 
@@ -36,13 +36,27 @@ describe('fictional database', () => {
     expect(checkIntegrity(db)).toEqual([]);
   });
 
-  it('has 8 clubs of 22 players in one league', () => {
-    expect(db.clubs).toHaveLength(8);
-    expect(db.players).toHaveLength(8 * 22);
+  it('has 40 clubs of 22 players in two 20-club divisions and a cup', () => {
+    expect(db.clubs).toHaveLength(40);
+    expect(db.players).toHaveLength(40 * 22);
     expect(db.attributes).toHaveLength(db.players.length);
     expect(db.contracts).toHaveLength(db.players.length);
-    expect(db.competitions).toHaveLength(1);
-    expect(db.competitions[0].clubIds).toEqual(FICTIONAL_CLUBS.map((c) => c.id));
+    const leagues = db.competitions.filter(isLeague);
+    expect(leagues.map((l) => [l.tier, l.clubIds.length])).toEqual([[1, 20], [2, 20]]);
+    expect(leagues[0].clubIds.slice(0, 8)).toEqual(FICTIONAL_CLUBS.map((c) => c.id));
+    expect(db.competitions.filter(isCup)).toHaveLength(1);
+  });
+
+  it('gives every club a unique id, name and short name', () => {
+    for (const key of ['id', 'name', 'shortName'] as const) {
+      expect(new Set(db.clubs.map((c) => c[key])).size).toBe(db.clubs.length);
+    }
+  });
+
+  it('makes the second division weaker than the first on average', () => {
+    const [first, second] = db.competitions.filter(isLeague);
+    const avgRep = (ids: string[]) => ids.reduce((s, id) => s + db.clubs.find((c) => c.id === id)!.reputation, 0) / ids.length;
+    expect(avgRep(first.clubIds)).toBeGreaterThan(avgRep(second.clubIds) + 3);
   });
 
   it('is deterministic: same seed, same database', () => {
@@ -102,8 +116,9 @@ describe('fictional database', () => {
   });
 
   it('gives higher-reputation clubs stronger squads', () => {
-    const strongest = FICTIONAL_CLUBS[0]; // reputation 16
-    const weakest = FICTIONAL_CLUBS[FICTIONAL_CLUBS.length - 1]; // reputation 9
+    const byRep = [...db.clubs].sort((a, b) => b.reputation - a.reputation);
+    const strongest = byRep[0]; // reputation 17
+    const weakest = byRep[byRep.length - 1]; // reputation 4
     const squadAverage = (clubId: string) => {
       const { attributes } = squadOf(db, clubId);
       return attributes.reduce((s, a) => s + outfieldAverage(a), 0) / attributes.length;

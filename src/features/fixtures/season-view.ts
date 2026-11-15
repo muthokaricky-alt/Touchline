@@ -1,97 +1,160 @@
-import type { ClubId, GameDatabase } from '@/data/schemas';
+import type { ClubId, CompetitionId, GameDatabase } from '@/data/schemas';
+import { cupEntrants, cupFixtures, cupRoundCount, cupRoundName, cupWinner, tieLoser, tieWinner } from '@/game/season/cup';
 import { seasonPlayerStats, topAssists, topScorers, type PlayerSeasonStats } from '@/game/season/player-stats';
-import type { Season } from '@/game/season/season';
-import { currentMatchday, findLeague } from '@/game/season/season-flow';
-import { computeTable, type TableRow } from '@/game/season/table';
+import type { Fixture, Season } from '@/game/season/season';
+import { competitionName, currentMatchday, leagueOfClub, leagueTable, totalMatchdays } from '@/game/season/season-flow';
+import type { TableRow } from '@/game/season/table';
 import { fullName } from '@/game/squad/squad-selectors';
 
-/** View model for the Fixtures tab: matchdays, the full table, and leaderboards. Pure. */
+/** View models for the Fixtures tab: competition picker, league view, cup view. Pure. */
+
+export type CompetitionOption = { id: CompetitionId; label: string; kind: 'league' | 'cup' };
 
 export type FixtureRowView = {
   id: string;
   homeName: string;
   awayName: string;
   score: { home: number; away: number } | null;
+  penalties: { home: number; away: number } | null;
   involvesUser: boolean;
-  /** From the user's point of view, when played. */
+  /** From the user's point of view, when played (cup ties: penalties decide). */
   userOutcome: 'W' | 'D' | 'L' | null;
 };
 
-export type MatchdayView = {
-  matchday: number;
-  date: string;
-  isCurrent: boolean;
-  fixtures: FixtureRowView[];
-};
-
+export type MatchdayView = { matchday: number; date: string; isCurrent: boolean; fixtures: FixtureRowView[] };
 export type TableRowView = TableRow & { clubName: string; shortName: string; isUser: boolean };
-
 export type LeaderRowView = { playerId: string; name: string; clubShortName: string; value: number; appearances: number };
 
-export type SeasonView = {
-  label: string;
+export type LeagueView = {
+  kind: 'league';
   competitionName: string;
   currentMatchday: number | null;
+  totalMatchdays: number;
   matchdays: MatchdayView[];
   table: TableRowView[];
   topScorers: LeaderRowView[];
   topAssists: LeaderRowView[];
-  relegationPlaces: number;
 };
 
-export function buildSeasonView(db: GameDatabase, season: Season, userClubId: ClubId): SeasonView {
-  const league = findLeague(db, season.competitionId);
-  const clubs = new Map(db.clubs.map((c) => [c.id, c]));
-  const players = new Map(db.players.map((p) => [p.id, p]));
-  const current = currentMatchday(season);
+export type CupRoundView = { round: number; name: string; date: string; ties: FixtureRowView[] };
 
-  const byMatchday = new Map<number, MatchdayView>();
-  for (const f of [...season.fixtures].sort((a, b) => a.matchday - b.matchday)) {
-    const day = byMatchday.get(f.matchday) ?? { matchday: f.matchday, date: f.date, isCurrent: f.matchday === current, fixtures: [] };
-    const involvesUser = f.homeId === userClubId || f.awayId === userClubId;
-    const score = f.result?.score ?? null;
-    let userOutcome: FixtureRowView['userOutcome'] = null;
-    if (score && involvesUser) {
-      const [mine, theirs] = f.homeId === userClubId ? [score.home, score.away] : [score.away, score.home];
+export type CupView = {
+  kind: 'cup';
+  competitionName: string;
+  rounds: CupRoundView[];
+  winnerName: string | null;
+  /** e.g. "Through to the Quarter-finals", "Knocked out in the Round of 16", "Winners!" */
+  userStatus: string;
+  topScorers: LeaderRowView[];
+};
+
+/** The user's league first, then other leagues by tier, then the cup. */
+export function competitionOptions(db: GameDatabase, season: Season, userClubId: ClubId): CompetitionOption[] {
+  const userLeague = leagueOfClub(season, userClubId);
+  const leagues = [...season.leagues].sort((a, b) => Number(b.competitionId === userLeague) - Number(a.competitionId === userLeague));
+  return [
+    ...leagues.map((l) => ({ id: l.competitionId, label: competitionName(db, l.competitionId), kind: 'league' as const })),
+    ...(season.cupId ? [{ id: season.cupId, label: competitionName(db, season.cupId), kind: 'cup' as const }] : []),
+  ];
+}
+
+function rowView(db: GameDatabase, f: Fixture, userClubId: ClubId, isCup: boolean): FixtureRowView {
+  const nameOf = (id: ClubId) => db.clubs.find((c) => c.id === id)?.name ?? id;
+  const involvesUser = f.homeId === userClubId || f.awayId === userClubId;
+  let userOutcome: FixtureRowView['userOutcome'] = null;
+  if (f.result && involvesUser) {
+    if (isCup) userOutcome = tieWinner(f) === userClubId ? 'W' : 'L';
+    else {
+      const { home, away } = f.result.score;
+      const [mine, theirs] = f.homeId === userClubId ? [home, away] : [away, home];
       userOutcome = mine > theirs ? 'W' : mine === theirs ? 'D' : 'L';
     }
-    day.fixtures.push({
-      id: f.id,
-      homeName: clubs.get(f.homeId)?.name ?? f.homeId,
-      awayName: clubs.get(f.awayId)?.name ?? f.awayId,
-      score,
-      involvesUser,
-      userOutcome,
-    });
+  }
+  return {
+    id: f.id,
+    homeName: nameOf(f.homeId),
+    awayName: nameOf(f.awayId),
+    score: f.result?.score ?? null,
+    penalties: f.result?.penalties ?? null,
+    involvesUser,
+    userOutcome,
+  };
+}
+
+function leaders(db: GameDatabase, rows: PlayerSeasonStats[], value: (s: PlayerSeasonStats) => number): LeaderRowView[] {
+  const clubs = new Map(db.clubs.map((c) => [c.id, c]));
+  const players = new Map(db.players.map((p) => [p.id, p]));
+  return rows.map((s) => {
+    const player = players.get(s.playerId);
+    return {
+      playerId: s.playerId,
+      name: player ? fullName(player) : s.playerId,
+      clubShortName: clubs.get(s.clubId)?.shortName ?? '',
+      value: value(s),
+      appearances: s.appearances,
+    };
+  });
+}
+
+export function buildLeagueView(db: GameDatabase, season: Season, competitionId: CompetitionId, userClubId: ClubId): LeagueView {
+  const clubs = new Map(db.clubs.map((c) => [c.id, c]));
+  const current = currentMatchday(season, competitionId);
+  const byMatchday = new Map<number, MatchdayView>();
+  for (const f of season.fixtures.filter((x) => x.competitionId === competitionId).sort((a, b) => a.matchday - b.matchday)) {
+    const day = byMatchday.get(f.matchday) ?? { matchday: f.matchday, date: f.date, isCurrent: f.matchday === current, fixtures: [] };
+    day.fixtures.push(rowView(db, f, userClubId, false));
     byMatchday.set(f.matchday, day);
   }
-
-  const leaders = (rows: PlayerSeasonStats[], value: (s: PlayerSeasonStats) => number): LeaderRowView[] =>
-    rows.map((s) => {
-      const player = players.get(s.playerId);
-      return {
-        playerId: s.playerId,
-        name: player ? fullName(player) : s.playerId,
-        clubShortName: clubs.get(s.clubId)?.shortName ?? '',
-        value: value(s),
-        appearances: s.appearances,
-      };
-    });
-  const stats = seasonPlayerStats(season.fixtures);
-
+  const stats = seasonPlayerStats(season, competitionId);
   return {
-    label: season.label,
-    competitionName: league.name,
+    kind: 'league',
+    competitionName: competitionName(db, competitionId),
     currentMatchday: current,
+    totalMatchdays: totalMatchdays(season, competitionId),
     matchdays: [...byMatchday.values()],
-    table: computeTable(season.fixtures, league).map((row) => ({
+    table: leagueTable(db, season, competitionId).map((row) => ({
       ...row,
       clubName: clubs.get(row.clubId)?.name ?? row.clubId,
       shortName: clubs.get(row.clubId)?.shortName ?? '',
       isUser: row.clubId === userClubId,
     })),
-    topScorers: leaders(topScorers(stats), (s) => s.goals),
-    topAssists: leaders(topAssists(stats), (s) => s.assists),
-    relegationPlaces: league.rules.relegationPlaces,
+    topScorers: leaders(db, topScorers(stats), (s) => s.goals),
+    topAssists: leaders(db, topAssists(stats), (s) => s.assists),
+  };
+}
+
+export function buildCupView(db: GameDatabase, season: Season, userClubId: ClubId): CupView | null {
+  if (!season.cupId) return null;
+  const fixtures = cupFixtures(season);
+  const entrants = cupEntrants(season);
+  const total = cupRoundCount(entrants.length);
+  const rounds: CupRoundView[] = [];
+  for (const f of [...fixtures].sort((a, b) => a.matchday - b.matchday)) {
+    let round = rounds.find((r) => r.round === f.matchday);
+    if (!round) {
+      round = { round: f.matchday, name: cupRoundName(f.matchday, total, entrants.length), date: f.date, ties: [] };
+      rounds.push(round);
+    }
+    round.ties.push(rowView(db, f, userClubId, true));
+  }
+
+  const winner = cupWinner(season);
+  const nameOf = (id: ClubId) => db.clubs.find((c) => c.id === id)?.name ?? id;
+  const userTies = fixtures.filter((f) => f.homeId === userClubId || f.awayId === userClubId).sort((a, b) => a.matchday - b.matchday);
+  const lastTie = userTies.at(-1);
+  let userStatus: string;
+  if (winner === userClubId) userStatus = 'Winners!';
+  else if (!lastTie) userStatus = entrants.includes(userClubId) ? `Bye to the ${cupRoundName(2, total, entrants.length)}` : 'Not entered';
+  else if (!lastTie.result) userStatus = `In the ${cupRoundName(lastTie.matchday, total, entrants.length)}`;
+  else if (tieLoser(lastTie) === userClubId) userStatus = `Knocked out in the ${cupRoundName(lastTie.matchday, total, entrants.length)}`;
+  else userStatus = `Through to the ${cupRoundName(lastTie.matchday + 1, total, entrants.length)}`;
+
+  return {
+    kind: 'cup',
+    competitionName: competitionName(db, season.cupId),
+    rounds,
+    winnerName: winner ? nameOf(winner) : null,
+    userStatus,
+    topScorers: leaders(db, topScorers(seasonPlayerStats(season, season.cupId)), (s) => s.goals),
   };
 }

@@ -19,7 +19,14 @@ const REPORT_SEGMENTS = [
   { value: 'ratings', label: 'Ratings' },
 ] as const satisfies readonly { value: ReportView; label: string }[];
 
-export type OtherResult = { key: string; homeName: string; awayName: string; score: { home: number; away: number } };
+type Score = { home: number; away: number };
+
+export type OtherResult = { key: string; homeName: string; awayName: string; score: Score; penalties?: Score };
+
+/** "Kestrel Bay win 4–3 on penalties" */
+function penaltiesLine(homeName: string, awayName: string, p: Score): string {
+  return `${p.home > p.away ? homeName : awayName} win ${Math.max(p.home, p.away)}–${Math.min(p.home, p.away)} on penalties`;
+}
 
 type MatchCentreScreenProps = {
   /** e.g. "Friendly" or "First Division · Matchday 3" */
@@ -30,6 +37,8 @@ type MatchCentreScreenProps = {
   otherResults?: readonly OtherResult[];
   homeName: string;
   awayName: string;
+  /** Cup shootout, revealed at full time. */
+  penalties?: Score;
   timeline: readonly TimelineItem[];
   statRows: readonly StatRow[];
   ratings: { home: readonly RatingRow[]; away: readonly RatingRow[] };
@@ -48,6 +57,7 @@ export function MatchCentreScreen({
   otherResults,
   homeName,
   awayName,
+  penalties,
   timeline,
   statRows,
   ratings,
@@ -96,6 +106,11 @@ export function MatchCentreScreen({
         </>
       ) : (
         <>
+          {penalties ? (
+            <AppText variant="heading" color="accent" align="center" accessibilityLiveRegion="polite">
+              {penaltiesLine(homeName, awayName, penalties)}
+            </AppText>
+          ) : null}
           {playerOfTheMatch ? (
             <AppText color="textSecondary" align="center">
               Player of the match: <AppText variant="bodyStrong">{playerOfTheMatch}</AppText>
@@ -110,6 +125,7 @@ export function MatchCentreScreen({
                   </AppText>
                   <AppText variant="bodyStrong" style={styles.resultScore}>
                     {r.score.home} – {r.score.away}
+                    {r.penalties ? ` (${r.penalties.home}–${r.penalties.away}p)` : ''}
                   </AppText>
                   <AppText style={styles.resultTeam} numberOfLines={1}>
                     {r.awayName}

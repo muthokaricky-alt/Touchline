@@ -16,7 +16,14 @@ import { simulateMatch } from '@/engine/simulate';
 import type { MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
 import type { Season } from '@/game/season/season';
-import { createSeason, isSeasonComplete, playUserFixture, startNextSeason } from '@/game/season/season-flow';
+import {
+  advanceToUserFixture,
+  createSeason,
+  isSeasonComplete,
+  nextFixtureFor,
+  playRemaining,
+  startNextSeason,
+} from '@/game/season/season-flow';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES, type PlayingStyleId } from '@/game/tactics/presets';
 import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from '@/game/tactics/tactics';
@@ -69,19 +76,14 @@ export type GameActions = {
   applyPlayingStyle: (styleId: PlayingStyleId) => void;
   /** Simulates a friendly with the current lineup and tactics. `seed` is for tests; normally from the clock. */
   playFriendly: (opponentId: ClubId, venue: MatchVenue, seed?: number) => MatchResult;
-  /** Plays the user's next league fixture and the rest of that matchday. */
+  /** Plays every date up to and including the user's next fixture (league or cup). */
   playNextFixture: () => MatchResult;
-  /** Only once the current season is complete. */
+  /** Once the user has no fixtures left: plays the rest of the season (e.g. a cup final between other clubs). */
+  finishSeason: () => void;
+  /** Only once the current season is complete. Applies promotion/relegation. */
   startNextSeason: () => void;
   clearMatch: () => void;
 };
-
-/** The league the user's club plays in. */
-function userLeagueId(database: GameDatabase, clubId: ClubId) {
-  const league = database.competitions.find((c) => c.clubIds.includes(clubId));
-  if (!league) throw new RangeError(`Club "${clubId}" isn't in any league`);
-  return league.id;
-}
 
 export function createInitialGameState(): GameState {
   const database = buildFictionalDatabase();
@@ -92,7 +94,7 @@ export function createInitialGameState(): GameState {
     currentDate: FICTIONAL_REFERENCE_DATE,
     lineup: autoPickLineup(selectSquadCandidates(database, userClubId), DEFAULT_FORMATION_ID),
     tactics: DEFAULT_TACTICS,
-    season: createSeason(database, userLeagueId(database, userClubId), 2026, FICTIONAL_SEED),
+    season: createSeason(database, 2026, FICTIONAL_SEED),
     lastMatch: null,
     lastMatchFixtureId: null,
   };
@@ -119,9 +121,16 @@ export const useGameStore = create<GameState & GameActions>()((set, get) => ({
   },
   playNextFixture: () => {
     const { database, userClubId, lineup, tactics, season } = get();
-    const played = playUserFixture(database, season, { clubId: userClubId, lineup, tactics });
+    const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics });
     set({ season: played.season, lastMatch: played.result, lastMatchFixtureId: played.fixture.id, currentDate: played.fixture.date });
     return played.result;
+  },
+  finishSeason: () => {
+    const { database, userClubId, season } = get();
+    if (nextFixtureFor(season, userClubId)) throw new RangeError('You still have fixtures to play');
+    const finished = playRemaining(database, season);
+    const lastDate = finished.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), get().currentDate);
+    set({ season: finished, currentDate: lastDate });
   },
   startNextSeason: () => {
     const { database, season } = get();

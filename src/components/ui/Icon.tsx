@@ -23,6 +23,8 @@ const ICONS = {
   finances: { ios: 'banknote.fill', android: 'payments', web: 'payments' },
   transfers: { ios: 'arrow.left.arrow.right', android: 'swap_horiz', web: 'swap_horiz' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
+  chevronLeft: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' },
+  trophy: { ios: 'trophy.fill', android: 'trophy', web: 'trophy' },
   medical: { ios: 'cross.case.fill', android: 'medical_services', web: 'medical_services' },
   trendUp: { ios: 'chart.line.uptrend.xyaxis', android: 'trending_up', web: 'trending_up' },
   construction: { ios: 'hammer.fill', android: 'construction', web: 'construction' },

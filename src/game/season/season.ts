@@ -1,14 +1,17 @@
 import { z } from 'zod';
 
-import { ClubIdSchema, CompetitionIdSchema, IsoDateSchema, PlayerIdSchema, PositionSchema } from '@/data/schemas';
+import { ClubIdSchema, CompetitionIdSchema, IsoDateSchema, PlayerIdSchema } from '@/data/schemas';
 
 /**
- * Season state: fixtures and their results.
+ * Season state: which clubs are in which league this season, every fixture
+ * (leagues and cup) with its result, and running player totals.
  *
- * Results are stored *compactly* (score, scorers, cards, per-player line) and
- * not as the engine's full event list: a season has 56 matches × ~150
- * events, and this will be saved to disk in the persistence step. Zod
- * schemas are defined now so that saved seasons can be validated on load.
+ * Sizing matters because this gets saved: ~760 fixtures a season. Each
+ * result keeps the score, goals, cards and POTM (~0.6 KB). Per-player match
+ * lines are NOT stored; instead `playerStats` keeps running season totals
+ * per player per competition, updated as results come in.
+ *
+ * Derived, never stored: league tables, cup progress, leaderboards.
  */
 
 const SideSchema = z.enum(['home', 'away']);
@@ -29,31 +32,19 @@ export const FixtureCardSchema = z.strictObject({
   card: z.enum(['yellow', 'second-yellow', 'red']),
 });
 
-/** One player's line from one match: enough for season stats. */
-export const FixturePlayerLineSchema = z.strictObject({
-  playerId: PlayerIdSchema,
-  side: SideSchema,
-  position: PositionSchema,
-  started: z.boolean(),
-  minutes: z.int().min(0).max(90),
-  goals: z.int().min(0),
-  assists: z.int().min(0),
-  yellowCards: z.int().min(0).max(2),
-  redCard: z.boolean(),
-  rating: z.number().min(3).max(10),
-});
-
 export const FixtureResultSchema = z.strictObject({
   score: z.strictObject({ home: z.int().min(0), away: z.int().min(0) }),
   goals: z.array(FixtureGoalSchema),
   cards: z.array(FixtureCardSchema),
-  players: z.array(FixturePlayerLineSchema),
   playerOfTheMatch: PlayerIdSchema.nullable(),
+  /** Cup ties only, when level after 90 minutes. */
+  penalties: z.strictObject({ home: z.int().min(0), away: z.int().min(0) }).optional(),
 });
 
 export const FixtureSchema = z.strictObject({
   id: z.string().regex(/^fx_[a-z0-9_]+$/),
   competitionId: CompetitionIdSchema,
+  /** Round number within its competition: the matchday for leagues, the round for cups. */
   matchday: z.int().min(1),
   date: IsoDateSchema,
   homeId: ClubIdSchema,
@@ -61,23 +52,62 @@ export const FixtureSchema = z.strictObject({
   result: FixtureResultSchema.nullable(),
 });
 
+/** Which clubs play in a league THIS season (promotion/relegation changes it). */
+export const LeagueMembershipSchema = z.strictObject({
+  competitionId: CompetitionIdSchema,
+  clubIds: z.array(ClubIdSchema).min(2),
+});
+
+/** Running totals for one player in one competition. */
+export const PlayerSeasonLineSchema = z.strictObject({
+  competitionId: CompetitionIdSchema,
+  playerId: PlayerIdSchema,
+  clubId: ClubIdSchema,
+  appearances: z.int().min(0),
+  starts: z.int().min(0),
+  minutes: z.int().min(0),
+  goals: z.int().min(0),
+  assists: z.int().min(0),
+  yellowCards: z.int().min(0),
+  redCards: z.int().min(0),
+  playerOfTheMatch: z.int().min(0),
+  /** Sum of match ratings; average = ratingTotal / appearances. */
+  ratingTotal: z.number().min(0),
+});
+
 export const SeasonSchema = z.strictObject({
   /** e.g. "2026/27" */
   label: z.string().regex(/^\d{4}\/\d{2}$/),
   startYear: z.int(),
-  competitionId: CompetitionIdSchema,
-  /** All fixture seeds derive from this, so a season replays exactly. */
+  /** All fixture seeds and cup draws derive from this, so a season replays exactly. */
   seed: z.int().min(0),
+  leagues: z.array(LeagueMembershipSchema).min(1),
+  cupId: CompetitionIdSchema.nullable(),
   fixtures: z.array(FixtureSchema),
+  playerStats: z.array(PlayerSeasonLineSchema),
 });
 
 export type FixtureGoal = z.infer<typeof FixtureGoalSchema>;
 export type FixtureCard = z.infer<typeof FixtureCardSchema>;
-export type FixturePlayerLine = z.infer<typeof FixturePlayerLineSchema>;
 export type FixtureResult = z.infer<typeof FixtureResultSchema>;
 export type Fixture = z.infer<typeof FixtureSchema>;
+export type LeagueMembership = z.infer<typeof LeagueMembershipSchema>;
+export type PlayerSeasonLine = z.infer<typeof PlayerSeasonLineSchema>;
 export type Season = z.infer<typeof SeasonSchema>;
 
 export function seasonLabel(startYear: number): string {
   return `${startYear}/${String((startYear + 1) % 100).padStart(2, '0')}`;
+}
+
+/**
+ * Mixes a base seed with a number (league index, cup round…) into a new
+ * non-negative 31-bit seed. Note `>>> 0` after every XOR: JavaScript's
+ * bitwise operators return SIGNED 32-bit ints, and a negative seed slipped
+ * through here once (caught by SeasonSchema's `min(0)`).
+ */
+export function mixSeed(seed: number, salt: number): number {
+  let h = (seed ^ Math.imul(salt + 1, 0x9e3779b1)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) % 2_147_483_647;
 }

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 6 step 6a (league season) complete; 6b (second division, promotion/relegation, cup) next._
+_Last updated: 15 Nov 2026 — Milestone 6 (Competitions) complete; next is the agreed autosave step, then Milestone 7._
 
 ---
 
@@ -56,14 +56,15 @@ src/
     tactics/             Tactics schema, playing-style presets, assistant analysis
     ai/opponent.ts       AI club setup: best formation + style for the strength gap
     match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
-    season/              Season/Fixture schemas, fixture generator, table,
-                         player season stats, season flow (play, record, roll over)
+    season/              Season/Fixture schemas, fixture generator, table, cup
+                         (draws, rounds, ties), running player stats, season flow
+                         (date-ordered play, promotion/relegation, roll over)
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
     simulate.ts          minute loop: possession → fouls → chance/shot → fatigue → subs
     team-state.ts        on-pitch players, energy, unit strengths, replacements
     tactical-effects.ts  instructions → numeric modifiers
     summarise.ts         events → score, team/player stats, ratings (one source of truth)
-    ratings.ts, commentary.ts, types.ts
+    ratings.ts, commentary.ts, penalties.ts (shootout), types.ts
     __fixtures__/        test helpers (outside __tests__ so Jest doesn't run them)
   store/               Zustand: game-store.ts (state + actions), hooks.ts (view-model hooks)
   data/                DATA: pure TS, no React imports
@@ -302,6 +303,46 @@ call pure functions from `src/game` and save the result.
 - **Dashboard** is now real apart from manager name, kick-off time,
   fitness/morale/injuries and inbox (preview until M8).
 
+#### 6b: world size, multi-competition seasons, cup
+
+- **World (user's decision):** one country, two 20-club divisions (38
+  matchdays, 3 up / 3 down) + a 40-club National Cup. The model supports
+  many countries; the other "major leagues" come as data in M7/M9 when
+  transfers/job offers make them matter. 12 + 20 new clubs are short
+  specs (`[name, short, reputation]`) expanded deterministically
+  (`makeClub`); towns are invented. 880 players.
+- **`Competition` is a discriminated union** (`league` | `cup`); `isLeague` /
+  `isCup` narrow it. Adding it made `tsc` list every place that assumed
+  "competition = league", which became the to-do list for the change.
+- **Season = memberships + fixtures + running stats.** `leagues` holds this
+  season's clubs per league (promotion changes it); `leagueForSeason`
+  overlays them on the db league. `playerStats` are running totals per
+  player per competition (per-match player lines would make a save ~4 MB;
+  a full season now serialises well under 1 MB, tested).
+- **Play is ordered by date** across competitions (league Saturdays, cup
+  Wednesdays). `advanceToUserFixture` plays earlier dates AI-only first;
+  `playRemaining` finishes a season once the user has no fixtures left
+  (dashboard "Play out the season").
+- **Cup:** drawn round by round (seeded) when the previous round completes;
+  non-power-of-two fields get a first round from the lowest tier (40 → 32).
+  Level ties → `simulateShootout` (pure, seeded; kick success clamped
+  55–92%; stops as soon as decided, then sudden death), taken by the players
+  who finished the match. Penalties live on `MatchResult.penalties` and the
+  compact fixture result.
+- **AI setup cache:** `aiSetup(db, clubId)` memoises squad/lineup/strength
+  in a `WeakMap` keyed by the (immutable) database object, so it can't go
+  stale and is freed with the db. Kick-off for a 20-match Saturday:
+  ~48 ms in desktop Chrome.
+- **Seeds:** `mixSeed` derives league/cup/next-season seeds. Bug caught by
+  `SeasonSchema`: XOR results are signed in JS, giving a negative seed;
+  fixed with `>>> 0` and tested over thousands of inputs.
+- **Web export:** only the user's squad profiles are pre-rendered (23 pages,
+  4.4 MB, was 177 pages / 12 MB); others open via in-app navigation.
+- **Tests that encoded old assumptions** were rewritten to the real rules:
+  auto-pick may play a clearly better player out of position, but never
+  over an equally good unused natural; weak clubs' keepers are still
+  clearly keepers (margin 2.5, not 4).
+
 ## 3. Commands
 
 ```
@@ -401,7 +442,7 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   skip → stats/ratings → play another remembers choice → done; direct load
   of `/match`). Zero console errors, no overflow.
 
-### Milestone 6 — Competitions (in progress)
+### Milestone 6 — Competitions ✅
 **6a — League season ✅**
 - `src/game/season`: schemas, fixtures, table (+ tiebreakers), player season
   stats, season flow. Date utils (`addDays`, `weekdayOf`, `nextWeekday`),
@@ -415,7 +456,20 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   14-matchday season played in headless Chrome at 412px and 1280px, then
   rolled over to 2027/28. Zero console errors, no overflow.
 
-**6b — Next:** second division, promotion/relegation, cup (see section 5).
+**6b — Two divisions, promotion/relegation, cup ✅**
+- 40 clubs (2 × 20), 38-matchday leagues, National Cup (6 rounds, penalties).
+- Season model: memberships, date-ordered play across competitions,
+  running player stats, promotion/relegation at rollover.
+- Engine: `simulateShootout`. AI setup cache.
+- UI: Fixtures tab with competition chips, matchday pager, cup rounds
+  view with penalties and the user's cup status; dashboard cup ties,
+  "Play out the season", season summary with promoted/relegated and cup
+  winner; cup pre-match ("Cup tie"), penalties line in the match report.
+- Tests: 479 total (94 new) incl. a full two-division season with cup.
+- Verified: `tsc` clean, tests pass, Android + web export; a complete
+  2026/27 season (38 league + cup tie) played in headless Chrome at 412px
+  and 1280px: user relegated, cup final decided on penalties, 2027/28
+  starts in the Second Division. Zero console errors, no overflow.
 
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
@@ -430,25 +484,32 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   reload or web refresh. Agreed: an autosave step straight after M6.
 - Pre-season, the table is in alphabetical order (all on 0 points), so the
   user's club can appear "1st" before a ball is kicked.
+- Web only: directly loading the URL of a player profile from another club
+  isn't supported (only the user's squad is pre-rendered); opening it
+  within the app works.
+- Squads are 22 players for 38 league games + cup; fine until injuries and
+  suspensions arrive (M8), when 24–25 may be needed.
 - The modal picker and profile were checked on web only; native gestures
   (swipe-to-dismiss on iOS, Android back button) still need checking in Expo Go.
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 6 step 6b
+## 5. Next steps — Autosave (agreed, before Milestone 7)
 
-Agreed with the user (all recommendations accepted):
-1. **Second Division**: 8 more generated fictional clubs (lower reputation)
-   in a tier-2 league, simulated AI v AI each matchday alongside the top
-   flight. Season state will need to hold *several* competitions (today
-   `Season` has one `competitionId`): plan the shape change first.
-2. **Promotion/relegation** at season end: bottom 2 of tier 1 swap with top
-   2 of tier 2 (update league `clubIds` for the new season); the user's club
-   can go down. Show it on the season-complete card and table zones.
-3. **Cup**: all 16 clubs, single-leg knockout, 4 rounds on midweek dates,
-   seeded draw per round. **Draws → penalty shootout** (no extra time):
-   needs a small pure shootout function (taker skill vs keeper), tested.
-4. Then: the **autosave step** (Zustand persist + validated load with the
-   Zod schemas; native vs web storage; hydration-safe on static web).
-5. Later ideas: `npm run test:calibration` if the suite gets slow; user
-   substitutions during a match; injuries (M8).
+Plan with the user before coding. Points to decide:
+1. **What to save:** user club, current date, lineup, tactics, season. The
+   database is regenerated from its seed for now (save only a version + seed);
+   once transfers/development change it (M7/M8), it must be saved too.
+2. **Storage:** native vs web. Options: `expo-sqlite`'s key-value store,
+   or Zustand `persist` with a storage adapter (localStorage on web).
+   Check the SDK 58 docs first.
+3. **Validation on load:** parse with the Zod schemas (`SeasonSchema`,
+   `LineupSchema`, `TacticsSchema`); on failure, fall back to a new game
+   and tell the user, never crash. Include a save `version` for migrations.
+4. **Static web hydration:** the pre-rendered HTML is the *new game*; a
+   loaded save differs, so load after mount and gate rendering (or show a
+   brief loading state) to avoid hydration mismatches.
+5. Then **Milestone 7 (Transfers)**: other countries' leagues as data, transfer
+   market, valuations, contracts, wages, budgets.
+6. Later ideas: `npm run test:calibration` if the suite gets slow (~30 s
+   now); user substitutions during a match; injuries (M8).

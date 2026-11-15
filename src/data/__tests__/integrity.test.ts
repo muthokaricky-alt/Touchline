@@ -1,7 +1,7 @@
 import { buildFictionalDatabase } from '../fictional';
 import { checkIntegrity, type IntegrityRule } from '../integrity';
 import { parseDatabase } from '../load';
-import type { GameDatabase } from '../schemas';
+import { isLeague, type GameDatabase } from '../schemas';
 
 /** A fresh, valid database for each test to break in one specific way. */
 function freshDatabase(): GameDatabase {
@@ -67,15 +67,19 @@ describe('checkIntegrity', () => {
     expect(checkIntegrity(db)).toEqual([]);
   });
 
+  /** The first league (narrowed: `competitions` also contains the cup). */
+  const firstLeague = (db: GameDatabase) => db.competitions.filter(isLeague)[0];
+
   it('detects a league containing an unknown club', () => {
     const db = freshDatabase();
-    db.competitions[0] = { ...db.competitions[0], clubIds: [...db.competitions[0].clubIds, 'club_ghost'] };
+    const league = firstLeague(db);
+    db.competitions[db.competitions.indexOf(league)] = { ...league, clubIds: [...league.clubIds, 'club_ghost'] };
     expect(rulesBroken(db)).toEqual(['unknown-club']);
   });
 
   it('detects a club in two leagues', () => {
     const db = freshDatabase();
-    db.competitions.push({ ...db.competitions[0], id: 'comp_second_league' });
+    db.competitions.push({ ...firstLeague(db), id: 'comp_extra_league' });
     expect(rulesBroken(db)).toEqual(['club-in-multiple-leagues']);
   });
 
