@@ -17,6 +17,11 @@ export type Rng = {
   chance(p: number): boolean;
   /** A random element of a non-empty array. */
   pick<T>(items: readonly T[]): T;
+  /**
+   * A random element where each item's chance is proportional to `weight(item)`.
+   * Zero/negative weights are never picked. Returns undefined if nothing has weight.
+   */
+  pickWeighted<T>(items: readonly T[], weight: (item: T) => number): T | undefined;
 };
 
 export function createRng(seed: number): Rng {
@@ -44,6 +49,19 @@ export function createRng(seed: number): Rng {
     pick: (items) => {
       if (items.length === 0) throw new RangeError('rng.pick called with an empty array');
       return items[int(0, items.length - 1)];
+    },
+    pickWeighted: (items, weight) => {
+      const weights = items.map((item) => Math.max(0, weight(item)));
+      const total = weights.reduce((sum, w) => sum + w, 0);
+      if (total <= 0) return undefined;
+      let roll = next() * total;
+      for (let i = 0; i < items.length; i++) {
+        roll -= weights[i];
+        if (roll < 0 && weights[i] > 0) return items[i];
+      }
+      // Floating-point leftovers: return the last item that had weight.
+      for (let i = items.length - 1; i >= 0; i--) if (weights[i] > 0) return items[i];
+      return undefined;
     },
   };
 }

@@ -51,6 +51,22 @@ describe('createRng', () => {
     expect(hits / 10_000).toBeCloseTo(0.3, 1);
   });
 
+  it('pickWeighted() follows the weights and skips zero weights', () => {
+    const rng = createRng(11);
+    const counts = { a: 0, b: 0, c: 0 };
+    const items = ['a', 'b', 'c'] as const;
+    const weights = { a: 1, b: 3, c: 0 };
+    for (let i = 0; i < 8_000; i++) counts[rng.pickWeighted(items, (x) => weights[x])!]++;
+    expect(counts.c).toBe(0);
+    expect(counts.b / counts.a).toBeGreaterThan(2.6);
+    expect(counts.b / counts.a).toBeLessThan(3.4);
+  });
+
+  it('pickWeighted() returns undefined when nothing has weight', () => {
+    expect(createRng(1).pickWeighted([1, 2], () => 0)).toBeUndefined();
+    expect(createRng(1).pickWeighted([], () => 1)).toBeUndefined();
+  });
+
   it('pick() returns an element and rejects empty arrays', () => {
     const rng = createRng(5);
     const items = ['a', 'b', 'c'] as const;

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 4 (Tactics) complete._
+_Last updated: 15 Nov 2026 — Milestone 5 step 5a (match engine, no UI) complete; 5b (match screen) next._
 
 ---
 
@@ -50,6 +50,15 @@ src/
     lineup.ts            Lineup schema + immutable ops, autoPick, validateLineup
     squad/               positionFit/effectiveRating, view-model selectors
     tactics/             Tactics schema, playing-style presets, assistant analysis
+    ai/opponent.ts       AI club setup: best formation + style for the strength gap
+    match/               buildMatchTeam (store state → engine input), lineupStrength
+  engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
+    simulate.ts          minute loop: possession → fouls → chance/shot → fatigue → subs
+    team-state.ts        on-pitch players, energy, unit strengths, replacements
+    tactical-effects.ts  instructions → numeric modifiers
+    summarise.ts         events → score, team/player stats, ratings (one source of truth)
+    ratings.ts, commentary.ts, types.ts
+    __fixtures__/        test helpers (outside __tests__ so Jest doesn't run them)
   store/               Zustand: game-store.ts (state + actions), hooks.ts (view-model hooks)
   data/                DATA: pure TS, no React imports
     schemas/             Zod schemas + inferred types (Player, PlayerAttributes,
@@ -66,7 +75,6 @@ src/
 Planned (not created yet; don't create empty folders):
 
 ```
-  engine/              SIMULATION ENGINE: pure TS, no React/RN imports (Milestone 5)
   persistence/         PERSISTENCE: SQLite repositories behind interfaces (M10, earlier if needed)
 ```
 
@@ -198,6 +206,45 @@ call pure functions from `src/game` and save the result.
 - **Lineup / Instructions switch is local state**, not a URL param, for the
   same static-web hydration reason as the picker.
 
+### Match engine (Milestone 5)
+
+- **`simulateMatch({ home, away, seed })`** is pure and deterministic. One
+  seeded RNG, consumed in a fixed order. Engine imports only `src/data` types
+  and pure `src/game` modules (ratings, formations, position fit); never the
+  store or UI. (`src/game/match` imports engine *types* only.)
+- **Minute model:** 90' + random stoppage (1–4, 2–6). Each minute: possession
+  (control strength + tactics + home edge) → both sides may foul (the side
+  without the ball ×1.4) → the side with the ball may shoot (attack vs defence
+  + tactics) or a defender wins it → fatigue → substitutions at 60/70/78/85'.
+- **Shots:** chance type (through ball, cross, long ball, long shot, set
+  piece; mix shaped by tactics) → shooter weighted by slot + skill → xG from
+  type × shooter vs defenders × tactics (high line: pace gap matters) → goal
+  vs keeper skill, else saved / blocked / wide.
+- **Attributes as they count now** = base × position familiarity (1 / 0.93 /
+  0.8) × tiredness (100% fresh → 70% at 0 energy). Red cards shrink unit
+  strength by players/11.
+- **Events are the single source of truth.** The simulation emits events +
+  appearances + possession minutes; `summarise()` derives score, stats,
+  player stats and ratings from them. Commentary is a separate pure function
+  (`describeEvent`), deterministic via a hash of the event.
+- **Input guard:** squads must not share player ids (they key all stats).
+  Tests that need two equal sides use `mirror()` from `__fixtures__`. This
+  was found because equal-team tests first used the same club twice and
+  silently corrupted player stats.
+- **Calibration** (`__tests__/calibration.test.ts`, fixed seeds, ~3,500
+  matches): equal teams 2.6 goals, H/D/A 48/25/28, 0-0 7%, 11.7 shots/team,
+  39% on target, 11% conversion, 20 fouls, 3.4 yellows, 0.16 reds, 4.2 subs.
+  Strongest v weakest at home 82/11/7. AI round robin 3.1 goals.
+- **Balancing lesson:** direction tests passed but effect sizes showed
+  possession play winning 61% vs 48% baseline with no downside. Short/slow
+  now cost chance creation per minute; style spread is now ~42–54%. Measure
+  effect *sizes*, not just directions, after any tactics change.
+- **AI opponent:** strongest-XI formation; style chosen from the band for the
+  strength gap (favourites press/possess, underdogs counter/low block),
+  scored by the M4 analysis with a preference for the band's default style.
+- **Performance:** ~3–4 ms per match. The full test suite takes ~25 s, mostly
+  calibration.
+
 ## 3. Commands
 
 ```
@@ -275,6 +322,16 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   headless Chrome at 412px and 1280px (style apply, instruction change →
   Custom + warnings, view switching). Zero console errors, no overflow.
 
+### Milestone 5 — Match engine (in progress)
+**5a — Engine ✅** (no UI yet)
+- `src/engine`: simulation, team state/fatigue/subs, tactical effects,
+  summary/ratings, commentary. `src/game/ai/opponent.ts`, `src/game/match`.
+- `rng.pickWeighted` added to the seeded RNG.
+- Tests: 318 total (61 new): invariants over 150 matches, determinism, input
+  guard, module tests, AI tests, statistical calibration incl. tactics.
+
+**5b — Match screen (next):** see section 5.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -291,23 +348,20 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 5: Match engine
+## 5. Next steps — Milestone 5 step 5b: Match screen
 
-The most important system. Agree the plan with the user before coding.
-Likely shape:
-
-1. `src/engine/`: pure TS, no React/RN imports, seeded with `createRng`.
-   Input: two teams (lineup + tactics + candidates), output: a match result
-   with events. Same seed → same match (tested).
-2. Probability-based "phase" simulation (e.g. ~90 minute ticks or possession
-   chains): possession share, chance creation, shot quality, goalkeeper
-   saves. Attributes via `positionRating`/`flattenAttributes`; tactics via a
-   new `tacticalEffects(tactics)` mapping (the numbers deferred from M4).
-3. Events: goals + assists, shots, fouls/cards; commentary lines; player
-   ratings; match stats. Injuries, fatigue and substitutions are probably
-   later passes; decide scope with the user.
-4. Statistical tests: simulate many matches and assert sane averages
-   (goals per game, home advantage, stronger team wins more often, tactics
-   shift possession/shots in the expected direction).
-5. A minimal match screen (result + events), probably reachable from the
-   dashboard's "Play match" button, against a real league opponent.
+Agreed with the user (all recommendations accepted):
+- Friendly vs any league club (default: dashboard's next opponent), user
+  picks home/away. Nothing recorded (fixtures/table are M6).
+- Engine runs instantly; the screen **replays** it as a live feed (events
+  minute by minute with commentary and running score, skip to full time).
+  Replay is pure UI over the finished `MatchResult`.
+- Store: `lastMatch` + `playMatch(opponentId, venue)` (seed from time; AI
+  opponent via `buildAiTeam(db, id, lineupStrength(userLineup))`).
+- Route `src/app/match.tsx` (static, no params → no hydration issue; state
+  in store), `src/features/match/`: pre-match, live feed, result (score,
+  timeline, stats bars, player ratings, player of the match).
+- Wire the dashboard "Play match" button. Block kick-off if the lineup has
+  errors (`isLineupPlayable`).
+- Open questions for later: user substitutions during a match (interactive
+  mode), injuries (M8).
