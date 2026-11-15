@@ -5,7 +5,7 @@ import { previewDashboard } from '@/features/dashboard/dashboard.preview';
 import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
 import { saveStatus, useSaveStatus } from '@/persistence/save-status';
 import { useGameStore } from '@/store/game-store';
-import { useConditionToday } from '@/store/hooks';
+import { useBoard, useConditionToday, useSeasonReview } from '@/store/hooks';
 
 /**
  * Route file: stays thin. It decides *which* data the dashboard shows;
@@ -20,6 +20,10 @@ export default function HomeRoute() {
   const inbox = useGameStore((s) => s.inbox);
   const today = useConditionToday();
   const startNextSeason = useGameStore((s) => s.startNextSeason);
+  const chooseNewJob = useGameStore((s) => s.chooseNewJob);
+  const managerName = useGameStore((s) => s.manager?.name ?? null);
+  const board = useBoard();
+  const seasonReview = useSeasonReview();
   const finishSeason = useGameStore((s) => s.finishSeason);
   const saveNotice = useSaveStatus((s) => s.notice);
   const summary = useMemo(
@@ -28,8 +32,11 @@ export default function HomeRoute() {
   );
   return (
     <DashboardScreen
-      summary={summary}
-      onStartNextSeason={startNextSeason}
+      summary={managerName ? { ...summary, manager: { name: managerName } } : summary}
+      board={board}
+      seasonReview={seasonReview}
+      onAcceptJob={chooseNewJob}
+      onStartNextSeason={(clubId) => startNextSeason(clubId ?? null)}
       onFinishSeason={finishSeason}
       saveNotice={saveNotice}
       onDismissSaveNotice={saveStatus.dismissNotice}

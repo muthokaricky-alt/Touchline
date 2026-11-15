@@ -16,3 +16,4 @@ export { Screen } from './Screen';
 export { SegmentedControl } from './SegmentedControl';
 export { SectionHeader } from './SectionHeader';
 export { StatTile } from './StatTile';
+export { TextField } from './TextField';

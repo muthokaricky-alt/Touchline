@@ -4,6 +4,8 @@ import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
 import { availabilityFrom, conditionOn } from '@/game/condition/condition';
 import { selectProspects } from '@/game/development/training-view';
+import { selectBoardView, selectSeasonEndView } from '@/game/career/career-view';
+import { isSeasonComplete } from '@/game/season/season-flow';
 import { lineupStrength } from '@/game/match/build-match-team';
 import { competitionName, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
 import { MAX_SQUAD, MIN_USER_SQUAD, releaseCost, renewalYears, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
@@ -70,6 +72,27 @@ export function usePlayerProfile(playerId: PlayerId) {
   const clubId = useGameStore((s) => s.userClubId);
   const today = useConditionToday();
   return useMemo(() => selectPlayerProfile(database, playerId, date, today, clubId), [database, playerId, date, today, clubId]);
+}
+
+/** The board's view of the manager (null before a career has started). */
+export function useBoard() {
+  const database = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+  const clubId = useGameStore((s) => s.userClubId);
+  const manager = useGameStore((s) => s.manager);
+  return useMemo(() => (manager ? selectBoardView(database, season, clubId, manager) : null), [database, season, clubId, manager]);
+}
+
+/** The board's season review and job offers, once the season is complete. */
+export function useSeasonReview() {
+  const database = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+  const clubId = useGameStore((s) => s.userClubId);
+  const manager = useGameStore((s) => s.manager);
+  return useMemo(
+    () => (isSeasonComplete(season) ? selectSeasonEndView(database, season, clubId, manager) : null),
+    [database, season, clubId, manager],
+  );
 }
 
 /** The user's young players and their potential, for the Training screen. */

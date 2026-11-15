@@ -4,12 +4,19 @@ import { AppText, Button, Card, Pill } from '@/components/ui';
 import { spacing } from '@/theme';
 import { formatOrdinal } from '@/utils/format';
 
+import type { ClubId } from '@/data/schemas';
+import type { SeasonEndView } from '@/game/career/career-view';
+
 import type { SeasonEndSummary } from '../dashboard.types';
+import { JobOfferList } from './BoardCard';
 
 type SeasonCompleteCardProps = {
   seasonLabel: string;
   summary: SeasonEndSummary;
-  onStartNextSeason: () => void;
+  /** The board's review and job offers (null before a career has started). */
+  review: SeasonEndView | null;
+  /** `clubId`: start next season at that club (accepting its offer). */
+  onStartNextSeason: (clubId?: ClubId) => void;
   onViewTable: () => void;
 };
 
@@ -20,7 +27,7 @@ const ZONE_TEXT: Record<NonNullable<SeasonEndSummary['userZone']>, { label: stri
 };
 
 /** Replaces the next-match card once every fixture of the season has been played. */
-export function SeasonCompleteCard({ seasonLabel, summary, onStartNextSeason, onViewTable }: SeasonCompleteCardProps) {
+export function SeasonCompleteCard({ seasonLabel, summary, review, onStartNextSeason, onViewTable }: SeasonCompleteCardProps) {
   const zone = summary.userZone ? ZONE_TEXT[summary.userZone] : null;
   return (
     <Card title={`Season ${seasonLabel} complete`} icon="trendUp" highlighted>
@@ -36,13 +43,35 @@ export function SeasonCompleteCard({ seasonLabel, summary, onStartNextSeason, on
           {summary.cupName && summary.cupWinnerName ? ` ${summary.cupWinnerName} won the ${summary.cupName}.` : ''}
         </AppText>
       </View>
+      {review ? (
+        <View style={styles.review}>
+          <AppText variant="overline" color="textSecondary">
+            Board review
+          </AppText>
+          <AppText>{review.verdict}</AppText>
+          <AppText variant="caption" color="textSecondary">
+            Target: {review.target.toLowerCase()} · reputation {review.reputationChange >= 0 ? '+' : ''}
+            {review.reputationChange}
+          </AppText>
+          {review.offers.length ? (
+            <>
+              <AppText variant="overline" color="textSecondary">
+                {review.sacked ? 'Choose your next club' : 'Job offers'}
+              </AppText>
+              <JobOfferList offers={review.offers} onAccept={(clubId) => onStartNextSeason(clubId)} acceptLabel="Join" />
+            </>
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.actions}>
         <View style={styles.flex}>
           <Button label="Final table" variant="secondary" icon="table" onPress={onViewTable} />
         </View>
-        <View style={styles.flex}>
-          <Button label="Next season" icon="fixtures" onPress={onStartNextSeason} />
-        </View>
+        {review?.sacked ? null : (
+          <View style={styles.flex}>
+            <Button label="Next season" icon="fixtures" onPress={() => onStartNextSeason()} />
+          </View>
+        )}
       </View>
     </Card>
   );
@@ -62,6 +91,7 @@ export function SeasonFinishingCard({ onFinishSeason }: { onFinishSeason: () => 
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
+  review: { gap: spacing.xs },
   actions: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },
 });

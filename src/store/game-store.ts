@@ -20,6 +20,8 @@ import { DEFAULT_TRAINING, type Training } from '@/game/development/development'
 import { developmentReport, developThrough } from '@/game/development/monthly';
 import { assignPotential } from '@/game/development/potential';
 import { worldFor } from '@/game/world/renewal';
+import { afterUserMatchday, closeSeason } from '@/game/career/career-flow';
+import { ManagerSchema, newManager, takeNewJob, type Manager } from '@/game/career/manager';
 import { admitIntakeToCareer, retireFromCareer } from '@/game/world/renewal-career';
 import type { MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
@@ -104,7 +106,15 @@ export type GameState = {
   condition: ConditionState;
   /** The user's training (AI clubs always train with DEFAULT_TRAINING). */
   training: Training;
+  /**
+   * The manager's career. Null until a career has been started (first launch,
+   * or after "Start new game"): the app then shows the new-career screen.
+   */
+  manager: Manager | null;
 };
+
+/** A club id no club has: used as "the user" in a summer when he's changing clubs, so every club gets the AI's treatment. */
+const VACANT_CLUB = 'club_vacant';
 
 /**
  * Condition as it will be at the user's next kick-off (today if there's no
@@ -139,8 +149,12 @@ export type GameActions = {
   playNextFixture: () => MatchResult;
   /** Once the user has no fixtures left: plays the rest of the season (e.g. a cup final between other clubs). */
   finishSeason: () => void;
-  /** Only once the current season is complete. Applies promotion/relegation. */
-  startNextSeason: () => void;
+  /** Only once the current season is complete. `newClubId`: accept that club's job offer. */
+  startNextSeason: (newClubId?: ClubId | null) => void;
+  /** Begins a career: manager name and club (any of the 40). Replaces the current game. */
+  startCareer: (name: string, clubId: ClubId) => void;
+  /** After a mid-season sacking: take one of the clubs that offered a job. */
+  chooseNewJob: (clubId: ClubId) => void;
   clearMatch: () => void;
   /** Throws away the career and starts again (the autosave is overwritten). */
   startNewGame: () => void;
@@ -251,12 +265,31 @@ function toSave(state: GameState): GameSave {
     inbox: state.inbox,
     condition: state.condition,
     training: state.training,
+    manager: state.manager,
   };
 }
 
-/** A brand-new career, in the generated world (never a world changed by transfers). */
-export function createInitialGameState(database: GameDatabase = getBaseDatabase()): GameState {
-  const userClubId = DEFAULT_USER_CLUB_ID;
+/**
+ * The user takes over `clubId` (a new career, a new job): auto-picked lineup
+ * of the players fit at the next kick-off, default tactics and training,
+ * and nothing left over from the old club's transfer business.
+ */
+function switchClub(s: Pick<GameState, 'database' | 'condition' | 'currentDate' | 'season'>, clubId: ClubId): Partial<GameState> {
+  const atKickOff = conditionAtKickOff({ ...s, userClubId: clubId });
+  const fit = selectSquadCandidates(s.database, clubId).filter((c) => !isInjured(atKickOff, c.player.id));
+  return {
+    userClubId: clubId,
+    lineup: autoPickLineup(fit, DEFAULT_FORMATION_ID),
+    tactics: DEFAULT_TACTICS,
+    training: DEFAULT_TRAINING,
+    transferListed: [],
+    offers: [],
+  };
+}
+
+/** A brand-new game, in the generated world (never a world changed by transfers). No manager until a career starts. */
+export function createInitialGameState(database: GameDatabase = getBaseDatabase(), clubId: ClubId = DEFAULT_USER_CLUB_ID): GameState {
+  const userClubId = clubId;
   return {
     database,
     userClubId,
@@ -272,6 +305,7 @@ export function createInitialGameState(database: GameDatabase = getBaseDatabase(
     inbox: [],
     condition: emptyConditions(FICTIONAL_REFERENCE_DATE),
     training: DEFAULT_TRAINING,
+    manager: null,
   };
 }
 
@@ -306,6 +340,7 @@ export const useGameStore = create<Store>()(
       },
       playNextFixture: () => {
         const state = get();
+        if (state.manager?.sackedOffers) throw new RangeError('Choose your next club first.');
         const { database, userClubId, lineup, tactics, season } = state;
         const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics }, state.condition);
         const date = played.fixture.date;
@@ -313,8 +348,11 @@ export const useGameStore = create<Store>()(
         const monthly = monthlyStep(state, state.currentDate, date, played.season, played.condition);
         // The calendar moved: offers expire / arrive, contract warnings.
         const career = afterCalendarMove({ ...transferCareer(state), db: monthly.database, date }, state.currentDate, season.seed);
+        // The board reacts to the league results (warning, or the sack with job offers).
+        const board = state.manager ? afterUserMatchday(career.db, season, played.season, userClubId, state.manager, date) : null;
         set({
           ...fromCareer(career),
+          manager: board?.manager ?? state.manager,
           // Players still injured at the next kick-off leave the lineup; the Head of Medical reports every injury.
           lineup: withoutInjured(
             career.db,
@@ -322,7 +360,11 @@ export const useGameStore = create<Store>()(
             career.lineup,
             conditionAtKickOff({ condition: monthly.condition, currentDate: date, season: played.season, userClubId }),
           ),
-          inbox: addMessages(career.inbox, [...injuryMessages(career.db, userClubId, played.injuries, date), ...monthly.messages]),
+          inbox: addMessages(career.inbox, [
+            ...injuryMessages(career.db, userClubId, played.injuries, date),
+            ...monthly.messages,
+            ...(board?.messages ?? []),
+          ]),
           condition: monthly.condition,
           season: played.season,
           lastMatch: played.result,
@@ -344,9 +386,15 @@ export const useGameStore = create<Store>()(
           condition: monthly.condition,
         });
       },
-      startNextSeason: () => {
+      startNextSeason: (newClubId = null) => {
         const state = get();
         if (!isSeasonComplete(state.season)) throw new RangeError('The current season is still in progress');
+        // The board's review first: reputation, history, and the user's club for next season.
+        const seasonStartDate = `${state.season.startYear + 1}-07-01`;
+        const closed = state.manager ? closeSeason(state.database, state.season, state.userClubId, state.manager, newClubId, seasonStartDate) : null;
+        const moving = closed !== null && closed.clubId !== state.userClubId;
+        // In a summer he changes clubs, every club gets the AI's treatment (renewals, intake): they decided before he arrived.
+        const summerUser = moving ? VACANT_CLUB : state.userClubId;
         // 1 July: contracts expire first (promotion/relegation doesn't depend on them), then the new
         // fixture list; the summer window is open, so offers may arrive straight away.
         const seasonStart = `${state.season.startYear + 1}-07-01`;
@@ -355,7 +403,12 @@ export const useGameStore = create<Store>()(
         const year = state.season.startYear + 1;
         // 30 June: retirements. 1 July: contracts expire (AI clubs refill squads), then the academy intake.
         const retired = retireFromCareer(
-          { ...transferCareer(state), db: monthly.database, inbox: addMessages(state.inbox, monthly.messages) },
+          {
+            ...transferCareer(state),
+            userClubId: summerUser,
+            db: monthly.database,
+            inbox: addMessages(state.inbox, [...monthly.messages, ...(closed?.messages ?? [])]),
+          },
           FICTIONAL_SEED,
           year,
         ).career;
@@ -367,14 +420,20 @@ export const useGameStore = create<Store>()(
         const recovered = conditionOn(monthly.condition, seasonStart);
         const stillHere = new Set(rolled.db.players.map((p) => p.id));
         const condition = { ...recovered, players: Object.fromEntries(Object.entries(recovered.players).filter(([id]) => stillHere.has(id))) };
+        const after = { database: career.db, condition, currentDate: seasonStart, season: next };
         set({
           ...fromCareer(career),
-          lineup: withoutInjured(
-            career.db,
-            state.userClubId,
-            career.lineup,
-            conditionAtKickOff({ condition, currentDate: seasonStart, season: next, userClubId: state.userClubId }),
-          ),
+          ...(moving
+            ? switchClub(after, closed!.clubId)
+            : {
+                lineup: withoutInjured(
+                  career.db,
+                  state.userClubId,
+                  career.lineup,
+                  conditionAtKickOff({ condition, currentDate: seasonStart, season: next, userClubId: state.userClubId }),
+                ),
+              }),
+          manager: closed?.manager ?? state.manager,
           condition,
           season: next,
           lastMatch: null,
@@ -386,6 +445,28 @@ export const useGameStore = create<Store>()(
         saveStatus.dismissNotice();
         set(createInitialGameState());
       },
+      startCareer: (name, clubId) => {
+        const base = getBaseDatabase();
+        const club = base.clubs.find((c) => c.id === clubId);
+        if (!club) throw new RangeError('Unknown club.');
+        const manager = newManager(name, club.reputation);
+        const valid = ManagerSchema.safeParse(manager);
+        if (!valid.success) throw new RangeError('Enter a name of 1–30 characters.');
+        saveStatus.dismissNotice();
+        set({ ...createInitialGameState(base, clubId), manager: valid.data });
+      },
+      chooseNewJob: (clubId) =>
+        set((s) => {
+          if (!s.manager?.sackedOffers?.includes(clubId)) throw new RangeError("That club hasn't offered you a job.");
+          const name = s.database.clubs.find((c) => c.id === clubId)?.name ?? clubId;
+          return {
+            ...switchClub(s, clubId),
+            manager: takeNewJob(s.manager),
+            inbox: addMessages(s.inbox, [
+              { date: s.currentDate, category: 'squad', from: 'Chairman', title: `Welcome to ${name}`, body: 'The board is looking forward to working with you. Good luck.' },
+            ]),
+          };
+        }),
       signPlayer: ({ playerId, fee, weeklyWage, years }) => {
         const { database, userClubId, currentDate, transferHistory } = get();
         const ctx = playerContext(database, playerId, currentDate);

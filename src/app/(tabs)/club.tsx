@@ -7,7 +7,7 @@ import { fullName } from '@/game/squad/squad-selectors';
 import { saveStatus, useSaveStatus } from '@/persistence/save-status';
 import { useGameStore } from '@/store/game-store';
 import { useTransferBudget, useUserClub } from '@/store/hooks';
-import { formatCompactCurrency, formatDate, formatWeeklyWage } from '@/utils/format';
+import { formatCompactCurrency, formatDate, formatOrdinal, formatWeeklyWage } from '@/utils/format';
 
 /** Route: club overview, transfers and the career save. */
 export default function ClubRoute() {
@@ -18,6 +18,7 @@ export default function ClubRoute() {
   const clubId = useGameStore((s) => s.userClubId);
   const transferHistory = useGameStore((s) => s.transferHistory);
   const startNewGame = useGameStore((s) => s.startNewGame);
+  const manager = useGameStore((s) => s.manager);
   const budget = useTransferBudget();
   const { lastSavedAt, loadedFromSave, notice } = useSaveStatus();
 
@@ -66,6 +67,24 @@ export default function ClubRoute() {
       });
   }, [transferHistory, database, clubId]);
 
+  const career = useMemo(() => {
+    if (!manager) return null;
+    const clubName = (id: string) => database.clubs.find((c) => c.id === id)?.name ?? id;
+    const outcome = { completed: '', sacked: ' · sacked', left: ' · moved on' } as const;
+    return {
+      managerName: manager.name,
+      reputation: manager.reputation,
+      seasons: [...manager.history].reverse().map((h, i) => ({
+        key: `${h.season}-${h.clubId}-${i}`,
+        title: `${h.season} · ${clubName(h.clubId)}`,
+        detail:
+          (h.finished ? `Finished ${formatOrdinal(h.finished)} (target ${formatOrdinal(h.target)})` : `Left mid-season (target ${formatOrdinal(h.target)})`) +
+          (h.trophies.length ? ` · ${h.trophies.join(', ')}` : '') +
+          outcome[h.outcome],
+      })),
+    };
+  }, [manager, database]);
+
   if (!info) return null;
 
   // Rendered only after the save has loaded (root layout gate), so using the
@@ -78,6 +97,7 @@ export default function ClubRoute() {
   return (
     <ClubScreen
       club={info}
+      career={career}
       transfers={{
         windowOpen: window.open,
         windowLabel: window.open

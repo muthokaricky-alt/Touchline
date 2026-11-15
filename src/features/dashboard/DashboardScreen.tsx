@@ -6,6 +6,10 @@ import { spacing } from '@/theme';
 
 import { ClubHeader } from './components/ClubHeader';
 import { FinanceCard } from './components/FinanceCard';
+import type { ClubId } from '@/data/schemas';
+import type { BoardView, SeasonEndView } from '@/game/career/career-view';
+
+import { BoardCard, SackedCard } from './components/BoardCard';
 import { InboxCard } from './components/InboxCard';
 import { LeagueSnapshotCard } from './components/LeagueSnapshotCard';
 import { NextMatchCard } from './components/NextMatchCard';
@@ -15,7 +19,10 @@ import type { DashboardSummary } from './dashboard.types';
 
 type DashboardScreenProps = {
   summary: DashboardSummary;
-  onStartNextSeason: () => void;
+  board: BoardView | null;
+  seasonReview: SeasonEndView | null;
+  onAcceptJob: (clubId: ClubId) => void;
+  onStartNextSeason: (clubId?: ClubId) => void;
   onFinishSeason: () => void;
   /** Save problem to explain (e.g. a save that couldn't be loaded). */
   saveNotice: string | null;
@@ -30,11 +37,13 @@ type DashboardScreenProps = {
  * instead of measuring the window width so the statically pre-rendered web
  * HTML matches what the browser renders (no hydration mismatch).
  */
-export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason, saveNotice, onDismissSaveNotice }: DashboardScreenProps) {
+export function DashboardScreen({ summary, board, seasonReview, onAcceptJob, onStartNextSeason, onFinishSeason, saveNotice, onDismissSaveNotice }: DashboardScreenProps) {
   const router = useRouter();
   const primary = (
     <>
-      {summary.nextMatch ? (
+      {board?.sackedOffers ? (
+        <SackedCard offers={board.sackedOffers} onAccept={onAcceptJob} />
+      ) : summary.nextMatch ? (
         <NextMatchCard
           club={summary.club}
           clubForm={summary.form}
@@ -48,6 +57,7 @@ export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason, sa
         <SeasonCompleteCard
           seasonLabel={summary.season.label}
           summary={summary.seasonEnd}
+          review={seasonReview}
           onStartNextSeason={onStartNextSeason}
           onViewTable={() => router.navigate('/fixtures')}
         />
@@ -57,6 +67,7 @@ export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason, sa
   );
   const secondary = (
     <>
+      {board ? <BoardCard board={board} /> : null}
       <SquadStatusCard squad={summary.squad} />
       <InboxCard messages={summary.inbox} unread={summary.unreadMessages} onOpen={() => router.push('/inbox')} />
       <FinanceCard finances={summary.finances} />

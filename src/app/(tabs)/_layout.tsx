@@ -1,6 +1,8 @@
+import { Redirect } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 
 import { Icon, type IconName } from '@/components/ui';
+import { useGameStore } from '@/store/game-store';
 import { colors, typography } from '@/theme';
 
 /**
@@ -16,6 +18,9 @@ const TABS: { name: string; title: string; icon: IconName }[] = [
 ];
 
 export default function TabLayout() {
+  // No career yet (first launch, or after "Start new game"): choose a name and club first.
+  const hasCareer = useGameStore((s) => s.manager !== null);
+  if (!hasCareer) return <Redirect href="/new-career" />;
   return (
     <Tabs
       screenOptions={{

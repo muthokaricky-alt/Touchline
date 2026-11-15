@@ -16,6 +16,7 @@ import {
   type GameDatabase,
   type PlayerAttributes,
 } from '@/data/schemas';
+import { ManagerSchema } from '@/game/career/manager';
 import { ConditionStateSchema, emptyConditions } from '@/game/condition/condition';
 import { DEFAULT_TRAINING, TrainingSchema } from '@/game/development/development';
 import { InboxMessageSchema } from '@/game/inbox/inbox';
@@ -41,10 +42,11 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   5  + changed attributes (development), training settings (Milestone 8b)
  *   6  + retired players (Milestone 9a). Youth intakes aren't saved: they're
  *        regenerated from the seed (game/world/renewal.ts worldFor).
+ *   7  + manager: name, reputation, board confidence, history (Milestone 9b)
  */
 
 export const SAVE_KEY = 'touchline-save';
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -81,6 +83,8 @@ export const GameSaveSchema = z.strictObject({
   training: TrainingSchema,
   /** Players of the season's generated world who have retired (or left football). */
   retired: z.array(PlayerIdSchema),
+  /** Null until a career has been started (the new-career screen is showing). */
+  manager: ManagerSchema.nullable(),
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -161,6 +165,7 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v3 → v4: condition didn't exist: everyone fully fit on the save's date.
  *   v4 → v5: no development yet: no attribute changes, default training.
  *   v5 → v6: nobody had retired yet.
+ *   v6 → v7: careers from before the manager existed carry on with a default manager.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -179,6 +184,9 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
   }
   if (fromVersion < 5) save = { ...save, attributeChanges: {}, training: DEFAULT_TRAINING };
   if (fromVersion < 6) save = { ...save, retired: [] };
+  if (fromVersion < 7) {
+    save = { ...save, manager: { name: 'Manager', reputation: 50, confidence: 60, warned: false, sackedOffers: null, history: [] } };
+  }
   return save;
 }
 
@@ -211,6 +219,8 @@ export function checkSave(raw: unknown, baseFor: (startYear: number) => GameData
 
   const clubIds = new Set(db.clubs.map((c) => c.id));
   if (!clubIds.has(save.userClubId)) return { ok: false, reason: 'Your save refers to a club that no longer exists.' };
+  const managerClubs = save.manager ? [...save.manager.history.map((h) => h.clubId), ...(save.manager.sackedOffers ?? [])] : [];
+  if (managerClubs.some((id) => !clubIds.has(id))) return { ok: false, reason: "Your save's career history refers to clubs that don't exist." };
 
   const ownPlayers = new Set(db.contracts.filter((c) => c.clubId === save.userClubId).map((c) => c.playerId));
   const selected = [...Object.values(save.lineup.starters).filter((id): id is string => id !== null), ...save.lineup.substitutes];

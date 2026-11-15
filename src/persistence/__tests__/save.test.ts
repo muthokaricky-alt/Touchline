@@ -32,6 +32,7 @@ const valid: GameSave = {
   condition,
   training: DEFAULT_TRAINING,
   retired: [],
+  manager: { name: 'Alex Kamau', reputation: 52, confidence: 60, warned: false, sackedOffers: null, history: [] },
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -157,7 +158,8 @@ describe('retirement and youth intakes in the save (v6)', () => {
 });
 
 describe('migrateSave', () => {
-  const v5 = (({ retired: _r, ...rest }) => rest)(valid);
+  const v6 = (({ manager: _m, ...rest }) => rest)(valid);
+  const v5 = (({ retired: _r, ...rest }) => rest)(v6);
   const v4 = (({ attributeChanges: _a, training: _t, ...rest }) => rest)(v5);
   const v3 = (({ condition: _c, ...rest }) => rest)(v4);
   const v2 = (({ transferListed: _l, offers: _o, inbox: _i, ...rest }) => rest)(v3);
@@ -177,7 +179,7 @@ describe('migrateSave', () => {
   it('upgrades a version 2 save with an empty transfer list, offers and inbox', () => {
     const check = checkSave(migrateSave(roundTrip(v2), 2), baseFor, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
-    if (check.ok) expect(check.save).toEqual({ ...valid, condition: { date: valid.currentDate, players: {} } });
+    if (check.ok) expect(check.save).toEqual({ ...valid, condition: { date: valid.currentDate, players: {} }, manager: defaultManager });
   });
 
   it('upgrades a version 3 save with everyone fully fit', () => {
@@ -189,17 +191,30 @@ describe('migrateSave', () => {
   it('upgrades a version 4 save with no development yet and default training', () => {
     const check = checkSave(migrateSave(roundTrip(v4), 4), baseFor, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
-    if (check.ok) expect(check.save).toEqual(valid);
+    if (check.ok) expect(check.save).toEqual({ ...valid, manager: defaultManager });
   });
+
+  const defaultManager = { name: 'Manager', reputation: 50, confidence: 60, warned: false, sackedOffers: null, history: [] };
 
   it('upgrades a version 5 save with nobody retired', () => {
     const check = checkSave(migrateSave(roundTrip(v5), 5), baseFor, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
-    if (check.ok) expect(check.save).toEqual(valid);
+    if (check.ok) expect(check.save).toEqual({ ...valid, manager: defaultManager });
+  });
+
+  it('upgrades a version 6 save with a default manager, so the career carries on', () => {
+    const check = checkSave(migrateSave(roundTrip(v6), 6), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save.manager).toEqual(defaultManager);
+  });
+
+  it('rejects a career history with unknown clubs', () => {
+    const history = [{ season: '2025/26', clubId: 'club_ghost', finished: 3, target: 5, outcome: 'completed', trophies: [] }];
+    expect(checkSave(roundTrip({ ...valid, manager: { ...valid.manager, history } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
   });
 
   it('rejects a current-version save passed to migrate', () => {
-    expect(migrateSave(roundTrip(valid), 6)).toEqual({ incompatibleVersion: 6 });
+    expect(migrateSave(roundTrip(valid), 7)).toEqual({ incompatibleVersion: 7 });
   });
 
   it('marks unknown versions as incompatible', () => {

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — Milestone 9 step 9a (retirement, youth intakes; save v6) complete; 9b (manager career) next._
+_Last updated: 16 Nov 2026 — Milestone 9 complete (9a world renewal, 9b manager career; save v7); Milestone 10 next._
 
 ---
 
@@ -38,6 +38,7 @@ src/
     negotiate.tsx        ?player=<id>: bid → terms → signed (snapshot of the target)
     inbox.tsx            messages; offer messages can be accepted/rejected
     training.tsx         training focus/intensity + young players' development
+    new-career.tsx       manager name + club choice (tabs redirect here with no career)
   components/
     ui/                  design-system primitives (AppText, Card, Button, ListRow,
                          RatingBadge, PositionBadge, ChoiceChips, PageHeader…)
@@ -55,6 +56,7 @@ src/
                          players), ContractCard (own: list, renew, release, offers)
     inbox/               InboxScreen
     training/            TrainingScreen
+    career/              NewCareerScreen
     club/                ClubScreen (facts, transfers, career save)
   game/                GAME SYSTEMS: pure TS, no React imports
     positions.ts         position groups and names
@@ -70,6 +72,8 @@ src/
     development/         potential (assignPotential, ranges), monthly development
                          and training, monthly orchestration + coaching report,
                          training view (prospects)
+    career/              manager: expectations, confidence, reputation, sacking,
+                         job offers; career-flow (transitions); career-view
     world/               renewal: youth intakes (regenerated from the seed),
                          worldFor(startYear), retirement, leaving football;
                          renewal-career (user side + inbox)
@@ -328,8 +332,8 @@ call pure functions from `src/game` and save the result.
   (opponent/venue fixed), "Play a friendly instead" toggle; after a league
   match the report adds the matchday's other results and "Continue". After
   the final matchday, Continue returns to the dashboard's season summary.
-- **Dashboard** is now real apart from manager name, kick-off time and
-  suspensions (M8a made fitness, morale and injuries real; the inbox became real in 7b).
+- **Dashboard** is now real apart from kick-off time and suspensions (M8a made
+  fitness, morale and injuries real; 7b the inbox; 9b the manager name and board).
 
 #### 6b: world size, multi-competition seasons, cup
 
@@ -640,6 +644,45 @@ the 40 clubs; the user can be sacked, with warnings.
   leave-football rule: 940 → ~1,180 levelling off, pool ~150, AI squads
   18–30.
 
+#### 9b: manager career
+
+Decisions (user): when sacked, choose a new job straight away (so there's
+always a user club, nothing has to handle "no club"); job offers only at
+season end.
+
+- **Only the manager record is stored** (`Manager`: name, reputation 1–100,
+  board confidence 0–100, warned flag, pending offers after a sacking,
+  season history). Expectations and the season review are **derived** from
+  club, league and season, so they can't disagree with the table.
+- **Expectation** = a league position from the club's reputation rank in
+  its league: tier 1 rank 1 → win the league, ≤4 top four, ≤10 top half,
+  ≤14 mid-table, else avoid relegation (17th); tier 2 ≤3 promotion, ≤8
+  push for promotion, … .
+- **Confidence** after each league result: `3 × (points − expected ppg for
+  the target)` plus a 5% pull back to 60 (without it confidence is a random
+  walk and an on-target manager can drift into the sack zone by luck).
+  Measured over 400 simulated seasons: on target → 0% sacked; 0.8 ppg below
+  → 59%. Warning below 35 (once a season), sacked below 15 after 8 league
+  games (grace period).
+- **Sacking** → reputation −8, 1–3 job offers (at least one, smaller clubs
+  guaranteed), play blocked until `chooseNewJob`; the season continues at
+  the new club. **Season end** → review (finish vs target, trophies,
+  promotion/relegation → reputation), offers from clubs near his level
+  (`4 + reputation/8` ± 2 on the 1–20 club scale); badly failing seasons
+  end in the sack, with offers to choose from. Deterministic per season.
+- **Changing clubs at season end:** that summer every club gets the AI's
+  treatment (renewals, intake) — they decided before he arrived — then he
+  takes over (`switchClub`: auto-picked lineup, default tactics/training,
+  empty transfer list).
+- **New career:** `manager === null` until started; the tabs layout
+  redirects to `/new-career` (name via the new `TextField` primitive + any
+  of the 40 clubs with the board's expectation and squad rating). "Start
+  new game" on the Club tab clears the manager, which brings it back.
+  Static web is unaffected (nothing renders before the save loads).
+- **Save v7** adds `manager` (nullable); v6 careers carry on with a default
+  manager ("Manager", reputation 50). Load rejects history/offers with
+  unknown clubs.
+
 ## 3. Commands
 
 ```
@@ -847,7 +890,7 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   reports ("Improving: … +0.3"), training knocks reported. Zero console
   errors, no overflow.
 
-### Milestone 9 — Career mode (in progress)
+### Milestone 9 — Career mode ✅
 **9a — Retirement and youth intakes ✅**
 - `src/game/world` (renewal, renewal-career); `generateYouthIntake`;
   `addContract`; AI target squad size in expiries; save v6 (`retired`,
@@ -861,6 +904,26 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   "Youth intake: 4 academy players" and expiries in the inbox; squad
   22 → 17 (9 expired, 4 youngsters) kept after reload. Zero console
   errors, no overflow.
+
+**9b — Manager career ✅**
+- `src/game/career` (manager, career-flow, career-view); store
+  `manager`, `startCareer`, `chooseNewJob`, `startNextSeason(newClubId)`,
+  board reaction after every matchday; save v7.
+- UI: new-career screen + redirect, `TextField`; dashboard Board card
+  (target, confidence, mood, reputation), sacked card with offers, season
+  review + offers on the season-complete card, real manager name; Club
+  tab career history.
+- Tests: 674 total (19 new) incl. sacking-rate simulation, expectations,
+  reviews/offers determinism, store career flow (start, sack, new job,
+  season-end move), v6 → v7.
+- Verified: `tsc` clean, tests pass, Android + web export; headless Chrome
+  at 412px and 1280px: first launch → new career → Saltmarsh Athletic
+  ("finish in the top half") → 9 matches → (confidence forced to 1 in the
+  save) sacked with 2 offers, no Play match → took Stonemarsh Albion,
+  season continued at matchday 11 → Club tab history "sacked" → Start new
+  game → new-career screen. Zero console errors, no overflow.
+- **Not browser-verified:** accepting a season-end offer (covered by a
+  store test that plays a full season).
 
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
@@ -887,25 +950,20 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 9 step 9b (manager career)
+## 5. Next steps — Milestone 10 (Persistence and polish)
 
-Agreed: any of the 40 clubs; sacking with warnings. Plan details with the
-user first:
-1. **New-career flow:** manager name + club choice (difficulty hint by
-   reputation/league); replaces `DEFAULT_USER_CLUB_ID` and the dashboard's
-   preview manager name. "Start new game" on the Club tab opens it.
-2. **Board expectations** per season from club reputation vs league
-   (title / promotion / top half / avoid relegation), shown on the
-   dashboard; **board confidence** moves with results vs expectation;
-   warnings in the inbox; sacking below a threshold.
-3. **Manager reputation** (career-long) from finishing positions vs
-   expectations and trophies.
-4. **Job offers**: at season end (and while unemployed) from clubs whose
-   level matches the manager's reputation; accepting moves the user (club,
-   lineup, tactics, transfer list, training); the old club becomes AI.
-   Unemployed: the season plays on without a user team.
-5. Everything that assumes "the user always has a club" needs checking
-   (`tsc` will help if `userClubId` becomes nullable). Save v7.
-6. Later ideas: scouting to narrow potential ranges; `npm run
-   test:calibration` (suite ~45 s); foreign leagues; user substitutions
-   in matches; suspensions; save slots (M10).
+Brief: reliable local saves, save slots, cloud saves, performance
+optimisation, testing, production builds. Plan with the user first:
+1. **Save slots** (several careers; the current single key becomes slot 1,
+   with a migration) and export/import of a save file.
+2. **Cloud saves** need a backend (Node/Express + Neon PostgreSQL in the
+   brief): auth, costs and privacy to discuss before building anything.
+3. **Performance:** month-crossing kick-offs ~280 ms in Chrome; the full
+   test suite ~45 s (consider `npm run test:calibration` to split the
+   statistical tests out).
+4. **Device testing in Expo Go / a development build** (native SQLite
+   save path, splash gate, gestures, keyboard on the new-career screen)
+   is still outstanding; then EAS production builds, app icon/splash art.
+5. Gameplay ideas parked along the way: suspensions, user substitutions
+   during a match, scouting (narrow potential ranges), foreign leagues,
+   season-end offer expectations using next season's league.

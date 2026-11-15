@@ -37,8 +37,16 @@ export type ClubTransfersView = {
   history: readonly { key: string; title: string; detail: string; incoming: boolean }[];
 };
 
+export type CareerView = {
+  managerName: string;
+  reputation: number;
+  /** Past seasons, newest first. */
+  seasons: readonly { key: string; title: string; detail: string }[];
+};
+
 type ClubScreenProps = {
   club: ClubInfoView;
+  career: CareerView | null;
   transfers: ClubTransfersView;
   save: SaveView;
   onOpenMarket: () => void;
@@ -47,7 +55,7 @@ type ClubScreenProps = {
 };
 
 /** Club facts, transfers and the career save. Staff and detailed finances arrive later. */
-export function ClubScreen({ club, transfers, save, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
+export function ClubScreen({ club, career, transfers, save, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
   return (
     <Screen>
       <PageHeader overline={club.leagueName} title={club.name} subtitle={`${club.city} · founded ${club.founded}`} />
@@ -98,6 +106,31 @@ export function ClubScreen({ club, transfers, save, onOpenMarket, onStartNewGame
           </Card>
         </View>
         <View style={styles.column}>
+          {career ? (
+            <Card title="Your career" icon="person" headerAction={<Pill label={`Reputation ${career.reputation}`} />}>
+              <AppText variant="bodyStrong">{career.managerName}</AppText>
+              {career.seasons.length === 0 ? (
+                <AppText variant="caption" color="textSecondary">
+                  Your first season. Completed seasons appear here.
+                </AppText>
+              ) : (
+                <View>
+                  {career.seasons.map((s) => (
+                    <View key={s.key} style={styles.history}>
+                      <View style={styles.flex}>
+                        <AppText variant="bodyStrong" numberOfLines={1}>
+                          {s.title}
+                        </AppText>
+                        <AppText variant="caption" color="textSecondary">
+                          {s.detail}
+                        </AppText>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </Card>
+          ) : null}
           <SaveCard save={save} onStartNewGame={onStartNewGame} onDismissNotice={onDismissNotice} />
         </View>
       </View>
