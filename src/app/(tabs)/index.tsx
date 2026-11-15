@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { buildDashboardSummary } from '@/features/dashboard/build-dashboard-summary';
 import { previewDashboard } from '@/features/dashboard/dashboard.preview';
 import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
+import { saveStatus, useSaveStatus } from '@/persistence/save-status';
 import { useGameStore } from '@/store/game-store';
 
 /**
@@ -17,9 +18,18 @@ export default function HomeRoute() {
   const currentDate = useGameStore((s) => s.currentDate);
   const startNextSeason = useGameStore((s) => s.startNextSeason);
   const finishSeason = useGameStore((s) => s.finishSeason);
+  const saveNotice = useSaveStatus((s) => s.notice);
   const summary = useMemo(
     () => buildDashboardSummary(database, clubId, season, currentDate, previewDashboard),
     [database, clubId, season, currentDate],
   );
-  return <DashboardScreen summary={summary} onStartNextSeason={startNextSeason} onFinishSeason={finishSeason} />;
+  return (
+    <DashboardScreen
+      summary={summary}
+      onStartNextSeason={startNextSeason}
+      onFinishSeason={finishSeason}
+      saveNotice={saveNotice}
+      onDismissSaveNotice={saveStatus.dismissNotice}
+    />
+  );
 }

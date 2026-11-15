@@ -2,12 +2,19 @@ import { starterIds, validateLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES } from '@/game/tactics/presets';
 
-import { createInitialGameState, DEFAULT_USER_CLUB_ID, useGameStore } from '../game-store';
+import { createInitialGameState, DEFAULT_USER_CLUB_ID, flushSave, useGameStore } from '../game-store';
+
+// The autosave's real storage can't run in Jest; use memory (see autosave.test.ts).
+jest.mock('@/persistence/storage', () => {
+  const { createMemoryStorage } = jest.requireActual('@/persistence/debounced-storage');
+  return { platformStorage: createMemoryStorage() };
+});
 
 // The store works without React: getState() reads it, actions update it.
 beforeEach(() => {
   useGameStore.setState(createInitialGameState());
 });
+afterEach(() => flushSave()); // no pending save timer left behind
 
 const state = () => useGameStore.getState();
 const candidates = () => selectSquadCandidates(state().database, state().userClubId);

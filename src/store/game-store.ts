@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { buildFictionalDatabase, FICTIONAL_REFERENCE_DATE, FICTIONAL_SEED } from '@/data/fictional';
 import type { ClubId, GameDatabase, PlayerId } from '@/data/schemas';
@@ -27,6 +28,10 @@ import {
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES, type PlayingStyleId } from '@/game/tactics/presets';
 import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from '@/game/tactics/tactics';
+import { createDebouncedStorage } from '@/persistence/debounced-storage';
+import { checkSave, SAVE_KEY, SAVE_VERSION, type GameSave } from '@/persistence/save';
+import { saveStatus } from '@/persistence/save-status';
+import { platformStorage } from '@/persistence/storage';
 
 /**
  * The app's game state.
@@ -40,11 +45,11 @@ import { DEFAULT_TACTICS, setInstruction, type Instruction, type Tactics } from 
  * from the selector itself: Zustand compares selector results by reference,
  * so a new object on every call means "changed" on every render → infinite loop.
  *
- * State is in memory only for now (resets on reload). Autosave is the next
- * step after Milestone 6.
+ * Autosaved with Zustand's `persist` middleware (options at the bottom).
  *
  * The initial state is deterministic (fixed seeds): the static web export
  * renders it at build time and the browser must produce the same thing.
+ * That's why the save is loaded only after mount (`skipHydration`).
  */
 
 /** No career setup yet, so everyone manages Greywater Town (reputation 13, mid-table). */
@@ -83,10 +88,32 @@ export type GameActions = {
   /** Only once the current season is complete. Applies promotion/relegation. */
   startNextSeason: () => void;
   clearMatch: () => void;
+  /** Throws away the career and starts again (the autosave is overwritten). */
+  startNewGame: () => void;
 };
 
-export function createInitialGameState(): GameState {
-  const database = buildFictionalDatabase();
+/**
+ * Autosave: writes are debounced (at most one per second) because persist
+ * writes on every change and a late-season save is ~1 MB. `flushSave`
+ * forces the pending write, e.g. when the app goes to the background.
+ */
+const debouncedSave = createDebouncedStorage(platformStorage, 1000, { onWrite: saveStatus.wrote, onError: saveStatus.failed });
+export const flushSave = debouncedSave.flush;
+
+/** What goes into the save file (see persistence/save.ts). */
+function toSave(state: GameState): GameSave {
+  return {
+    worldSeed: FICTIONAL_SEED,
+    userClubId: state.userClubId,
+    currentDate: state.currentDate,
+    lineup: state.lineup,
+    tactics: state.tactics,
+    season: state.season,
+  };
+}
+
+/** A brand-new career. Pass the existing database to avoid rebuilding it (it's deterministic anyway). */
+export function createInitialGameState(database: GameDatabase = buildFictionalDatabase()): GameState {
   const userClubId = DEFAULT_USER_CLUB_ID;
   return {
     database,
@@ -100,42 +127,81 @@ export function createInitialGameState(): GameState {
   };
 }
 
-export const useGameStore = create<GameState & GameActions>()((set, get) => ({
-  ...createInitialGameState(),
+type Store = GameState & GameActions;
 
-  changeFormation: (formationId) =>
-    set((s) => ({ lineup: changeFormation(s.lineup, formationId, selectSquadCandidates(s.database, s.userClubId)) })),
-  assignToSlot: (slotId, playerId) => set((s) => ({ lineup: assignToSlot(s.lineup, slotId, playerId) })),
-  clearSlot: (slotId) => set((s) => ({ lineup: clearSlot(s.lineup, slotId) })),
-  addSubstitute: (playerId) => set((s) => ({ lineup: addSubstitute(s.lineup, playerId) })),
-  removeFromLineup: (playerId) => set((s) => ({ lineup: removeFromLineup(s.lineup, playerId) })),
-  autoPick: () =>
-    set((s) => ({ lineup: autoPickLineup(selectSquadCandidates(s.database, s.userClubId), s.lineup.formationId) })),
-  setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
-  applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
-  playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
-    const { database, userClubId, lineup, tactics } = get();
-    const result = simulateMatch(prepareFriendly({ db: database, userClubId, lineup, tactics, opponentId, venue, seed }));
-    set({ lastMatch: result, lastMatchFixtureId: null });
-    return result;
-  },
-  playNextFixture: () => {
-    const { database, userClubId, lineup, tactics, season } = get();
-    const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics });
-    set({ season: played.season, lastMatch: played.result, lastMatchFixtureId: played.fixture.id, currentDate: played.fixture.date });
-    return played.result;
-  },
-  finishSeason: () => {
-    const { database, userClubId, season } = get();
-    if (nextFixtureFor(season, userClubId)) throw new RangeError('You still have fixtures to play');
-    const finished = playRemaining(database, season);
-    const lastDate = finished.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), get().currentDate);
-    set({ season: finished, currentDate: lastDate });
-  },
-  startNextSeason: () => {
-    const { database, season } = get();
-    if (!isSeasonComplete(season)) throw new RangeError('The current season is still in progress');
-    set({ season: startNextSeason(database, season), lastMatch: null, lastMatchFixtureId: null });
-  },
-  clearMatch: () => set({ lastMatch: null, lastMatchFixtureId: null }),
-}));
+export const useGameStore = create<Store>()(
+  persist(
+    (set, get) => ({
+      ...createInitialGameState(),
+
+      changeFormation: (formationId) =>
+        set((s) => ({ lineup: changeFormation(s.lineup, formationId, selectSquadCandidates(s.database, s.userClubId)) })),
+      assignToSlot: (slotId, playerId) => set((s) => ({ lineup: assignToSlot(s.lineup, slotId, playerId) })),
+      clearSlot: (slotId) => set((s) => ({ lineup: clearSlot(s.lineup, slotId) })),
+      addSubstitute: (playerId) => set((s) => ({ lineup: addSubstitute(s.lineup, playerId) })),
+      removeFromLineup: (playerId) => set((s) => ({ lineup: removeFromLineup(s.lineup, playerId) })),
+      autoPick: () =>
+        set((s) => ({ lineup: autoPickLineup(selectSquadCandidates(s.database, s.userClubId), s.lineup.formationId) })),
+      setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
+      applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
+      playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
+        const { database, userClubId, lineup, tactics } = get();
+        const result = simulateMatch(prepareFriendly({ db: database, userClubId, lineup, tactics, opponentId, venue, seed }));
+        set({ lastMatch: result, lastMatchFixtureId: null });
+        return result;
+      },
+      playNextFixture: () => {
+        const { database, userClubId, lineup, tactics, season } = get();
+        const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics });
+        set({ season: played.season, lastMatch: played.result, lastMatchFixtureId: played.fixture.id, currentDate: played.fixture.date });
+        return played.result;
+      },
+      finishSeason: () => {
+        const { database, userClubId, season } = get();
+        if (nextFixtureFor(season, userClubId)) throw new RangeError('You still have fixtures to play');
+        const finished = playRemaining(database, season);
+        const lastDate = finished.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), get().currentDate);
+        set({ season: finished, currentDate: lastDate });
+      },
+      startNextSeason: () => {
+        const { database, season } = get();
+        if (!isSeasonComplete(season)) throw new RangeError('The current season is still in progress');
+        set({ season: startNextSeason(database, season), lastMatch: null, lastMatchFixtureId: null });
+      },
+      clearMatch: () => set({ lastMatch: null, lastMatchFixtureId: null }),
+      startNewGame: () => {
+        saveStatus.dismissNotice();
+        set(createInitialGameState(get().database));
+      },
+    }),
+    {
+      name: SAVE_KEY,
+      version: SAVE_VERSION,
+      storage: createJSONStorage(() => debouncedSave.storage),
+      // Only these fields are saved; the database is rebuilt from its seed.
+      partialize: (state) => toSave(state),
+      // Loading is started by the app after mount (see persistence/use-hydration.ts),
+      // so the first render always matches the static web HTML.
+      skipHydration: true,
+      // A save from another format version: hand `merge` a marker instead of guessing.
+      migrate: (_persisted, version): GameSave => ({ incompatibleVersion: version }) as unknown as GameSave,
+      // Validate before using anything from disk; on failure keep the new game and say why.
+      merge: (persisted, current) => {
+        // No save yet (first launch): persist still calls merge, with undefined. Not an error.
+        if (persisted === undefined || persisted === null) return current;
+        const check = checkSave(persisted, current.database, FICTIONAL_SEED);
+        if (!check.ok) {
+          saveStatus.notify(`${check.reason} A new game was started.`);
+          return current;
+        }
+        saveStatus.loaded();
+        const { worldSeed: _worldSeed, ...saved } = check.save;
+        return { ...current, ...saved, lastMatch: null, lastMatchFixtureId: null };
+      },
+      // Unreadable JSON etc.
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) saveStatus.notify('Your save could not be read. A new game was started.');
+      },
+    },
+  ),
+);

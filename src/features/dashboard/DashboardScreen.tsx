@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { Screen } from '@/components/ui';
+import { AppText, Button, Card, Screen } from '@/components/ui';
 import { spacing } from '@/theme';
 
 import { ClubHeader } from './components/ClubHeader';
@@ -17,6 +17,9 @@ type DashboardScreenProps = {
   summary: DashboardSummary;
   onStartNextSeason: () => void;
   onFinishSeason: () => void;
+  /** Save problem to explain (e.g. a save that couldn't be loaded). */
+  saveNotice: string | null;
+  onDismissSaveNotice: () => void;
 };
 
 /**
@@ -27,7 +30,7 @@ type DashboardScreenProps = {
  * instead of measuring the window width so the statically pre-rendered web
  * HTML matches what the browser renders (no hydration mismatch).
  */
-export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason }: DashboardScreenProps) {
+export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason, saveNotice, onDismissSaveNotice }: DashboardScreenProps) {
   const router = useRouter();
   const primary = (
     <>
@@ -63,6 +66,11 @@ export function DashboardScreen({ summary, onStartNextSeason, onFinishSeason }: 
   return (
     <Screen>
       <ClubHeader manager={summary.manager} club={summary.club} season={summary.season} />
+      {saveNotice ? (
+        <Card title="Save" icon="warning" highlighted headerAction={<Button label="OK" variant="secondary" onPress={onDismissSaveNotice} />}>
+          <AppText accessibilityLiveRegion="polite">{saveNotice}</AppText>
+        </Card>
+      ) : null}
       <View style={styles.columns}>
         <View style={styles.column}>{primary}</View>
         <View style={styles.column}>{secondary}</View>

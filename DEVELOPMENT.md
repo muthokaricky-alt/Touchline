@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 15 Nov 2026 — Milestone 6 (Competitions) complete; next is the agreed autosave step, then Milestone 7._
+_Last updated: 15 Nov 2026 — Autosave step complete (after Milestone 6); next is Milestone 7 (Transfers)._
 
 ---
 
@@ -16,7 +16,7 @@ _Last updated: 15 Nov 2026 — Milestone 6 (Competitions) complete; next is the 
 | Routing | Expo Router (file-based, routes in `src/app/`) | 58 |
 | Language | TypeScript, `strict: true` | 6.0 |
 | State | Zustand (`src/store/game-store.ts`) | 5 |
-| Persistence | expo-sqlite (installed, not used yet) | 58 |
+| Persistence | Zustand `persist` → expo-sqlite kv-store (native) / localStorage (web) | 58 |
 | Validation | Zod (schemas in `src/data/schemas`) | 4 |
 | Icons | expo-symbols (SF Symbols on iOS, Material Symbols on Android/web) | 58 |
 | Tests | Jest + jest-expo preset | Jest 30 |
@@ -66,7 +66,10 @@ src/
     summarise.ts         events → score, team/player stats, ratings (one source of truth)
     ratings.ts, commentary.ts, penalties.ts (shootout), types.ts
     __fixtures__/        test helpers (outside __tests__ so Jest doesn't run them)
-  store/               Zustand: game-store.ts (state + actions), hooks.ts (view-model hooks)
+  store/               Zustand: game-store.ts (state + actions + persist), hooks.ts (view-model hooks)
+  persistence/         autosave: save.ts (schema + load checks), debounced-storage.ts,
+                       storage.ts / storage.web.ts (platform storage), save-status.ts,
+                       use-hydration.ts (load after mount, flush on background)
   data/                DATA: pure TS, no React imports
     schemas/             Zod schemas + inferred types (Player, PlayerAttributes,
                          Contract, Club, League, GameDatabase)
@@ -82,7 +85,7 @@ src/
 Planned (not created yet; don't create empty folders):
 
 ```
-  persistence/         PERSISTENCE: SQLite repositories behind interfaces (M10, earlier if needed)
+  (save slots / cloud saves: M10)
 ```
 
 Data flow: `buildFictionalDatabase()` → **store** (raw state) → **selectors**
@@ -343,6 +346,42 @@ call pure functions from `src/game` and save the result.
   over an equally good unused natural; weak clubs' keepers are still
   clearly keepers (margin 2.5, not 4).
 
+### Autosave (after Milestone 6)
+
+- **One autosave slot**, Zustand `persist` on the game store. Saved:
+  `worldSeed`, user club, date, lineup, tactics, season (`partialize`).
+  Not saved: the database (rebuilt from its seed; must be saved once M7/M8
+  change it, with a `SAVE_VERSION` bump + migration) and `lastMatch`.
+- **Storage per platform** via Metro file extensions: `storage.ts` (native,
+  `expo-sqlite/kv-store` sync API, in Expo Go) and `storage.web.ts`
+  (`localStorage`). Not expo-sqlite on web: it needs wasm + COOP/COEP
+  headers on every host.
+- **Debounced writes** (`createDebouncedStorage`, 1 s): persist writes on
+  every change and saves reach ~1 MB late in a season. Reads see pending
+  values; `flushSave()` on AppState background (web: page hidden), tested
+  in the browser by reloading inside the debounce window. Storage errors
+  become a notice, never a crash.
+- **Load validation** (`checkSave`): Zod `GameSaveSchema` + cross-checks
+  (club exists, lineup players are the user's, season clubs/competitions
+  exist, user in a league). Failure → keep the new game + notice. Other
+  `SAVE_VERSION` → `migrate` returns a marker that `merge` rejects. No save
+  at all (first launch) → silent: persist calls `merge(undefined)`, which
+  was first mistaken for a damaged save (caught by a test).
+- **Hydration:** `skipHydration` + `rehydrate()` after mount in the root
+  layout (`useSaveHydration`); nothing renders until loaded (native keeps
+  the splash screen via `expo-splash-screen`; web shows "Loading your
+  career…", which is also the pre-rendered HTML, so no mismatch).
+- **Save status is a separate small store** (`useSaveStatus`): putting
+  "last saved at" in the persisted store would make each save trigger
+  another save.
+- **Tests:** platform storage is replaced with `jest.mock` + in-memory
+  storage created *inside* the factory (jest.mock is hoisted above imports).
+  `restartWith(file)` simulates an app restart faithfully (a reset is
+  itself a change persist would save).
+- UI: Club tab (club facts + Career save card with last-saved time and a
+  two-step "Start new game"); dashboard notice banner; new `danger`
+  Button variant for destructive actions.
+
 ## 3. Commands
 
 ```
@@ -471,6 +510,19 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   and 1280px: user relegated, cup final decided on penalties, 2027/28
   starts in the Second Division. Zero console errors, no overflow.
 
+### Autosave ✅
+- `src/persistence` + persisted store; Club tab with save card; dashboard
+  save notice; `startNewGame`; `danger` button.
+- Tests: 502 total (23 new): debounced storage (fake timers), save
+  validation cases, store round-trip/tamper/version/corrupt-JSON/first
+  launch/new game.
+- Verified: `tsc` clean, tests pass, Android + web export; in headless
+  Chrome at 412px and 1280px: 2 matches → reload keeps matchday 3; reload
+  inside the debounce keeps the match; tampered save → notice + new game;
+  start new game → fresh after reload. Zero console errors.
+- **Not yet verified on a device:** the native SQLite path and splash
+  screen gate only run on Android/iOS (Expo Go).
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -480,8 +532,6 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - App icon / splash images are still the Expo defaults (backgrounds recoloured to
   Touchline navy). Replace with real Touchline artwork later.
 - Fonts are system fonts. A custom typeface can be added via `expo-font` later.
-- **Nothing is saved yet**: lineup, tactics and the season reset on app
-  reload or web refresh. Agreed: an autosave step straight after M6.
 - Pre-season, the table is in alphabetical order (all on 0 points), so the
   user's club can appear "1st" before a ball is kicked.
 - Web only: directly loading the URL of a player profile from another club
@@ -494,22 +544,23 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Autosave (agreed, before Milestone 7)
+## 5. Next steps — Milestone 7: Transfers
 
-Plan with the user before coding. Points to decide:
-1. **What to save:** user club, current date, lineup, tactics, season. The
-   database is regenerated from its seed for now (save only a version + seed);
-   once transfers/development change it (M7/M8), it must be saved too.
-2. **Storage:** native vs web. Options: `expo-sqlite`'s key-value store,
-   or Zustand `persist` with a storage adapter (localStorage on web).
-   Check the SDK 58 docs first.
-3. **Validation on load:** parse with the Zod schemas (`SeasonSchema`,
-   `LineupSchema`, `TacticsSchema`); on failure, fall back to a new game
-   and tell the user, never crash. Include a save `version` for migrations.
-4. **Static web hydration:** the pre-rendered HTML is the *new game*; a
-   loaded save differs, so load after mount and gate rendering (or show a
-   brief loading state) to avoid hydration mismatches.
-5. Then **Milestone 7 (Transfers)**: other countries' leagues as data, transfer
-   market, valuations, contracts, wages, budgets.
-6. Later ideas: `npm run test:calibration` if the suite gets slow (~30 s
-   now); user substitutions during a match; injuries (M8).
+Agree the plan with the user before coding. Likely shape and open questions:
+1. **The database becomes mutable** (players change clubs, contracts
+   change). It must then be **saved** (today it's rebuilt from its seed):
+   bump `SAVE_VERSION`, add a migration from v1 (rebuild db from seed), and
+   re-measure save size (880 players × attributes ≈ 0.5–1 MB on top of the
+   season; consider saving only *changes* vs the generated world). The AI
+   setup cache is keyed by the db object, so a new db object after a
+   transfer naturally invalidates it.
+2. **Other countries' leagues as data** (decided in 6b): when and how many,
+   simulated or "dormant" until relevant.
+3. Player **valuation** (age, ability, potential?, contract length,
+   reputation) as a pure, tested function.
+4. Transfer market: search/filter, bids, AI accept/reject/counter,
+   **transfer windows** (summer/winter dates in the calendar), budgets.
+5. Contracts & wages: offers, renewals, expiry → free agents; wage budget
+   enforcement. AI clubs also buy/sell (keep it simple first).
+6. Later ideas: `npm run test:calibration` if the suite gets slow (~30 s);
+   user substitutions during a match; injuries (M8); save slots (M10).

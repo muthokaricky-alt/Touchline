@@ -8,7 +8,8 @@ import { Icon, type IconName } from './Icon';
 type ButtonProps = {
   label: string;
   onPress?: () => void;
-  variant?: 'primary' | 'secondary';
+  /** `danger` is for destructive actions (e.g. "start over"), so they never look like the safe choice. */
+  variant?: 'primary' | 'secondary' | 'danger';
   icon?: IconName;
   disabled?: boolean;
   accessibilityHint?: string;
@@ -23,7 +24,7 @@ export function Button({
   accessibilityHint,
 }: ButtonProps) {
   const isPrimary = variant === 'primary';
-  const contentColor = isPrimary ? 'onAccent' : 'textPrimary';
+  const contentColor = variant === 'secondary' ? 'textPrimary' : 'onAccent';
 
   return (
     <Pressable
@@ -34,7 +35,7 @@ export function Button({
       accessibilityHint={accessibilityHint}
       style={({ pressed }) => [
         styles.base,
-        isPrimary ? styles.primary : styles.secondary,
+        isPrimary ? styles.primary : variant === 'danger' ? styles.danger : styles.secondary,
         pressed && styles.pressed,
         disabled && styles.disabled,
       ]}>
@@ -56,6 +57,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primary: { backgroundColor: colors.accent },
+  danger: { backgroundColor: colors.danger },
   secondary: {
     backgroundColor: colors.surfaceRaised,
     borderWidth: StyleSheet.hairlineWidth,
