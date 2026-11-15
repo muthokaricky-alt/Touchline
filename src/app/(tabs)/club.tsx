@@ -4,7 +4,10 @@ import { useMemo } from 'react';
 import { ClubScreen } from '@/features/club/ClubScreen';
 import { competitionName, leagueOfClub } from '@/game/season/season-flow';
 import { fullName } from '@/game/squad/squad-selectors';
+import { SLOT_COUNT } from '@/persistence/slot-storage';
+import { pickSaveFile, shareSaveFile } from '@/persistence/save-file';
 import { saveStatus, useSaveStatus } from '@/persistence/save-status';
+import { deleteSlot, exportSlot, importIntoSlot, switchSlot } from '@/store/save-slots';
 import { useGameStore } from '@/store/game-store';
 import { useTransferBudget, useUserClub } from '@/store/hooks';
 import { formatCompactCurrency, formatDate, formatOrdinal, formatWeeklyWage } from '@/utils/format';
@@ -20,7 +23,7 @@ export default function ClubRoute() {
   const startNewGame = useGameStore((s) => s.startNewGame);
   const manager = useGameStore((s) => s.manager);
   const budget = useTransferBudget();
-  const { lastSavedAt, loadedFromSave, notice } = useSaveStatus();
+  const { lastSavedAt, loadedFromSave, notice, activeSlot, slots: slotIndex } = useSaveStatus();
 
   const leagueId = leagueOfClub(season, clubId);
   const info = useMemo(
@@ -85,6 +88,22 @@ export default function ClubRoute() {
     };
   }, [manager, database]);
 
+  const slotViews = useMemo(
+    () =>
+      Array.from({ length: SLOT_COUNT }, (_, i) => {
+        const slot = i + 1;
+        const summary = slotIndex[slot];
+        const clubName = summary ? (database.clubs.find((c) => c.id === summary.clubId)?.name ?? summary.clubId) : null;
+        return {
+          slot,
+          active: slot === activeSlot,
+          title: summary ? `${summary.managerName ?? 'New career'} · ${clubName}` : null,
+          detail: summary ? `${summary.seasonLabel} · ${summary.currentDate ? formatDate(summary.currentDate) : ''}` : null,
+        };
+      }),
+    [slotIndex, activeSlot, database],
+  );
+
   if (!info) return null;
 
   // Rendered only after the save has loaded (root layout gate), so using the
@@ -98,6 +117,27 @@ export default function ClubRoute() {
     <ClubScreen
       club={info}
       career={career}
+      slots={{
+        slots: slotViews,
+        onLoad: async (slot) => {
+          await switchSlot(slot); // an empty slot shows the new-career screen
+          return null;
+        },
+        onExport: async (slot) => {
+          const file = exportSlot(slot);
+          if (!file) return 'That slot is empty.';
+          await shareSaveFile(file.fileName, file.contents);
+          return `Exported ${file.fileName}.`;
+        },
+        onImport: async (slot) => {
+          const text = await pickSaveFile();
+          return text === null ? 'No file chosen.' : importIntoSlot(text, slot);
+        },
+        onDelete: async (slot) => {
+          await deleteSlot(slot);
+          return null;
+        },
+      }}
       transfers={{
         windowOpen: window.open,
         windowLabel: window.open

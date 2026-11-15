@@ -1,11 +1,12 @@
 import type { createMemoryStorage } from '@/persistence/debounced-storage';
-import { SAVE_KEY, SAVE_VERSION } from '@/persistence/save';
+import { SAVE_VERSION } from '@/persistence/save';
+import { backupKey, slotKey } from '@/persistence/slot-storage';
 import { useSaveStatus } from '@/persistence/save-status';
 import { platformStorage } from '@/persistence/storage';
 
 import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 
-import { createInitialGameState, flushSave, useGameStore } from '../game-store';
+import { createInitialGameState, flushSave, slotStorage, useGameStore } from '../game-store';
 
 /*
  * The real platform storage (expo-sqlite / localStorage) can't run in Jest,
@@ -22,7 +23,10 @@ jest.mock('@/persistence/storage', () => {
 const memory = platformStorage as ReturnType<typeof createMemoryStorage>;
 
 const state = () => useGameStore.getState();
-const saved = () => JSON.parse(memory.getItem(SAVE_KEY) as string);
+/** The save in slot 1 (the default slot), as persist wrote it: `{ state, version }`. */
+const SLOT = slotKey(1);
+const savedFile = () => slotStorage.getItem(SLOT) as string;
+const saved = () => JSON.parse(savedFile());
 
 /**
  * Simulates closing and reopening the app with `file` on disk: the store
@@ -33,13 +37,16 @@ const saved = () => JSON.parse(memory.getItem(SAVE_KEY) as string);
 async function restartWith(file: string | null) {
   useGameStore.setState(createInitialGameState(state().database));
   flushSave();
-  if (file === null) memory.removeItem(SAVE_KEY);
-  else memory.setItem(SAVE_KEY, file);
+  // The file goes in as written by hand (uncompressed saves are still readable), without a backup.
+  memory.removeItem(backupKey(SLOT));
+  if (file === null) memory.removeItem(SLOT);
+  else memory.setItem(SLOT, file);
   await useGameStore.persist.rehydrate();
 }
 
 beforeEach(() => {
-  memory.removeItem(SAVE_KEY);
+  memory.removeItem(SLOT);
+  memory.removeItem(backupKey(SLOT));
   useSaveStatus.setState({ lastSavedAt: null, notice: null, loadedFromSave: false });
   useGameStore.setState(createInitialGameState(state().database));
   flushSave();
@@ -66,7 +73,7 @@ describe('autosave', () => {
     state().signPlayer({ playerId: reserve, fee: askingPrice(ctx), weeklyWage: terms.weeklyWage, years: terms.maxYears });
     flushSave();
 
-    await restartWith(memory.getItem(SAVE_KEY) as string);
+    await restartWith(savedFile());
     expect(state().database.contracts.find((c) => c.playerId === reserve)!.clubId).toBe(state().userClubId);
     expect(state().transferHistory[0].playerId).toBe(reserve);
     expect(state().inbox[0].title).toMatch(/signs/);
@@ -80,7 +87,7 @@ describe('autosave', () => {
     flushSave();
     const before = { listed: state().transferListed, inbox: state().inbox, lineup: state().lineup, contracts: state().database.contracts };
 
-    await restartWith(memory.getItem(SAVE_KEY) as string);
+    await restartWith(savedFile());
     expect(useSaveStatus.getState().notice).toBeNull();
     expect({ listed: state().transferListed, inbox: state().inbox, lineup: state().lineup, contracts: state().database.contracts }).toEqual(before);
     expect(state().lineup.starters.LST).not.toBe(starter);
@@ -105,7 +112,7 @@ describe('autosave', () => {
     flushSave();
     const before = { season: state().season, tactics: state().tactics, lineup: state().lineup, currentDate: state().currentDate };
 
-    await restartWith(memory.getItem(SAVE_KEY) as string);
+    await restartWith(savedFile());
 
     expect({ season: state().season, tactics: state().tactics, lineup: state().lineup, currentDate: state().currentDate }).toEqual(before);
     expect(state().lastMatch).toBeNull();
@@ -127,6 +134,34 @@ describe('autosave', () => {
   it('rejects a save from another format version', async () => {
     await restartWith(JSON.stringify({ state: { anything: true }, version: SAVE_VERSION + 99 }));
     expect(useSaveStatus.getState().notice).toMatch(/unsupported version/);
+  });
+
+  it('stores saves compressed', () => {
+    state().playNextFixture();
+    flushSave();
+    const stored = memory.getItem(SLOT) as string;
+    expect(stored.startsWith('z1:')).toBe(true);
+    expect(stored.length).toBeLessThan(savedFile().length / 5);
+  });
+
+  it('restores the previous save when the latest one is damaged', async () => {
+    state().playNextFixture();
+    flushSave();
+    state().playNextFixture();
+    flushSave(); // slot 1 = after matchday 2, its backup = after matchday 1
+    const realBackup = memory.getItem(backupKey(SLOT)) as string; // stored (compressed) exactly as the storage made it
+    const afterOne = JSON.parse(slotStorage.readBackup(SLOT) as string).state.currentDate;
+    const tampered = saved();
+    tampered.state.userClubId = 'club_nowhere';
+    // Restart with the damaged save but KEEP the backup this time.
+    // (The reset below is itself a write that rotates the backup, hence capturing it first.)
+    useGameStore.setState(createInitialGameState(state().database));
+    flushSave();
+    memory.setItem(SLOT, JSON.stringify(tampered));
+    memory.setItem(backupKey(SLOT), realBackup);
+    await useGameStore.persist.rehydrate();
+    expect(useSaveStatus.getState().notice).toMatch(/previous save was restored/);
+    expect(state().currentDate).toBe(afterOne);
   });
 
   it('survives unreadable JSON', async () => {
@@ -162,10 +197,10 @@ describe('a new season with retirements and a youth intake', () => {
     const before = { players: state().database.players, attributes: state().database.attributes, contracts: state().database.contracts };
     expect(before.players.some((p) => Number(p.id.slice(4)) >= 100_000)).toBe(true); // intake players exist
     flushSave();
-    const saved = JSON.parse(memory.getItem(SAVE_KEY) as string);
+    const saved = JSON.parse(savedFile());
     expect(JSON.stringify(saved).length).toBeLessThan(1_500_000);
 
-    await restartWith(memory.getItem(SAVE_KEY) as string);
+    await restartWith(savedFile());
     expect(useSaveStatus.getState().notice).toBeNull();
     expect({ players: state().database.players, attributes: state().database.attributes, contracts: state().database.contracts }).toEqual(before);
   });

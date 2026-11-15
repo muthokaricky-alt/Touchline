@@ -53,7 +53,8 @@ import { completeTransfer, type TransferRecord } from '@/game/transfers/complete
 import type { TransferOffer } from '@/game/transfers/offers';
 import { formatCompactCurrency } from '@/utils/format';
 import { personalTerms, playerContext, respondToBid, respondToTerms } from '@/game/transfers/negotiation';
-import { checkSave, migrateSave, SAVE_KEY, SAVE_VERSION, worldChanges, type GameSave } from '@/persistence/save';
+import { checkSave, migrateSave, SAVE_VERSION, worldChanges, type GameSave, type SaveCheck } from '@/persistence/save';
+import { createSlotStorage, slotKey } from '@/persistence/slot-storage';
 import { saveStatus } from '@/persistence/save-status';
 import { platformStorage } from '@/persistence/storage';
 
@@ -246,8 +247,33 @@ function monthlyStep(s: GameState, from: string, to: string, season: Season, con
  * writes on every change and a late-season save is ~1 MB. `flushSave`
  * forces the pending write, e.g. when the app goes to the background.
  */
-const debouncedSave = createDebouncedStorage(platformStorage, 1000, { onWrite: saveStatus.wrote, onError: saveStatus.failed });
+/**
+ * Storage chain: persist → debounced (≤ 1 write a second) → slots
+ * (compression, backup, slot index) → the platform's storage.
+ */
+export const slotStorage = createSlotStorage(platformStorage);
+const debouncedSave = createDebouncedStorage(slotStorage, 1000, {
+  onWrite: () => saveStatus.wrote(slotStorage.index()),
+  onError: saveStatus.failed,
+});
 export const flushSave = debouncedSave.flush;
+
+/**
+ * Validates a persisted `{ state, version }` from anywhere (the slot, its
+ * backup, an imported file): upgrade old formats, then the full save check.
+ */
+export function validatePersisted(raw: unknown): SaveCheck {
+  if (typeof raw !== 'object' || raw === null || !('state' in raw)) return { ok: false, reason: "This isn't a Touchline save." };
+  const { state, version } = raw as { state: unknown; version?: unknown };
+  const upgraded = typeof version === 'number' && version !== SAVE_VERSION ? migrateSave(state, version) : state;
+  return checkSave(upgraded, generatedWorld, FICTIONAL_SEED);
+}
+
+/** Game state from a save that passed `checkSave` (what the save doesn't hold comes from `current`). */
+function stateFromSave<T extends GameState>(check: Extract<SaveCheck, { ok: true }>, current: T): T {
+  const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, attributeChanges: _attributes, retired: _retired, ...career } = check.save;
+  return { ...current, ...career, database: check.database, lastMatch: null, lastMatchFixtureId: null };
+}
 
 /** What goes into the save file (see persistence/save.ts). */
 function toSave(state: GameState): GameSave {
@@ -515,7 +541,8 @@ export const useGameStore = create<Store>()(
       setTraining: (change) => set((s) => ({ training: { ...s.training, ...change } })),
     }),
     {
-      name: SAVE_KEY,
+      // The active slot's key; `openActiveSlot` points it at the remembered slot before loading.
+      name: slotKey(1),
       version: SAVE_VERSION,
       storage: createJSONStorage(() => debouncedSave.storage),
       // Saved: the career plus what transfers changed (contracts, finances);
@@ -528,16 +555,30 @@ export const useGameStore = create<Store>()(
       migrate: (persisted, version) => migrateSave(persisted, version) as GameSave,
       // Validate before using anything from disk; on failure keep the new game and say why.
       merge: (persisted, current) => {
-        // No save yet (first launch): persist still calls merge, with undefined. Not an error.
-        if (persisted === undefined || persisted === null) return current;
+        const fresh = { ...current, ...createInitialGameState() };
+        // Empty slot (first launch, or a new slot): persist still calls merge, with undefined. Not an error.
+        if (persisted === undefined || persisted === null) return fresh;
         const check = checkSave(persisted, generatedWorld, FICTIONAL_SEED);
-        if (!check.ok) {
-          saveStatus.notify(`${check.reason} A new game was started.`);
-          return current;
+        if (check.ok) {
+          saveStatus.loaded();
+          return stateFromSave(check, current);
         }
-        saveStatus.loaded();
-        const { worldSeed: _seed, contracts: _contracts, clubFinances: _finances, attributeChanges: _attributes, retired: _retired, ...career } = check.save;
-        return { ...current, ...career, database: check.database, lastMatch: null, lastMatchFixtureId: null };
+        // The latest save is damaged: try the previous one before giving up.
+        const backup = slotStorage.readBackup(useGameStore.persist.getOptions().name ?? slotKey(1));
+        if (backup) {
+          try {
+            const recovered = validatePersisted(JSON.parse(backup));
+            if (recovered.ok) {
+              saveStatus.loaded();
+              saveStatus.notify(`${check.reason} Your previous save was restored instead.`);
+              return stateFromSave(recovered, current);
+            }
+          } catch {
+            // fall through: the backup is unusable too
+          }
+        }
+        saveStatus.notify(`${check.reason} A new game was started.`);
+        return fresh;
       },
       // Unreadable JSON etc.
       onRehydrateStorage: () => (_state, error) => {

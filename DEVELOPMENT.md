@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — Milestone 9 complete (9a world renewal, 9b manager career; save v7); Milestone 10 next._
+_Last updated: 16 Nov 2026 — Milestone 10 step 10a (save slots, compression, backup, export/import) complete; 10b (release readiness) next._
 
 ---
 
@@ -95,10 +95,14 @@ src/
     summarise.ts         events → score, team/player stats, ratings (one source of truth)
     ratings.ts, commentary.ts, penalties.ts (shootout), types.ts
     __fixtures__/        test helpers (outside __tests__ so Jest doesn't run them)
-  store/               Zustand: game-store.ts (state + actions + persist), hooks.ts (view-model hooks)
+  store/               Zustand: game-store.ts (state + actions + persist), hooks.ts (view-model hooks),
+                       save-slots.ts (switch / delete / export / import slots)
   persistence/         autosave: save.ts (schema + load checks), debounced-storage.ts,
-                       storage.ts / storage.web.ts (platform storage), save-status.ts,
-                       use-hydration.ts (load after mount, flush on background)
+                       slot-storage.ts (slots, deflate compression, backup, index),
+                       save-transfer.ts (export file format), save-file(.web).ts
+                       (share/download + file picker), storage(.web).ts (platform
+                       storage), save-status.ts, use-hydration.ts (open the active
+                       slot, load after mount, flush on background)
   data/                DATA: pure TS, no React imports
     schemas/             Zod schemas + inferred types (Player, PlayerAttributes,
                          Contract, Club, League, GameDatabase)
@@ -683,6 +687,43 @@ season end.
   manager ("Manager", reputation 50). Load rejects history/offers with
   unknown clubs.
 
+### Persistence and polish (Milestone 10)
+
+Decisions (user): cloud saves deferred (export/import files instead; no
+backend, accounts or costs yet); 3 save slots; compression (lz-string was
+chosen, then replaced by fflate after measuring, with the user's OK).
+
+#### 10a: save slots, compression, backup, export/import
+
+- **Storage chain:** persist → debounced (≤ 1 write/s) → **slot storage**
+  → platform. Slot storage compresses (`z1:` + deflate as a binary string;
+  unprefixed values are older uncompressed saves and still load), copies
+  the previous save to `<key>.backup` before each write, and keeps a small
+  index (`touchline-slots`: manager, club, season, date per slot).
+- **Measured, then chosen:** a late-season save is ~1.1 MB of JSON
+  (~900 KB of it the season's fixtures and player stats). lz-string: 7.3%
+  but ~950 ms per compression, a visible freeze after every autosave.
+  fflate: 9.0% in ~85 ms (inflate ~10 ms). Saves are now ~40 KB early in a
+  season, ~100 KB late.
+- **Slots are keys** (`touchline-save-1…3`, `touchline-active-slot`).
+  Switching = flush → `persist.setOptions({ name })` → `rehydrate()`.
+  Hydration never writes, so loading can't overwrite a slot; an empty slot
+  merges to a fresh game (manager null → new-career screen). The old
+  single key moves into slot 1 on startup (`migrateLegacy`).
+- **Backup recovery:** if the latest save fails its checks, `merge` tries
+  the backup (same `validatePersisted` path) and says so; an unreadable
+  (cut-off) save falls back to the backup in the storage layer.
+- **Export/import:** a JSON wrapper (`format: "touchline-save"`, summary,
+  the save uncompressed so future versions can migrate it). Import is
+  validated exactly like a load before anything is written; replacing an
+  occupied slot asks first. Native: expo-file-system (`File`, `Paths`) +
+  expo-sharing + expo-document-picker (all in Expo Go; APIs checked in the
+  SDK 58 docs; the installer added the `expo-sharing` config plugin to
+  app.json). Web: a normal download and a file input.
+- **Browser note:** file pickers only open from a real user gesture;
+  `pickSaveFile` runs synchronously inside the tap handler, before any
+  `await`. (The headless test needed `userGesture: true` to simulate it.)
+
 ## 3. Commands
 
 ```
@@ -925,6 +966,23 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - **Not browser-verified:** accepting a season-end offer (covered by a
   store test that plays a full season).
 
+### Milestone 10 — Persistence and polish (in progress)
+**10a — Save slots, compression, backup, export/import ✅**
+- `persistence/slot-storage.ts`, `save-transfer.ts`, `save-file(.web).ts`;
+  `store/save-slots.ts`; `validatePersisted`; Save slots card on the Club
+  tab. New dependencies: fflate, expo-file-system, expo-sharing,
+  expo-document-picker.
+- Tests: 689 total (15 new) incl. compression, backup fallback (storage
+  and semantic), slot isolation, delete, export → import round trip,
+  junk/tampered imports, legacy migration.
+- Verified: `tsc` clean, tests pass, Android + web export; headless Chrome
+  at 412px and 1280px: two careers in slots 1 and 2, switching both ways,
+  export downloaded a valid file, import into slot 3 switched to the same
+  career, active slot kept after reload, all saves stored compressed
+  (~40 KB). Zero console errors, no overflow.
+- **Not yet verified on a device:** native export (share sheet) and import
+  (document picker) only run on Android/iOS.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -950,20 +1008,20 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 10 (Persistence and polish)
+## 5. Next steps — Milestone 10 step 10b (release readiness)
 
-Brief: reliable local saves, save slots, cloud saves, performance
-optimisation, testing, production builds. Plan with the user first:
-1. **Save slots** (several careers; the current single key becomes slot 1,
-   with a migration) and export/import of a save file.
-2. **Cloud saves** need a backend (Node/Express + Neon PostgreSQL in the
-   brief): auth, costs and privacy to discuss before building anything.
-3. **Performance:** month-crossing kick-offs ~280 ms in Chrome; the full
-   test suite ~45 s (consider `npm run test:calibration` to split the
-   statistical tests out).
-4. **Device testing in Expo Go / a development build** (native SQLite
-   save path, splash gate, gestures, keyboard on the new-career screen)
-   is still outstanding; then EAS production builds, app icon/splash art.
-5. Gameplay ideas parked along the way: suspensions, user substitutions
-   during a match, scouting (narrow potential ranges), foreign leagues,
-   season-end offer expectations using next season's league.
+Plan details with the user first:
+1. **Device testing in Expo Go** (user runs it; I can't drive a phone):
+   a checklist covering the native SQLite save path, splash gate, new
+   career keyboard, gestures/back button, export via share sheet and
+   import via the document picker.
+2. **Performance:** month-crossing kick-offs ~280 ms in Chrome (all 880+
+   players develop, AI setups recomputed); profile and trim.
+3. **Tests:** split the statistical suites into `npm run test:calibration`
+   so `npm test` stays fast (~45 s now).
+4. **Production builds:** EAS configuration (`eas.json`, app id, version),
+   real app icon and splash art, ESLint setup; `npx expo-doctor` locally.
+5. Cloud saves remain deferred (backend, accounts, costs to decide).
+6. Gameplay ideas parked: suspensions, in-match substitutions, scouting,
+   foreign leagues, season-end offer expectations using next season's
+   league.

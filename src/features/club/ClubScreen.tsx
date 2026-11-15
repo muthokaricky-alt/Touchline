@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Icon, PageHeader, Pill, Screen, StatTile } from '@/components/ui';
 import { spacing } from '@/theme';
 import { formatCompactCurrency, formatWeeklyWage } from '@/utils/format';
+
+import { SaveSlotsCard } from './SaveSlotsCard';
 
 export type ClubInfoView = {
   name: string;
@@ -47,6 +49,7 @@ export type CareerView = {
 type ClubScreenProps = {
   club: ClubInfoView;
   career: CareerView | null;
+  slots: ComponentProps<typeof SaveSlotsCard>;
   transfers: ClubTransfersView;
   save: SaveView;
   onOpenMarket: () => void;
@@ -55,7 +58,7 @@ type ClubScreenProps = {
 };
 
 /** Club facts, transfers and the career save. Staff and detailed finances arrive later. */
-export function ClubScreen({ club, career, transfers, save, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
+export function ClubScreen({ club, career, slots, transfers, save, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
   return (
     <Screen>
       <PageHeader overline={club.leagueName} title={club.name} subtitle={`${club.city} · founded ${club.founded}`} />
@@ -132,6 +135,7 @@ export function ClubScreen({ club, career, transfers, save, onOpenMarket, onStar
             </Card>
           ) : null}
           <SaveCard save={save} onStartNewGame={onStartNewGame} onDismissNotice={onDismissNotice} />
+          <SaveSlotsCard {...slots} />
         </View>
       </View>
     </Screen>

@@ -45,7 +45,6 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   7  + manager: name, reputation, board confidence, history (Milestone 9b)
  */
 
-export const SAVE_KEY = 'touchline-save';
 export const SAVE_VERSION = 7;
 
 const ClubFinancesSchema = z.strictObject({

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { flushSave, useGameStore } from '@/store/game-store';
+import { openActiveSlot } from '@/store/save-slots';
 
 /**
  * Loads the autosave once, after the app has mounted, and reports when it's
@@ -20,6 +21,7 @@ export function useSaveHydration(): boolean {
 
   useEffect(() => {
     let active = true;
+    openActiveSlot(); // which slot to load (and the one-time move of an old save into slot 1)
     Promise.resolve(useGameStore.persist.rehydrate())
       .catch(() => undefined) // reported via onRehydrateStorage; never block the app
       .finally(() => {

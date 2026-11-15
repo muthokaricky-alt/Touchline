@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { SlotIndex } from './slot-storage';
+
 /**
  * Save status lives in its OWN small store, separate from the game store.
  *
@@ -14,15 +16,21 @@ export type SaveStatus = {
   notice: string | null;
   /** True once a save was found and loaded at startup. */
   loadedFromSave: boolean;
+  /** The slot being played (1–3). */
+  activeSlot: number;
+  /** What's in each slot (for the slot picker). */
+  slots: SlotIndex;
 };
 
-export const useSaveStatus = create<SaveStatus>()(() => ({ lastSavedAt: null, notice: null, loadedFromSave: false }));
+export const useSaveStatus = create<SaveStatus>()(() => ({ lastSavedAt: null, notice: null, loadedFromSave: false, activeSlot: 1, slots: {} }));
 
 export const saveStatus = {
-  wrote: () => useSaveStatus.setState({ lastSavedAt: Date.now() }),
+  wrote: (slots?: SlotIndex) => useSaveStatus.setState(slots ? { lastSavedAt: Date.now(), slots } : { lastSavedAt: Date.now() }),
+  slotsChanged: (activeSlot: number, slots: SlotIndex) => useSaveStatus.setState({ activeSlot, slots }),
   failed: (error: unknown) =>
     useSaveStatus.setState({ notice: `Your progress couldn't be saved (${error instanceof Error ? error.message : String(error)}).` }),
   loaded: () => useSaveStatus.setState({ loadedFromSave: true }),
+  resetLoaded: () => useSaveStatus.setState({ loadedFromSave: false, lastSavedAt: null }),
   notify: (notice: string) => useSaveStatus.setState({ notice }),
   dismissNotice: () => useSaveStatus.setState({ notice: null }),
 };
