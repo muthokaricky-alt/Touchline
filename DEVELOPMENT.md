@@ -995,6 +995,12 @@ penalties, no away goals):
   (or "2–2 on aggregate" followed by the penalties line), revealed at full
   time like the shootout; `tieAggregate` works live too, because the first
   leg is already in the season's results.
+- Pre-match: a second leg shows "First leg: Calderbrook City 1–1
+  Ravensmoor United" (`firstLegOf`). The penalties note now follows
+  `penaltiesRule`: "level at full time goes to penalties" for single-match
+  ties, "level on aggregate goes to penalties" for second legs, nothing for
+  group matches and first legs (it used to say "penalties" for every cup
+  match, wrong since the group stage).
 - Fixed on the way: the cup view showed any cup match the user didn't
   win as "L", so a drawn group match looked like a defeat; only matches
   that decide a tie use W/L now, the rest W/D/L.

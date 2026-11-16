@@ -176,6 +176,24 @@ export function tieAggregate(season: Season, fixture: Fixture, score: { home: nu
   return aggregateScore(otherLeg(season.fixtures, fixture), score);
 }
 
+/** The first leg of a two-legged tie, given its second leg; undefined for any other match. */
+export function firstLegOf(season: Season, fixture: Fixture): Fixture | undefined {
+  if (!isTwoLegged(season, fixture.competitionId) || twoLegStage(fixture.matchday)?.leg !== 2) return undefined;
+  return otherLeg(season.fixtures, fixture);
+}
+
+/**
+ * How a match can be decided by penalties, for the pre-match note: a level
+ * single-match tie ('match'), a level aggregate after a second leg
+ * ('aggregate'), or not at all (league, group match, first leg: null).
+ */
+export function penaltiesRule(season: Season, fixture: Fixture): 'match' | 'aggregate' | null {
+  if (!isKnockoutFixture(season, fixture)) return null;
+  if (!isTwoLegged(season, fixture.competitionId)) return 'match';
+  const leg = twoLegStage(fixture.matchday)?.leg;
+  return leg === 1 ? null : leg === 2 ? 'aggregate' : 'match';
+}
+
 /** Number of rounds, final included. */
 export function cupTotalRounds(season: Season, cupId: CompetitionId): number {
   if (isTwoLegged(season, cupId)) return TWO_LEG_ROUNDS;

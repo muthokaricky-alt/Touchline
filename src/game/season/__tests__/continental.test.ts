@@ -15,7 +15,18 @@ import {
   TWO_LEG_ROUNDS,
   twoLegWinner,
 } from '../continental';
-import { cupFixtures, cupRoundLabel, cupWinner, decidedTieWinner, isKnockoutFixture, needsPenalties, nextCupRound, tieAggregate } from '../cup';
+import {
+  cupFixtures,
+  cupRoundLabel,
+  cupWinner,
+  decidedTieWinner,
+  firstLegOf,
+  isKnockoutFixture,
+  needsPenalties,
+  nextCupRound,
+  penaltiesRule,
+  tieAggregate,
+} from '../cup';
 import type { Fixture, Season } from '../season';
 import { createSeason } from '../season-flow';
 
@@ -120,6 +131,18 @@ describe('two-legged ties', () => {
     expect(needsPenalties(after, leg2, { home: 2, away: 0 })).toBe(false);
     expect(needsPenalties(after, leg2, { home: 0, away: 0 })).toBe(false);
     expect(aggregateScore(otherLeg(after.fixtures, leg2), { home: 1, away: 0 })).toEqual({ home: 1, away: 1 });
+  });
+
+  it('gives the pre-match screen the first leg and the right penalties rule', () => {
+    expect(firstLegOf(s, leg2)?.id).toBe(leg1.id);
+    expect(firstLegOf(s, leg1)).toBeUndefined();
+    expect(penaltiesRule(s, leg1)).toBeNull();
+    expect(penaltiesRule(s, leg2)).toBe('aggregate');
+    expect(penaltiesRule(s, cupFixtures(s, CUP).find((f) => f.matchday === 1)!)).toBeNull(); // group match
+    const national = season.fixtures.find((f) => f.competitionId === 'comp_national_cup')!;
+    expect(penaltiesRule(season, national)).toBe('match');
+    const league = season.fixtures.find((f) => f.competitionId === 'comp_first_division')!;
+    expect(penaltiesRule(season, league)).toBeNull();
   });
 
   it('gives the match report an aggregate for a second leg only', () => {

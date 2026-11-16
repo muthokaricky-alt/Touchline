@@ -26,7 +26,7 @@ import { matchPlayingStyle } from '@/game/tactics/presets';
 
 import { selectDiscipline } from '@/game/discipline/suspensions';
 import { liveView } from '@/game/match/live';
-import { isCupFixture } from '@/game/season/cup';
+import { firstLegOf, isCupFixture, penaltiesRule } from '@/game/season/cup';
 import { assignmentViews, knowledgeOf, SCOUTS, scoutingStatus } from '@/game/scouting/scouting';
 import { conditionAtKickOff, suspendedAtKickOff, useGameStore } from './game-store';
 
@@ -224,6 +224,7 @@ export function useNextFixture() {
     if (!fixture) return null;
     const nameOf = (id: ClubId) => findClub(database, id)?.name ?? id;
     const venue = fixture.homeId === clubId ? ('home' as const) : ('away' as const);
+    const firstLeg = firstLegOf(season, fixture);
     return {
       fixtureId: fixture.id,
       competitionName: competitionName(database, fixture.competitionId),
@@ -234,6 +235,11 @@ export function useNextFixture() {
       opponentId: venue === 'home' ? fixture.awayId : fixture.homeId,
       homeName: nameOf(fixture.homeId),
       awayName: nameOf(fixture.awayId),
+      /** Second legs: how the first leg ended (as it was played: its home side first). */
+      firstLeg: firstLeg?.result
+        ? { homeName: nameOf(firstLeg.homeId), awayName: nameOf(firstLeg.awayId), score: firstLeg.result.score }
+        : null,
+      penalties: penaltiesRule(season, fixture),
     };
   }, [database, clubId, season]);
 }

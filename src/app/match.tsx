@@ -130,6 +130,8 @@ function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: (
       competitionName={fixture.competitionName}
       roundLabel={fixture.roundLabel}
       isCup={fixture.isCup}
+      penalties={fixture.penalties}
+      firstLeg={fixture.firstLeg}
       date={fixture.date}
       homeName={fixture.homeName}
       awayName={fixture.awayName}

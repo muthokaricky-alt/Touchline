@@ -8,8 +8,11 @@ type FixtureSetupScreenProps = {
   competitionName: string;
   /** "Matchday 3 of 38" or a cup round such as "Quarter-finals". */
   roundLabel: string;
-  /** Cup ties can't end level: a note about penalties is shown. */
   isCup: boolean;
+  /** How penalties can decide it: a level match, a level aggregate (second legs), or not at all. */
+  penalties: 'match' | 'aggregate' | null;
+  /** Second legs: the first leg's result, its home side first. */
+  firstLeg: { homeName: string; awayName: string; score: { home: number; away: number } } | null;
   date: string;
   homeName: string;
   awayName: string;
@@ -23,11 +26,18 @@ type FixtureSetupScreenProps = {
   onBack: () => void;
 };
 
+const PENALTY_NOTES = {
+  match: 'level at full time goes to penalties',
+  aggregate: 'level on aggregate goes to penalties',
+} as const;
+
 /** Pre-match for the user's next competitive fixture: opponent and venue are fixed by the schedule. */
 export function FixtureSetupScreen({
   competitionName,
   roundLabel,
   isCup,
+  penalties,
+  firstLeg,
   date,
   homeName,
   awayName,
@@ -47,7 +57,7 @@ export function FixtureSetupScreen({
       <PageHeader
         overline={`${competitionName} · ${roundLabel}`}
         title={isCup ? 'Cup tie' : 'Match day'}
-        subtitle={isCup ? `${formatMatchDate(date, true)} · level at full time goes to penalties` : formatMatchDate(date, true)}
+        subtitle={[formatMatchDate(date, true), penalties ? PENALTY_NOTES[penalties] : null].filter(Boolean).join(' · ')}
         leading={<IconButton icon="back" accessibilityLabel="Back" onPress={onBack} />}
       />
 
@@ -59,6 +69,11 @@ export function FixtureSetupScreen({
           </AppText>
           <TeamName name={awayName} label="Away" isUser={!userIsHome} />
         </View>
+        {firstLeg ? (
+          <AppText variant="bodyStrong" align="center">
+            First leg: {firstLeg.homeName} {firstLeg.score.home}–{firstLeg.score.away} {firstLeg.awayName}
+          </AppText>
+        ) : null}
         {opponentPreview ? (
           <AppText variant="caption" color="textSecondary" align="center">
             Opponent expected to play {opponentPreview}
