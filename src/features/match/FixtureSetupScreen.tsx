@@ -1,8 +1,11 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, Icon, IconButton, PageHeader, Pill, Screen } from '@/components/ui';
+import { AppText, Button, Card, FormGuide, Icon, IconButton, PageHeader, Pill, Screen } from '@/components/ui';
+import type { ComparisonSide } from '@/game/match/comparison';
 import { spacing } from '@/theme';
-import { formatMatchDate } from '@/utils/format';
+import { formatMatchDate, formatOrdinal } from '@/utils/format';
+
+import { StatsPanel } from './components/StatsPanel';
 
 type FixtureSetupScreenProps = {
   competitionName: string;
@@ -19,6 +22,8 @@ type FixtureSetupScreenProps = {
   userIsHome: boolean;
   teamSummary: string;
   opponentPreview: string | null;
+  /** Both teams side by side (null while it can't be worked out). */
+  comparison: { user: ComparisonSide; opponent: ComparisonSide } | null;
   blockingIssues: readonly string[];
   onKickOff: () => void;
   onEditTeam: () => void;
@@ -44,6 +49,7 @@ export function FixtureSetupScreen({
   userIsHome,
   teamSummary,
   opponentPreview,
+  comparison,
   blockingIssues,
   onKickOff,
   onEditTeam,
@@ -81,6 +87,13 @@ export function FixtureSetupScreen({
         ) : null}
       </Card>
 
+      {comparison ? (
+        <Comparison
+          home={userIsHome ? comparison.user : comparison.opponent}
+          away={userIsHome ? comparison.opponent : comparison.user}
+        />
+      ) : null}
+
       <Card title="Your team" icon="squad" highlighted={!ready}>
         <AppText color="textSecondary">{teamSummary}</AppText>
         {blockingIssues.map((issue) => (
@@ -103,6 +116,44 @@ export function FixtureSetupScreen({
   );
 }
 
+/** The two teams side by side, home on the left (like the scoreboard). */
+function Comparison({ home, away }: { home: ComparisonSide; away: ComparisonSide }) {
+  const rating = (s: ComparisonSide) => (s.averageRating === null ? '–' : s.averageRating.toFixed(1));
+  const position = (s: ComparisonSide) => (s.position === null ? '–' : `${formatOrdinal(s.position)}${s.otherLeagueName ? ` (${s.otherLeagueName})` : ''}`);
+  const total = (home.averageRating ?? 0) + (away.averageRating ?? 0);
+  return (
+    <Card title="How they compare" icon="table">
+      <StatsPanel
+        rows={[{ label: 'Average rating of the XI', home: rating(home), away: rating(away), homeShare: total > 0 ? (home.averageRating ?? 0) / total : 0.5 }]}
+      />
+      <View style={styles.compareRow} accessible accessibilityLabel={`League position: home ${position(home)}, away ${position(away)}`}>
+        <AppText variant="bodyStrong" style={styles.compareSide}>
+          {position(home)}
+        </AppText>
+        <AppText variant="caption" color="textSecondary">
+          League position
+        </AppText>
+        <AppText variant="bodyStrong" align="right" style={styles.compareSide}>
+          {position(away)}
+        </AppText>
+      </View>
+      {home.form.length > 0 || away.form.length > 0 ? (
+        <View style={styles.compareRow}>
+          <View style={styles.compareSide}>
+            <FormGuide results={home.form} />
+          </View>
+          <AppText variant="caption" color="textSecondary">
+            Form
+          </AppText>
+          <View style={[styles.compareSide, styles.alignEnd]}>
+            <FormGuide results={away.form} />
+          </View>
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
 function TeamName({ name, label, isUser }: { name: string; label: string; isUser: boolean }) {
   return (
     <View style={styles.team}>
@@ -122,4 +173,7 @@ const styles = StyleSheet.create({
   team: { flex: 1, alignItems: 'center', gap: spacing.xs },
   issue: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1 },
+  compareRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  compareSide: { flex: 1 },
+  alignEnd: { alignItems: 'flex-end' },
 });

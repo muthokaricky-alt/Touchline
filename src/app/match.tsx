@@ -21,6 +21,7 @@ import { useGameStore } from '@/store/game-store';
 import {
   useLiveMatch,
   useLeagueOpponents,
+  useMatchComparison,
   useNextFixture,
   useOpponentPreview,
   usePlayerNames,
@@ -124,6 +125,7 @@ function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: (
   const fixture = useNextFixture();
   const kickOff = useGameStore((s) => s.kickOff);
   const opponentPreview = useOpponentPreview(fixture?.opponentId ?? null);
+  const comparison = useMatchComparison(fixture?.opponentId ?? null);
   const { teamSummary, blockingIssues } = useTeamReadiness('fixture');
   if (!fixture) return null;
 
@@ -140,6 +142,7 @@ function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: (
       userIsHome={fixture.venue === 'home'}
       teamSummary={teamSummary}
       opponentPreview={opponentPreview}
+      comparison={comparison}
       blockingIssues={blockingIssues}
       onKickOff={kickOff}
       onEditTeam={onEditTeam}

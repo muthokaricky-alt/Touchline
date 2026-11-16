@@ -5,7 +5,7 @@ import { prepareFriendly } from '@/game/match/friendly';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
-import { buildRatingRows, buildStatRows, buildTimeline, matchRatingTone, phaseLabel } from '../timeline';
+import { buildRatingRows, buildStatRows, buildTimeline, matchRatingTone, phaseLabel, scorerLines, type TimelineItem } from '../timeline';
 
 const db = buildFictionalDatabase();
 const USER = 'club_greywater_town';
@@ -14,6 +14,55 @@ const result = simulateMatch(
   prepareFriendly({ db, userClubId: USER, lineup, tactics: DEFAULT_TACTICS, opponentId: 'club_kestrel_bay', venue: 'home', seed: 77 }),
 );
 const timeline = buildTimeline(result, (id) => `Name(${id})`);
+
+describe('substitutions in the feed', () => {
+  it('puts planned changes by one team at the same minute on one line, keyed by the last of them', () => {
+    // A match with two changes by one side at the same minute.
+    for (let seed = 1; seed < 200; seed++) {
+      const r = simulateMatch(
+        prepareFriendly({ db, userClubId: USER, lineup, tactics: DEFAULT_TACTICS, opponentId: 'club_kestrel_bay', venue: 'home', seed }),
+      );
+      const subs = r.events.flatMap((e, index) => (e.type === 'substitution' && e.reason === 'fatigue' ? [{ e, index }] : []));
+      const pair = subs.find((a, i) => subs[i + 1] && subs[i + 1].index === a.index + 1 && subs[i + 1].e.side === a.e.side && subs[i + 1].e.minute === a.e.minute);
+      if (!pair) continue;
+      const second = subs[subs.indexOf(pair) + 1];
+      const items = buildTimeline(r, (id) => `Name(${id})`);
+      const line = items.find((i) => i.text.includes(`Name(${pair.e.onId}) for`))!;
+      expect(line.text).toMatch(/^Substitutions for .+: Name\(plr_\d+\) for Name\(plr_\d+\), Name/);
+      expect(line.text).toContain(`Name(${second.e.onId}) for Name(${second.e.offId})`);
+      expect(Number(line.key)).toBeGreaterThanOrEqual(second.index);
+      return;
+    }
+    throw new Error('No match with two changes at the same minute');
+  });
+});
+
+describe('scorerLines', () => {
+  const goal = (side: 'home' | 'away', scorer: string, clock: string): TimelineItem => ({
+    key: clock,
+    at: { minute: Number.parseInt(clock, 10) },
+    clock,
+    kind: 'goal',
+    side,
+    text: '',
+    score: { home: 0, away: 0 },
+    phase: 'first-half',
+    scorer,
+  });
+
+  it('lists each scorer once with every minute, in the order they first scored, per side', () => {
+    const items = [goal('home', 'Óscar Vidal', "30'"), goal('away', 'Rayan Bonnet', "33'"), goal('home', 'Rick Kyalo', "34'"), goal('home', 'Óscar Vidal', "35'")];
+    expect(scorerLines(items, 'home')).toEqual(["Óscar Vidal 30', 35'", "Rick Kyalo 34'"]);
+    expect(scorerLines(items, 'away')).toEqual(["Rayan Bonnet 33'"]);
+    expect(scorerLines(items.slice(0, 1), 'away')).toEqual([]); // only what has been shown
+  });
+
+  it('names the scorer of every goal in a real match', () => {
+    const goals = timeline.filter((i) => i.kind === 'goal');
+    expect(goals.every((g) => g.scorer?.startsWith('Name(plr_'))).toBe(true);
+    expect(scorerLines(timeline, 'home').length + scorerLines(timeline, 'away').length).toBeLessThanOrEqual(goals.length);
+  });
+});
 
 describe('buildTimeline', () => {
   it('starts with kick-off and ends with full-time', () => {
@@ -27,7 +76,12 @@ describe('buildTimeline', () => {
     const count = (type: string) => result.events.filter((e) => e.type === type).length;
     expect(timeline.filter((i) => i.kind === 'goal')).toHaveLength(count('goal'));
     expect(timeline.filter((i) => i.kind === 'card')).toHaveLength(count('card'));
-    expect(timeline.filter((i) => i.kind === 'substitution')).toHaveLength(count('substitution'));
+    // Every substitution is in the feed, though planned changes at the same minute share a line.
+    const subLines = timeline.filter((i) => i.kind === 'substitution').map((i) => i.text);
+    for (const e of result.events) {
+      if (e.type === 'substitution') expect(subLines.some((t) => t.includes(`Name(${e.onId})`))).toBe(true);
+    }
+    expect(subLines.length).toBeLessThanOrEqual(count('substitution'));
     expect(timeline.length).toBeLessThan(result.events.length);
   });
 

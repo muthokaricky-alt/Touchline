@@ -12,7 +12,7 @@ import type {
 } from '@/data/schemas';
 import { ageOn } from '@/utils/date';
 
-import type { LineupCandidate } from '../lineup';
+import type { Lineup, LineupCandidate } from '../lineup';
 import { POSITION_GROUP, POSITION_GROUP_LABELS, POSITION_GROUP_ORDER, type PositionGroup } from '../positions';
 import { effectiveRating, positionFit, type PositionFit } from './position-fit';
 import { conditionOf, FULLY_FIT, type ConditionState, type PlayerCondition } from '../condition/condition';
@@ -102,6 +102,8 @@ export type SquadPlayerView = {
   condition: PlayerCondition;
   /** Banned from the next fixture. */
   suspended: boolean;
+  /** In the current lineup: starting, on the bench, or neither. */
+  selection: 'starting' | 'bench' | null;
 };
 
 export type SquadGroupView = {
@@ -116,8 +118,11 @@ export function selectSquad(
   onDate: string,
   condition?: ConditionState,
   suspended: ReadonlySet<PlayerId> = new Set(),
+  lineup?: Lineup,
 ): SquadPlayerView[] {
   const numbers = squadNumbers(db);
+  const starting = new Set(lineup ? Object.values(lineup.starters) : []);
+  const bench = new Set(lineup?.substitutes ?? []);
   return selectSquadCandidates(db, clubId).map(({ player, attributes }) => ({
     id: player.id,
     fullName: fullName(player),
@@ -131,6 +136,7 @@ export function selectSquad(
     rating: Math.round(effectiveRating(player, attributes, player.primaryPosition)),
     condition: condition ? conditionOf(condition, player.id) : FULLY_FIT,
     suspended: suspended.has(player.id),
+    selection: starting.has(player.id) ? 'starting' : bench.has(player.id) ? 'bench' : null,
   }));
 }
 

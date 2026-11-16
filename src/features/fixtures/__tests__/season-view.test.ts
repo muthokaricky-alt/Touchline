@@ -7,7 +7,7 @@ import { playUserFixture } from '@/game/season/__fixtures__/play';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
-import { buildCupView, buildLeagueView, competitionOptions } from '../season-view';
+import { buildCupView, buildLeagueView, competitionGroups, competitionOptions } from '../season-view';
 
 /** Full world for the competition list; England only (fast) for the views of played seasons. */
 const world = buildFictionalDatabase();
@@ -20,22 +20,25 @@ for (let i = 0; i < 3; i++) season = playUserFixture(db, season, user).season;
 
 describe('competitionOptions', () => {
   it("lists the user's league first, then the other league, the cup, then the leagues abroad by country", () => {
-    expect(competitionOptions(world, createSeason(world, 2026, 8), USER).map((o) => [o.id, o.kind, o.label])).toEqual([
-      [FIRST, 'league', 'First Division'],
-      ['comp_second_division', 'league', 'Second Division'],
-      ['comp_national_cup', 'cup', 'National Cup'],
-      ['comp_continental_cup', 'cup', 'Continental Cup'],
-      ['comp_kenya_premier', 'league', 'Kenya'],
-      ['comp_kenya_cup', 'cup', 'Kenyan Cup'],
-      ['comp_france_premier', 'league', 'France'],
-      ['comp_france_cup', 'cup', 'French Cup'],
-      ['comp_germany_premier', 'league', 'Germany'],
-      ['comp_germany_cup', 'cup', 'German Cup'],
-      ['comp_italy_premier', 'league', 'Italy'],
-      ['comp_italy_cup', 'cup', 'Italian Cup'],
-      ['comp_spain_premier', 'league', 'Spain'],
-      ['comp_spain_cup', 'cup', 'Spanish Cup'],
+    const options = competitionOptions(world, createSeason(world, 2026, 8), USER);
+    expect(options.map((o) => [o.id, o.kind, o.label, o.group])).toEqual([
+      [FIRST, 'league', 'First Division', 'England'],
+      ['comp_second_division', 'league', 'Second Division', 'England'],
+      ['comp_national_cup', 'cup', 'National Cup', 'England'],
+      ['comp_continental_cup', 'cup', 'Continental Cup', 'Continental'],
+      ['comp_kenya_premier', 'league', 'Kenyan Premier Division', 'Kenya'],
+      ['comp_kenya_cup', 'cup', 'Kenyan Cup', 'Kenya'],
+      ['comp_france_premier', 'league', 'French Premier Division', 'France'],
+      ['comp_france_cup', 'cup', 'French Cup', 'France'],
+      ['comp_germany_premier', 'league', 'German Premier Division', 'Germany'],
+      ['comp_germany_cup', 'cup', 'German Cup', 'Germany'],
+      ['comp_italy_premier', 'league', 'Italian Premier Division', 'Italy'],
+      ['comp_italy_cup', 'cup', 'Italian Cup', 'Italy'],
+      ['comp_spain_premier', 'league', 'Spanish Premier Division', 'Spain'],
+      ['comp_spain_cup', 'cup', 'Spanish Cup', 'Spain'],
     ]);
+    // The first row of chips: seven short groups instead of 14 competitions.
+    expect(competitionGroups(options)).toEqual(['England', 'Continental', 'Kenya', 'France', 'Germany', 'Italy', 'Spain']);
   });
 });
 
@@ -88,22 +91,24 @@ describe('buildCupView', () => {
 describe('competitionOptions for a manager abroad', () => {
   it('lists his league first, then England (leagues and cup), then the other countries', () => {
     const season = createSeason(world, 2026, 9);
-    expect(competitionOptions(world, season, 'club_ndom_fc').map((o) => o.label)).toEqual([
+    const options = competitionOptions(world, season, 'club_ndom_fc');
+    expect(options.map((o) => o.label)).toEqual([
       'Kenyan Premier Division',
       'Kenyan Cup',
       'Continental Cup',
-      'First Div',
-      'Second Div',
+      'First Division',
+      'Second Division',
       'National Cup',
-      'France',
+      'French Premier Division',
       'French Cup',
-      'Germany',
+      'German Premier Division',
       'German Cup',
-      'Italy',
+      'Italian Premier Division',
       'Italian Cup',
-      'Spain',
+      'Spanish Premier Division',
       'Spanish Cup',
     ]);
+    expect(competitionGroups(options)).toEqual(['Kenya', 'Continental', 'England', 'France', 'Germany', 'Italy', 'Spain']);
   });
 });
 

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, 2D passing play, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, 2D passing play, a UI/UX review, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1151,6 +1151,38 @@ with a mouse, a finger and a screen reader, and needs no gesture library).
   showed it pushed the pitch ~130 px down, so the second tap would land on
   a different player.
 
+### UI/UX review (after Milestone 10)
+
+Method: full-page screenshots of every screen at 412px after three
+matches, a list of problems, the user chose all seven fixes.
+
+- **Scoreboard:** kit-colour dot beside each team (whose dots are whose on
+  the 2D pitch; also on the full-screen bar) and the scorers under the
+  score, from the items shown so far (`scorerLines`, so a replay never
+  gives a goal away). Goal items carry `scorer`.
+- **Match report:** your timeline / stats / ratings first, "Other results"
+  after them. Planned substitutions by one team at the same minute share a
+  line ("Substitutions for X: A for B, C for D."), keyed by the last event
+  so the 2D pitch shows both changes; injury and keeper changes stay
+  separate. Live and report alike (8 lines became 4 in the test match).
+- **Pre-match "How they compare"** (`game/match/comparison.ts`, pure):
+  average rating of both expected XIs (the AI's pick against the user's
+  current lineup, as the "expected to play" line), league position (with
+  the league named for a cup opponent from elsewhere) and form.
+- **Fixtures tab:** a row of groups (the user's country first, then
+  "Continental", then the other countries) and a row of the chosen group's
+  competitions, with full names (16 chips in one list filled a third of a
+  phone screen). `CompetitionOption.group`, `competitionGroups`.
+- **Transfer market:** `maxValue: 'budget'` (read from the club when
+  searching, so it follows the budget after a signing) is the default
+  ("Affordable"); `affordable` on each result and an "Over budget" pill;
+  name search ignoring capitals and accents (`normalize('NFD')`).
+- **Squad list:** XI / SUB pills (`selection` on `SquadPlayerView`, from
+  the lineup), also read out by screen readers.
+- **New career:** `Screen` got an optional `footer` that stays put while
+  the content scrolls; the chosen club, the board's target and Start career
+  live there instead of a card above the club list.
+
 ### The website (after Milestone 10)
 
 Decisions (user): phone app first, then the website (both); hosting on
@@ -1763,6 +1795,17 @@ drawn, aggregates shown. Zero console errors, no overflow.
   Chrome screenshots every 0.6 s: passes between teammates, both teams
   shifting, a turnover; a full match in 90 s to the report, goal banner.
   Zero console errors.
+
+### UI/UX review ✅
+- Seven fixes above. Tests: scorer lines, merged substitutions,
+  `matchComparison` (scale, no form before a ball is kicked, other league,
+  form after a result), groups on the Fixtures tab, affordable default and
+  name search, XI/SUB selection. Everyday suite 949.
+- Verified: `tsc` clean, lint clean, tests pass, web export; headless
+  Chrome screenshots at 412px of each changed screen (new career footer,
+  live scoreboard with kit dots and scorer during the goal banner, report
+  order and merged substitutions, pre-match comparison, Fixtures rows,
+  Affordable market, XI/SUB tags). Zero console errors.
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European

@@ -25,27 +25,40 @@ export function NewCareerScreen({ leagues, onStart }: NewCareerScreenProps) {
   const chosenLeague = leagues.find((l) => l.clubs.some((c) => c.id === clubId));
   const ready = name.trim().length > 0 && chosen !== null;
 
-  return (
-    <Screen bottomInset>
-      <PageHeader overline="Touchline" title="New career" subtitle="Choose your name and the club you want to manage" />
-      <Card title="Manager" icon="person">
-        <TextField label="Your name" value={name} onChangeText={setName} placeholder="e.g. Alex Kamau" maxLength={30} />
-      </Card>
-
-      <Card title="Your choice" icon="club" highlighted={chosen !== null}>
+  // The choice and the button stay at the bottom, so picking a club far down the list never means scrolling back up.
+  const footer = (
+    <View style={styles.footer} accessibilityLiveRegion="polite">
+      <View style={styles.flex}>
         {chosen ? (
           <>
-            <AppText variant="bodyStrong">
+            <AppText variant="bodyStrong" numberOfLines={1}>
               {chosen.name}
               {chosenLeague ? ` · ${chosenLeague.leagueName}` : ''}
             </AppText>
-            <AppText color="textSecondary">The board expects: {chosen.expectation.toLowerCase()}.</AppText>
+            <AppText variant="caption" color="textSecondary" numberOfLines={1}>
+              The board expects: {chosen.expectation.toLowerCase()}
+            </AppText>
           </>
         ) : (
-          <AppText color="textSecondary">Pick a club below. Bigger clubs have better squads, and higher expectations.</AppText>
+          <AppText variant="caption" color="textSecondary">
+            {name.trim() ? 'Pick a club. Bigger clubs have better squads, and higher expectations.' : 'Enter your name and pick a club.'}
+          </AppText>
         )}
-        {error ? <AppText color="warning">{error}</AppText> : null}
-        <Button label="Start career" icon="check" disabled={!ready} onPress={() => clubId && setError(onStart(name, clubId))} />
+        {error ? (
+          <AppText variant="caption" color="warning">
+            {error}
+          </AppText>
+        ) : null}
+      </View>
+      <Button label="Start career" icon="check" disabled={!ready} onPress={() => clubId && setError(onStart(name, clubId))} />
+    </View>
+  );
+
+  return (
+    <Screen bottomInset footer={footer}>
+      <PageHeader overline="Touchline" title="New career" subtitle="Choose your name and the club you want to manage" />
+      <Card title="Manager" icon="person">
+        <TextField label="Your name" value={name} onChangeText={setName} placeholder="e.g. Alex Kamau" maxLength={30} />
       </Card>
 
       <ChoiceChips options={countries} value={country} onChange={setCountry} accessibilityLabel="Country" />
@@ -82,4 +95,6 @@ const styles = StyleSheet.create({
   columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, alignItems: 'flex-start' },
   column: { flexGrow: 1, flexBasis: 340, minWidth: 0 },
   trailing: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  flex: { flex: 1, minWidth: 0 },
 });

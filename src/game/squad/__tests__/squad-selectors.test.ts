@@ -46,6 +46,14 @@ describe('selectSquad', () => {
   it('returns an empty list for an unknown club', () => {
     expect(selectSquad(db, 'club_nowhere', DATE)).toEqual([]);
   });
+
+  it('marks who starts and who is on the bench (nobody without a lineup)', () => {
+    expect(squad.every((p) => p.selection === null)).toBe(true);
+    const tagged = selectSquad(db, CLUB, DATE, undefined, undefined, lineup);
+    expect(tagged.filter((p) => p.selection === 'starting').map((p) => p.id).sort()).toEqual(Object.values(lineup.starters).sort());
+    expect(tagged.filter((p) => p.selection === 'bench').map((p) => p.id).sort()).toEqual([...lineup.substitutes].sort());
+    expect(tagged.filter((p) => p.selection === null)).toHaveLength(22 - 11 - lineup.substitutes.length);
+  });
 });
 
 describe('groupSquad', () => {

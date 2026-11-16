@@ -6,6 +6,7 @@ import { availabilityFrom, conditionOn } from '@/game/condition/condition';
 import { selectProspects } from '@/game/development/training-view';
 import { selectBoardView, selectSeasonEndView } from '@/game/career/career-view';
 import { lineupStrength } from '@/game/match/build-match-team';
+import { matchComparison } from '@/game/match/comparison';
 import { competitionName, isSeasonComplete, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
 import { MAX_SQUAD, MIN_USER_SQUAD, releaseCost, renewalYears, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
 import { liveOffers } from '@/game/transfers/offers';
@@ -105,7 +106,11 @@ export function useSquadGroups() {
   const date = useGameStore((s) => s.currentDate);
   const today = useConditionToday();
   const suspended = useSuspendedAtKickOff();
-  return useMemo(() => groupSquad(selectSquad(database, clubId, date, today, suspended)), [database, clubId, date, today, suspended]);
+  const lineup = useGameStore((s) => s.lineup);
+  return useMemo(
+    () => groupSquad(selectSquad(database, clubId, date, today, suspended, lineup)),
+    [database, clubId, date, today, suspended, lineup],
+  );
 }
 
 export function usePlayerProfile(playerId: PlayerId) {
@@ -212,6 +217,18 @@ export function useOpponentPreview(opponentId: ClubId | null) {
     const ai = buildAiTeam(database, opponentId, lineupStrength(lineup, selectSquadCandidates(database, clubId)));
     return `${ai.lineup.formationId} · ${matchPlayingStyle(ai.tactics)?.name ?? 'Custom'}`;
   }, [database, clubId, lineup, opponentId]);
+}
+
+/** Both teams side by side before kick-off (average rating of the XI, league position, form). */
+export function useMatchComparison(opponentId: ClubId | null) {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const season = useGameStore((s) => s.season);
+  const lineup = useGameStore((s) => s.lineup);
+  return useMemo(
+    () => (opponentId ? matchComparison(database, season, clubId, lineup, opponentId) : null),
+    [database, season, clubId, lineup, opponentId],
+  );
 }
 
 /** The user's next fixture in any competition, shaped for the pre-match screen, or null when they have none left. */

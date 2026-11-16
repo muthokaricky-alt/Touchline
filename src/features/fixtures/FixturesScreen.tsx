@@ -7,7 +7,7 @@ import { spacing } from '@/theme';
 
 import { LeagueTable } from './components/LeagueTable';
 import { FixtureRow, MatchdayPager } from './components/MatchdayCard';
-import type { CompetitionOption, CupView, LeaderRowView, LeagueView } from './season-view';
+import { competitionGroups, type CompetitionOption, type CupView, type LeaderRowView, type LeagueView } from './season-view';
 
 type LeagueTab = 'fixtures' | 'table' | 'stats';
 
@@ -27,15 +27,26 @@ type FixturesScreenProps = {
 
 /** The season: pick a competition; leagues show fixtures / table / stats, the cup shows its rounds. */
 export function FixturesScreen({ seasonLabel, options, selected, onSelect, view }: FixturesScreenProps) {
+  // Two short rows instead of one long one: the country (or Continental), then its competitions.
+  const group = options.find((o) => o.id === selected)?.group ?? options[0]?.group;
+  const inGroup = options.filter((o) => o.group === group);
   return (
     <Screen>
       <PageHeader overline={`Season ${seasonLabel}`} title="Fixtures & tables" />
       <ChoiceChips
-        options={options.map((o) => ({ value: o.id, label: o.label }))}
-        value={selected}
-        onChange={onSelect}
-        accessibilityLabel="Competition"
+        options={competitionGroups(options).map((g) => ({ value: g, label: g }))}
+        value={group}
+        onChange={(g) => onSelect(options.find((o) => o.group === g)!.id)}
+        accessibilityLabel="Country"
       />
+      {inGroup.length > 1 ? (
+        <ChoiceChips
+          options={inGroup.map((o) => ({ value: o.id, label: o.label }))}
+          value={selected}
+          onChange={onSelect}
+          accessibilityLabel="Competition"
+        />
+      ) : null}
       {/* key: switching competition resets the inner tab and matchday state. */}
       {view.kind === 'league' ? <LeagueSection key={selected} view={view} /> : <CupSection view={view} />}
     </Screen>

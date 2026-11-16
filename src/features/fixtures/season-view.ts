@@ -1,4 +1,5 @@
 import type { ClubId, CompetitionId, GameDatabase } from '@/data/schemas';
+import { countryName } from '@/data/fictional';
 import { formatMatchDate } from '@/utils/format';
 import {
   aggregateScore,
@@ -29,7 +30,11 @@ import { fullName } from '@/game/squad/squad-selectors';
 
 /** View models for the Fixtures tab: competition picker, league view, cup view. Pure. */
 
-export type CompetitionOption = { id: CompetitionId; label: string; kind: 'league' | 'cup' };
+/** `group`: the country ("England") or "Continental": the Fixtures tab picks a group, then a competition in it. */
+export type CompetitionOption = { id: CompetitionId; label: string; kind: 'league' | 'cup'; group: string };
+
+/** Continental competitions' group on the Fixtures tab. */
+export const CONTINENTAL_GROUP = 'Continental';
 
 export type FixtureRowView = {
   id: string;
@@ -77,9 +82,10 @@ export type CupView = {
 
 /**
  * Grouped by country: the user's country first (their league first, then
- * the country's other leagues, then its cup), then the other countries in
- * season order. Other countries' leagues are labelled by their short name
- * ("Kenya", "First Div"), so the chips fit on a phone.
+ * the country's other leagues, then its cup), the Continental Cup, then the
+ * other countries in season order. Each option names its group, so the
+ * screen can show a short row of groups and the chosen group's
+ * competitions (16 chips in one list filled a third of a phone screen).
  */
 export function competitionOptions(db: GameDatabase, season: Season, userClubId: ClubId): CompetitionOption[] {
   const userLeague = leagueOfClub(season, userClubId);
@@ -93,19 +99,24 @@ export function competitionOptions(db: GameDatabase, season: Season, userClubId:
   // Cups that belong to no country (the Continental Cup) come right after the user's country.
   const international = season.cups
     .filter((cup) => !countries.includes(competition(cup.competitionId)?.country ?? ''))
-    .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const }));
+    .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const, group: CONTINENTAL_GROUP }));
   return countries.flatMap((country, index) => {
-    const label = (id: CompetitionId) => (country === homeCountry ? competitionName(db, id) : (competition(id)?.shortName ?? competitionName(db, id)));
+    const group = countryName(country);
     return [
       ...leagues
         .filter((l) => competition(l.competitionId)?.country === country)
-        .map((l) => ({ id: l.competitionId, label: label(l.competitionId), kind: 'league' as const })),
+        .map((l) => ({ id: l.competitionId, label: competitionName(db, l.competitionId), kind: 'league' as const, group })),
       ...season.cups
         .filter((cup) => competition(cup.competitionId)?.country === country)
-        .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const })),
+        .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const, group })),
       ...(index === 0 ? international : []),
     ];
   });
+}
+
+/** The groups in order of first appearance (the user's country first). */
+export function competitionGroups(options: readonly CompetitionOption[]): string[] {
+  return [...new Set(options.map((o) => o.group))];
 }
 
 /**

@@ -8,10 +8,12 @@ import {
   IconButton,
   ListRow,
   PageHeader,
+  Pill,
   PositionBadge,
   RatingBadge,
   Screen,
   StatTile,
+  TextField,
 } from '@/components/ui';
 import type { PlayerId } from '@/data/schemas';
 import type { MarketFilters, MarketPlayerView, MarketScope } from '@/game/transfers/market';
@@ -50,11 +52,16 @@ const GROUPS: readonly { value: PositionGroup | 'all'; label: string }[] = [
   { value: 'attackers', label: 'ATT' },
 ];
 const VALUE_CAPS = [
-  { value: 'any', label: 'Any value' },
+  { value: 'budget', label: 'Affordable' },
   { value: '1000000', label: '≤ €1M' },
   { value: '5000000', label: '≤ €5M' },
-  { value: '15000000', label: '≤ €15M' },
+  { value: 'any', label: 'Any value' },
 ] as const;
+
+type ValueCap = (typeof VALUE_CAPS)[number]['value'];
+const capOf = (maxValue: MarketFilters['maxValue']): ValueCap =>
+  maxValue === null ? 'any' : maxValue === 'budget' ? 'budget' : (String(maxValue) as ValueCap);
+const maxValueOf = (cap: ValueCap): MarketFilters['maxValue'] => (cap === 'any' ? null : cap === 'budget' ? 'budget' : Number(cap));
 
 /** Transfer market: window status, budgets, filters and the best matching players. */
 export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack, scopes, scouting }: TransfersScreenProps) {
@@ -107,12 +114,19 @@ export function TransfersScreen({ budget, filters, onFiltersChange, results, onP
       </Card>
 
       <Card title="Search" icon="squad">
+        <TextField
+          label="Name"
+          value={filters.name}
+          onChangeText={(name) => onFiltersChange({ ...filters, name })}
+          placeholder="Search by name"
+          maxLength={40}
+        />
         <ChoiceChips options={GROUPS} value={filters.group} onChange={(group) => onFiltersChange({ ...filters, group })} accessibilityLabel="Position" />
         <ChoiceChips options={scopes} value={filters.scope} onChange={(scope) => onFiltersChange({ ...filters, scope })} accessibilityLabel="Where" />
         <ChoiceChips
           options={VALUE_CAPS}
-          value={filters.maxValue === null ? 'any' : (String(filters.maxValue) as (typeof VALUE_CAPS)[number]['value'])}
-          onChange={(v) => onFiltersChange({ ...filters, maxValue: v === 'any' ? null : Number(v) })}
+          value={capOf(filters.maxValue)}
+          onChange={(cap) => onFiltersChange({ ...filters, maxValue: maxValueOf(cap) })}
           accessibilityLabel="Maximum value"
         />
       </Card>
@@ -137,6 +151,7 @@ export function TransfersScreen({ budget, filters, onFiltersChange, results, onP
                 leading={<PositionBadge position={p.position} />}
                 trailing={
                   <View style={styles.trailing}>
+                    {p.affordable ? null : <Pill label="Over budget" tone="danger" />}
                     <RatingBadge value={p.rating} label="Rating" />
                     <Icon name="chevronRight" size={16} color="textMuted" />
                   </View>

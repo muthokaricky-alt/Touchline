@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, Icon, ListRow, PageHeader, PositionBadge, RatingBadge, Screen } from '@/components/ui';
+import { AppText, Button, Card, Icon, ListRow, PageHeader, Pill, PositionBadge, RatingBadge, Screen } from '@/components/ui';
 import type { PlayerId } from '@/data/schemas';
 import type { SquadGroupView, SquadPlayerView } from '@/game/squad/squad-selectors';
 import { spacing } from '@/theme';
@@ -52,7 +52,7 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
       subtitle={`${player.age} yrs · ${player.nationality}${also}`}
       divider={divider}
       onPress={onPress}
-      accessibilityLabel={`${player.fullName}, number ${player.squadNumber ?? 'none'}, ${player.primaryPosition}, age ${player.age}, rating ${player.rating}${player.condition.injury ? ', injured' : player.suspended ? ', suspended' : `, ${player.condition.fitness}% fit`}`}
+      accessibilityLabel={`${player.fullName}, number ${player.squadNumber ?? 'none'}, ${player.primaryPosition}, age ${player.age}, rating ${player.rating}${player.condition.injury ? ', injured' : player.suspended ? ', suspended' : `, ${player.condition.fitness}% fit`}${player.selection === 'starting' ? ', in the starting XI' : player.selection === 'bench' ? ', on the bench' : ''}`}
       accessibilityHint="Opens the player profile"
       leading={
         <View style={styles.leading}>
@@ -64,6 +64,7 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
       }
       trailing={
         <View style={styles.trailing}>
+          {player.selection ? <Pill label={player.selection === 'starting' ? 'XI' : 'SUB'} tone={player.selection === 'starting' ? 'accent' : 'neutral'} /> : null}
           <ConditionTag fitness={player.condition.fitness} injured={player.condition.injury !== null} suspended={player.suspended} />
           <RatingBadge value={player.rating} label="Rating" />
           <Icon name="chevronRight" size={16} color="textMuted" />

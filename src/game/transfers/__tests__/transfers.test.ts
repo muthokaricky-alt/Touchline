@@ -155,7 +155,7 @@ describe('searchMarket', () => {
   const season = createSeason(db, 2026, 1);
 
   it("never lists the user's own players and ranks by ability", () => {
-    const results = searchMarket(db, season, USER, DEFAULT_FILTERS, SUMMER);
+    const results = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, maxValue: null }, SUMMER);
     expect(results.length).toBe(50);
     const own = new Set(db.contracts.filter((c) => c.clubId === USER).map((c) => c.playerId));
     results.forEach((r) => expect(own.has(r.id)).toBe(false));
@@ -175,6 +175,28 @@ describe('searchMarket', () => {
     const second = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, scope: 'league:comp_second_division' }, SUMMER, 2000);
     const secondClubs = new Set(season.leagues[1].clubIds.map((id) => club(id).name));
     expect(second.every((p) => p.clubName !== null && secondClubs.has(p.clubName))).toBe(true);
+  });
+});
+
+describe('searchMarket: affordable by default, and by name', () => {
+  const season = createSeason(db, 2026, 1);
+  const budget = club(USER).finances.transferBudget;
+
+  it('starts with players within the transfer budget, and marks the rest as over budget', () => {
+    const results = searchMarket(db, season, USER, DEFAULT_FILTERS, SUMMER);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((p) => p.value <= budget && p.affordable)).toBe(true);
+    const everyone = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, maxValue: null }, SUMMER);
+    expect(everyone.some((p) => !p.affordable)).toBe(true);
+    expect(everyone.every((p) => p.affordable === p.value <= budget)).toBe(true);
+  });
+
+  it('finds players by part of their name, ignoring capitals and accents', () => {
+    const accented = db.players.find((p) => /[À-ÿ]/.test(p.firstName + p.lastName) && db.contracts.find((c) => c.playerId === p.id)?.clubId !== USER)!;
+    const query = `${accented.firstName} ${accented.lastName}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().slice(0, 6);
+    const found = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, maxValue: null, name: query }, SUMMER, 5000);
+    expect(found.some((p) => p.id === accented.id)).toBe(true);
+    expect(searchMarket(db, season, USER, { ...DEFAULT_FILTERS, maxValue: null, name: 'zzzz' }, SUMMER)).toEqual([]);
   });
 });
 

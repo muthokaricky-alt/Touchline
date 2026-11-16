@@ -11,7 +11,7 @@ import { Pitch2D, PITCH_RATIO, type Kit } from './components/Pitch2D';
 import { RatingsList } from './components/RatingsList';
 import { Scoreboard } from './components/Scoreboard';
 import { StatsPanel } from './components/StatsPanel';
-import { phaseLabel, type RatingRow, type StatRow, type TimelineItem } from './timeline';
+import { phaseLabel, scorerLines, type RatingRow, type StatRow, type TimelineItem } from './timeline';
 import { BUILD_UP_STEP_MS, PASS_STEP_MS, type PitchFrame } from './pitch2d';
 import { useMatchView, type MatchViewMode } from './use-match-view';
 import { useReplay } from './use-replay';
@@ -217,7 +217,8 @@ export function MatchCentreScreen({
         onTogglePlaying={replay.togglePlaying}
         onSkip={replay.skipToEnd}
         onManage={live ? manage : undefined}
-        onExit={matchView.exitFullScreen}>
+        onExit={matchView.exitFullScreen}
+        kitColours={{ home: pitch!.kits.home.fill, away: pitch!.kits.away.fill }}>
         <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} />
       </FullScreenMatch>
     );
@@ -238,6 +239,8 @@ export function MatchCentreScreen({
         clock={current.clock}
         status={!replay.finished && !replay.playing ? 'Paused' : phaseLabel(current.phase)}
         live={replay.playing && current.phase !== 'half-time'}
+        kitColours={pitch ? { home: pitch.kits.home.fill, away: pitch.kits.away.fill } : undefined}
+        scorers={{ home: scorerLines(shown, 'home'), away: scorerLines(shown, 'away') }}
       />
 
       {!replay.finished && managing && renderManagement ? (
@@ -289,24 +292,6 @@ export function MatchCentreScreen({
               Player of the match: <AppText variant="bodyStrong">{playerOfTheMatch}</AppText>
             </AppText>
           ) : null}
-          {otherResults && otherResults.length > 0 ? (
-            <Card title="Other results" icon="fixtures">
-              {otherResults.map((r) => (
-                <View key={r.key} style={styles.result} accessible accessibilityLabel={`${r.homeName} ${r.score.home}, ${r.awayName} ${r.score.away}`}>
-                  <AppText style={styles.resultTeam} numberOfLines={1} align="right">
-                    {r.homeName}
-                  </AppText>
-                  <AppText variant="bodyStrong" style={styles.resultScore}>
-                    {r.score.home} – {r.score.away}
-                    {r.penalties ? ` (${r.penalties.home}–${r.penalties.away}p)` : ''}
-                  </AppText>
-                  <AppText style={styles.resultTeam} numberOfLines={1}>
-                    {r.awayName}
-                  </AppText>
-                </View>
-              ))}
-            </Card>
-          ) : null}
           <SegmentedControl segments={REPORT_SEGMENTS} value={view} onChange={setView} accessibilityLabel="Match report" />
           {view === 'timeline' ? (
             <Card>
@@ -326,6 +311,25 @@ export function MatchCentreScreen({
               </Card>
             </View>
           )}
+          {/* Your match first; the rest of the round after it. */}
+          {otherResults && otherResults.length > 0 ? (
+            <Card title="Other results" icon="fixtures">
+              {otherResults.map((r) => (
+                <View key={r.key} style={styles.result} accessible accessibilityLabel={`${r.homeName} ${r.score.home}, ${r.awayName} ${r.score.away}`}>
+                  <AppText style={styles.resultTeam} numberOfLines={1} align="right">
+                    {r.homeName}
+                  </AppText>
+                  <AppText variant="bodyStrong" style={styles.resultScore}>
+                    {r.score.home} – {r.score.away}
+                    {r.penalties ? ` (${r.penalties.home}–${r.penalties.away}p)` : ''}
+                  </AppText>
+                  <AppText style={styles.resultTeam} numberOfLines={1}>
+                    {r.awayName}
+                  </AppText>
+                </View>
+              ))}
+            </Card>
+          ) : null}
           <View style={styles.controls}>
             <View style={styles.flex}>
               <Button label="Done" variant="secondary" onPress={onDone} />
@@ -352,6 +356,7 @@ type FullScreenMatchProps = {
   onSkip: () => void;
   onManage?: () => void;
   onExit: () => void;
+  kitColours: { home: string; away: string };
   children: ReactNode;
 };
 
@@ -360,7 +365,21 @@ type FullScreenMatchProps = {
  * proportions), a slim scoreboard, the latest commentary line as a caption,
  * and the replay controls.
  */
-function FullScreenMatch({ homeName, awayName, score, clock, caption, status, playing, onTogglePlaying, onSkip, onManage, onExit, children }: FullScreenMatchProps) {
+function FullScreenMatch({
+  homeName,
+  awayName,
+  score,
+  clock,
+  caption,
+  status,
+  playing,
+  onTogglePlaying,
+  onSkip,
+  onManage,
+  onExit,
+  kitColours,
+  children,
+}: FullScreenMatchProps) {
   const [area, setArea] = useState({ width: 0, height: 0 });
   const onLayout = (e: LayoutChangeEvent) => setArea({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
   const pitchWidth = Math.min(area.width, area.height * PITCH_RATIO);
@@ -368,9 +387,12 @@ function FullScreenMatch({ homeName, awayName, score, clock, caption, status, pl
   return (
     <SafeAreaView style={styles.fullScreen} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.fullTopBar}>
-        <AppText variant="bodyStrong" numberOfLines={1} style={styles.flex} accessibilityLiveRegion="polite">
+        <View style={[styles.kitDot, { backgroundColor: kitColours.home }]} />
+        <AppText variant="bodyStrong" numberOfLines={1} style={styles.fullScore} accessibilityLiveRegion="polite">
           {homeName} {score.home} – {score.away} {awayName}
         </AppText>
+        <View style={[styles.kitDot, { backgroundColor: kitColours.away }]} />
+        <View style={styles.flex} />
         <AppText variant="caption" color="textSecondary">
           {clock} · {status}
         </AppText>
@@ -396,6 +418,8 @@ const styles = StyleSheet.create({
   fullScreen: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.md, gap: spacing.sm },
   fullTopBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingTop: spacing.xs },
   fullPitchArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  fullScore: { flexShrink: 1 },
+  kitDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: colors.borderStrong },
   fullBottomBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.xs },
   controls: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },

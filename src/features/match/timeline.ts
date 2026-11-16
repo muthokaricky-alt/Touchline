@@ -22,6 +22,8 @@ export type TimelineItem = {
   score: Score;
   /** Phase of the match once this item has happened. */
   phase: 'first-half' | 'half-time' | 'second-half' | 'full-time';
+  /** Goals only: who scored (for the scorers under the scoreboard). */
+  scorer?: string;
 };
 
 /** Shots worth showing: on target, blocked, or a decent chance that went wide. */
@@ -63,10 +65,28 @@ export function buildTimeline(result: MatchResult, playerName: (id: PlayerId) =>
   let score: Score = { home: 0, away: 0 };
   const items: TimelineItem[] = [];
 
+  // Planned changes (not injuries or keepers) by the same team at the same minute become one line.
+  // `changes`: the last item, if it's such a line, with the changes it lists so far.
+  let changes: { at: number; parts: string[] } | null = null;
+
   result.events.forEach((event, index) => {
     if (event.type === 'goal') score = event.score;
     const kind = kindOf(event);
     if (!kind) return;
+    const planned = event.type === 'substitution' && (event.reason === 'fatigue' || event.reason === 'manager');
+    if (planned) {
+      const part = `${playerName(event.onId)} for ${playerName(event.offId)}`;
+      const last = items.at(-1);
+      if (changes && changes.at === items.length - 1 && last?.side === event.side && last.clock === formatClock(event)) {
+        changes.parts.push(part);
+        // The merged line takes the later event's key, so the 2D pitch shows both changes made.
+        items[changes.at] = { ...last, key: `${index}`, text: `Substitutions for ${ctx.teamName(event.side)}: ${changes.parts.join(', ')}.` };
+        return;
+      }
+      changes = { at: items.length, parts: [part] };
+    } else {
+      changes = null;
+    }
     items.push({
       key: `${index}`,
       at: event.addedTime ? { minute: event.minute, addedTime: event.addedTime } : { minute: event.minute },
@@ -76,9 +96,24 @@ export function buildTimeline(result: MatchResult, playerName: (id: PlayerId) =>
       text: describeEvent(event, ctx),
       score,
       phase: phaseOf(event),
+      ...(event.type === 'goal' ? { scorer: playerName(event.scorerId) } : {}),
     });
   });
   return items;
+}
+
+/**
+ * The scorers so far for one side, for the scoreboard: one line per player
+ * in the order they first scored, with every minute ("Óscar Vidal 30', 35'").
+ * Built from the items shown, so a replay never gives a goal away early.
+ */
+export function scorerLines(items: readonly TimelineItem[], side: Side): string[] {
+  const minutes = new Map<string, string[]>();
+  for (const item of items) {
+    if (item.kind !== 'goal' || item.side !== side || !item.scorer) continue;
+    minutes.set(item.scorer, [...(minutes.get(item.scorer) ?? []), item.clock]);
+  }
+  return [...minutes].map(([name, clocks]) => `${name} ${clocks.join(', ')}`);
 }
 
 export type StatRow = { label: string; home: string; away: string; /** Home share 0–1, for the bar. */ homeShare: number };

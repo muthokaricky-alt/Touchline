@@ -18,11 +18,21 @@ export type MarketFilters = {
   group: PositionGroup | 'all';
   scope: MarketScope;
   maxAge: number | null;
-  /** Upper bound on market value (free agents always pass). */
-  maxValue: number | null;
+  /**
+   * Upper bound on market value (free agents always pass): an amount, or
+   * 'budget' for the user's transfer budget as it is now (so the filter
+   * follows the budget after a signing).
+   */
+  maxValue: number | 'budget' | null;
+  /** Part of the player's name; capitals and accents don't matter ("oscar" finds Óscar). */
+  name: string;
 };
 
-export const DEFAULT_FILTERS: MarketFilters = { group: 'all', scope: 'all', maxAge: null, maxValue: null };
+/** Players the user can afford, first: a list of stars costing ten times the budget isn't a useful start. */
+export const DEFAULT_FILTERS: MarketFilters = { group: 'all', scope: 'all', maxAge: null, maxValue: 'budget', name: '' };
+
+/** Lower case without accents, for name search. */
+const plain = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 export type MarketPlayerView = {
   id: PlayerId;
@@ -35,6 +45,8 @@ export type MarketPlayerView = {
   clubShortName: string | null;
   /** 0 for free agents. */
   value: number;
+  /** The value is within the user's transfer budget (always true for free agents). */
+  affordable: boolean;
   /** Current wage, or what a free agent would ask from the user's club. */
   weeklyWage: number;
   contractEnds: string | null;
@@ -55,6 +67,9 @@ export function searchMarket(
   const scopeLeague = filters.scope.startsWith('league:') ? filters.scope.slice('league:'.length) : null;
   const userRep = clubs.get(userClubId)?.reputation ?? 10;
   const userCountry = clubs.get(userClubId)?.country;
+  const budget = clubs.get(userClubId)?.finances.transferBudget ?? 0;
+  const maxValue = filters.maxValue === 'budget' ? budget : filters.maxValue;
+  const wanted = plain(filters.name.trim());
 
   const views: MarketPlayerView[] = [];
   for (const player of db.players) {
@@ -66,12 +81,13 @@ export function searchMarket(
     if (filters.scope === 'abroad' && (!contract || clubs.get(contract.clubId)?.country === userCountry)) continue;
     const age = ageAt(player, date);
     if (filters.maxAge !== null && age > filters.maxAge) continue;
+    if (wanted && !plain(fullName(player)).includes(wanted)) continue;
 
     const attrs = attributes.get(player.id);
     if (!attrs) continue;
     const ability = playerAbility(player, attrs);
     const value = contract ? marketValue({ ability, age, yearsLeft: contractYearsLeft(contract, date), potential: player.potential }) : 0;
-    if (filters.maxValue !== null && value > filters.maxValue) continue;
+    if (maxValue !== null && value > maxValue) continue;
 
     const club = contract ? clubs.get(contract.clubId) : undefined;
     views.push({
@@ -83,6 +99,7 @@ export function searchMarket(
       clubName: club?.name ?? null,
       clubShortName: club?.shortName ?? null,
       value,
+      affordable: value <= budget,
       weeklyWage: contract ? contract.weeklyWage : wageDemand({ ability, clubReputation: userRep, currentWage: null }),
       contractEnds: contract?.endDate ?? null,
     });
