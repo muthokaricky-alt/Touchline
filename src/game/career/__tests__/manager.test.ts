@@ -1,4 +1,5 @@
 import { buildFictionalDatabase } from '@/data/fictional';
+import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { createRng } from '@/utils/random';
 import { createSeason, playRemaining } from '@/game/season/season-flow';
 
@@ -95,7 +96,9 @@ describe('board confidence', () => {
 
 describe('matchdays, season end and job offers', () => {
   const club = firstDivisionByRep[0].id; // must win the league
-  const finished = playRemaining(db, season).season;
+  // A whole season, so England only (fast); offers then come from England too.
+  const db = domesticWorld(buildFictionalDatabase());
+  const finished = playRemaining(db, createSeason(db, 2026, 3)).season;
 
   it('a sacking comes with at least one job offer and is recorded', () => {
     const doomed: Manager = { ...newManager('Test', 16), confidence: 2, warned: true };

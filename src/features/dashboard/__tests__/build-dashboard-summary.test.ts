@@ -1,4 +1,5 @@
 import { buildFictionalDatabase } from '@/data/fictional';
+import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { autoPickLineup } from '@/game/lineup';
 import { createSeason, isSeasonComplete, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
 import { playUserFixture } from '@/game/season/__fixtures__/play';
@@ -10,7 +11,8 @@ import { addMessages } from '@/game/inbox/inbox';
 import { buildDashboardSummary, INBOX_PREVIEW } from '../build-dashboard-summary';
 import { previewDashboard } from '../dashboard.preview';
 
-const db = buildFictionalDatabase();
+// England only: these tests play whole seasons, and the dashboard only shows the user's own competitions.
+const db = domesticWorld(buildFictionalDatabase());
 const CLUB = 'club_greywater_town';
 const user = { clubId: CLUB, lineup: autoPickLineup(selectSquadCandidates(db, CLUB), '4-4-2'), tactics: DEFAULT_TACTICS };
 const fresh = createSeason(db, 2026, 5);

@@ -12,6 +12,11 @@ jest.mock('@/persistence/storage', () => {
   const { createMemoryStorage } = jest.requireActual('@/persistence/debounced-storage');
   return { platformStorage: createMemoryStorage() };
 });
+// England only (fast): these tests play many matches, and nothing here is about the world abroad.
+// Every part of the game that generates the world uses this (see data/fictional/__fixtures__/domestic.ts).
+jest.mock('@/data/fictional', () =>
+  jest.requireActual('@/data/fictional/__fixtures__/domestic').domesticFictionalModule(jest.requireActual('@/data/fictional')),
+);
 
 // The store works without React: getState() reads it, actions update it.
 beforeEach(() => {

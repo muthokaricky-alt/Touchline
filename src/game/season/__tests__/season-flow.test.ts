@@ -1,5 +1,5 @@
 import { buildFictionalDatabase } from '@/data/fictional';
-import { compress } from '@/persistence/slot-storage';
+import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { autoPickLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
@@ -24,7 +24,9 @@ import {
   type UserTeam,
 } from '../season-flow';
 
-const db = buildFictionalDatabase();
+/** The full world (with the leagues abroad), for the tests about it; `db` (England only) for the rest, which play whole seasons. */
+const world = buildFictionalDatabase();
+const db = domesticWorld(world);
 const USER = 'club_greywater_town';
 const FIRST = 'comp_first_division';
 const SECOND = 'comp_second_division';
@@ -39,7 +41,7 @@ function playFullSeason(start: Season): Season {
 }
 
 describe('createSeason', () => {
-  const season = createSeason(db, 2026, 1234);
+  const season = createSeason(world, 2026, 1234);
 
   it('schedules England’s two 20-club leagues (38 matchdays), the leagues abroad and the first cup round', () => {
     expect(SeasonSchema.safeParse(season).success).toBe(true);
@@ -77,7 +79,7 @@ describe('advanceToUserFixture', () => {
     expect(fixture.date).toBe('2026-08-08');
     expect([result.home.clubId, result.away.clubId]).toContain(USER);
     const sameDay = season.fixtures.filter((f) => f.date === fixture.date);
-    expect(sameDay).toHaveLength(20 + 5 * 9); // 10 First + 10 Second Division + 9 in each league abroad
+    expect(sameDay).toHaveLength(20); // 10 First + 10 Second Division (the leagues abroad play too in the full world)
     expect(sameDay.every((f) => f.result)).toBe(true);
     expect(season.fixtures.filter((f) => f.date > fixture.date).every((f) => !f.result)).toBe(true);
   });
@@ -146,20 +148,21 @@ describe('a full season', () => {
     expect(SeasonSchema.safeParse(next).success).toBe(true);
   });
 
-  it('keeps a season small enough to save', () => {
-    // A finished season is ~2.4 MB of JSON with the leagues abroad (was ~0.9 MB); saves are
-    // compressed, which is what's measured here (see persistence/slot-storage).
-    const json = JSON.stringify(finished);
-    expect(json.length).toBeLessThan(3_000_000);
-    expect(compress(json).length).toBeLessThan(350_000);
-  });
-
   it('keeps each country’s clubs in its own league; no promotion or relegation abroad', () => {
-    const next = nextMemberships(db, finished);
+    // Full world, results filled in without simulating (only the tables matter here): every home side wins.
+    const start = createSeason(world, 2026, 99);
+    const filled = {
+      ...start,
+      fixtures: start.fixtures.map((f) => ({ ...f, result: { score: { home: 1, away: 0 }, goals: [], cards: [], playerOfTheMatch: null } })),
+    };
+    const next = nextMemberships(world, filled);
     for (const league of next.filter((m) => m.competitionId.endsWith('_premier'))) {
-      const before = finished.leagues.find((l) => l.competitionId === league.competitionId)!;
+      const before = start.leagues.find((l) => l.competitionId === league.competitionId)!;
       expect([...league.clubIds].sort()).toEqual([...before.clubIds].sort());
     }
+    // England still promotes and relegates three.
+    const first = next.find((m) => m.competitionId === FIRST)!;
+    expect(first.clubIds.filter((id) => !start.leagues[0].clubIds.includes(id))).toHaveLength(3);
   });
 
   it('averages a believable number of goals', () => {

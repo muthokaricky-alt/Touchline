@@ -9,6 +9,11 @@ jest.mock('@/persistence/storage', () => {
   const { createMemoryStorage } = jest.requireActual('@/persistence/debounced-storage');
   return { platformStorage: createMemoryStorage() };
 });
+// England only (fast): these tests play many matches, and nothing here is about the world abroad.
+// Every part of the game that generates the world uses this (see data/fictional/__fixtures__/domestic.ts).
+jest.mock('@/data/fictional', () =>
+  jest.requireActual('@/data/fictional/__fixtures__/domestic').domesticFictionalModule(jest.requireActual('@/data/fictional')),
+);
 
 // The store works without React: getState() reads it, actions update it.
 beforeEach(() => {
@@ -90,28 +95,3 @@ describe('manager career', () => {
   });
 });
 
-describe('a career abroad', () => {
-  it('starts at a Kenyan club, plays its league, and rolls over with the club still in it (no relegation abroad)', () => {
-    const NDOM = 'club_ndom_fc';
-    const KENYA = 'comp_kenya_premier';
-    state().startCareer('Wanjiru', NDOM);
-    expect(state().userClubId).toBe(NDOM);
-    const result = state().playNextFixture();
-    expect([result.home.clubId, result.away.clubId]).toContain(NDOM);
-    expect(state().season.fixtures.find((f) => f.id === state().lastMatchFixtureId)?.competitionId).toBe(KENYA);
-
-    while (state().season.fixtures.some((f) => !f.result && (f.homeId === state().userClubId || f.awayId === state().userClubId))) {
-      state().playNextFixture();
-      if (state().manager!.sackedOffers) state().chooseNewJob(state().manager!.sackedOffers![0]);
-    }
-    state().finishSeason();
-    const end = seasonEnd(state().database, state().season, state().userClubId, state().manager!)!;
-    expect(end.review.expectation.competitionId).toBe(state().season.leagues.find((l) => l.clubIds.includes(state().userClubId))!.competitionId);
-    const club = state().userClubId;
-    state().startNextSeason();
-    expect(state().season.startYear).toBe(2027);
-    // Nobody is relegated abroad: if he's still at a Kenyan club, it's still in the Kenyan league.
-    if (club === NDOM) expect(state().season.leagues.find((l) => l.competitionId === KENYA)!.clubIds).toContain(NDOM);
-    expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
-  });
-});

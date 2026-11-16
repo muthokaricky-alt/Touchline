@@ -900,6 +900,25 @@ chips; no further performance work until the phone test.
   existing career flow unchanged (tested: a full season at Ndom FC, review,
   rollover, still in the Kenyan league).
 
+#### Faster tests with the bigger world
+
+- `npm test` had gone from ~36 s to ~85 s: about eight tests play whole
+  seasons, and the world abroad triples the matches. Most of them test
+  general season logic, so they now use **`domesticWorld(db)`**
+  (`data/fictional/__fixtures__/domestic.ts`): the generated world filtered
+  to England (same objects, nothing regenerated). Store tests swap the
+  generator with `jest.mock('@/data/fictional', … domesticFictionalModule …)`,
+  so the store's base world, save checks and migrations all agree.
+- Tests about the world abroad keep the full world: league order, cup
+  entrants and pyramids (results filled in without simulating), the
+  Kenyan career (`game-store-abroad.test.ts`: one real match, then the
+  rest of the season filled in and the real season end/summer: 39 s →
+  8 s), and the save size of a played full-world season
+  (`season-size.calibration.test.ts`).
+- Result: `npm test` ~43 s, `test:all` ~63 s (was ~123 s). The slowest
+  remaining tests are England-only store scenarios over a real season
+  (~19 s each), as before the leagues abroad.
+
 ### Scouting (after Milestone 10)
 
 Decisions (user): scouting reveals potential only (attributes stay
@@ -982,9 +1001,9 @@ npm install
 npm start              # Expo dev server (press a for Android, w for web)
 npm run android        # start + open on Android device/emulator (Expo Go)
 npm run web            # start + open in browser
-npm test               # Jest: everyday suite (~35 s), no statistical calibration
+npm test               # Jest: everyday suite (~45 s), no statistical calibration
 npm run test:calibration  # the statistical suites only (*.calibration.test.ts, ~25 s)
-npm run test:all       # everything (~45 s): run before committing engine/balance changes
+npm run test:all       # everything (~65 s): run before committing engine/balance changes
 npm run typecheck      # tsc --noEmit
 npm run lint           # ESLint (eslint-config-expo); must be clean
 npm run build:web      # static web export to dist/
@@ -1334,7 +1353,7 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - **Kenyan club names** (and the other invented names abroad) are waiting
   for the user's review: `src/data/fictional/clubs.ts`.
 - **Performance with the leagues abroad** hasn't been measured on a phone
-  (see "Foreign leagues, step A"). `npm test` takes ~85 s.
+  (see "Foreign leagues, step A").
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
 - The icon is an original placeholder-quality design; replace with
@@ -1370,7 +1389,7 @@ All ten roadmap milestones are built. What's left before a release:
 3. Then choose: store submission (production profile, store listings,
    privacy policy) or more gameplay. Performance with the
    leagues abroad after the phone test (a cheaper results model for
-   matches abroad if needed; faster store tests). Parked ideas: cups for
+   matches abroad if needed). Parked ideas: cups for
    the countries abroad,
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

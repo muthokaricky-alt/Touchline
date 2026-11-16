@@ -1,4 +1,5 @@
 import { buildFictionalDatabase } from '@/data/fictional';
+import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { autoPickLineup } from '@/game/lineup';
 import { createSeason, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
 import { playUserFixture } from '@/game/season/__fixtures__/play';
@@ -7,7 +8,9 @@ import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
 import { buildCupView, buildLeagueView, competitionOptions } from '../season-view';
 
-const db = buildFictionalDatabase();
+/** Full world for the competition list; England only (fast) for the views of played seasons. */
+const world = buildFictionalDatabase();
+const db = domesticWorld(world);
 const USER = 'club_greywater_town';
 const FIRST = 'comp_first_division';
 const user = { clubId: USER, lineup: autoPickLineup(selectSquadCandidates(db, USER), '4-4-2'), tactics: DEFAULT_TACTICS };
@@ -16,7 +19,7 @@ for (let i = 0; i < 3; i++) season = playUserFixture(db, season, user).season;
 
 describe('competitionOptions', () => {
   it("lists the user's league first, then the other league, the cup, then the leagues abroad by country", () => {
-    expect(competitionOptions(db, season, USER).map((o) => [o.id, o.kind, o.label])).toEqual([
+    expect(competitionOptions(world, createSeason(world, 2026, 8), USER).map((o) => [o.id, o.kind, o.label])).toEqual([
       [FIRST, 'league', 'First Division'],
       ['comp_second_division', 'league', 'Second Division'],
       ['comp_national_cup', 'cup', 'National Cup'],
@@ -77,8 +80,8 @@ describe('buildCupView', () => {
 
 describe('competitionOptions for a manager abroad', () => {
   it('lists his league first, then England (leagues and cup), then the other countries', () => {
-    const season = createSeason(db, 2026, 9);
-    expect(competitionOptions(db, season, 'club_ndom_fc').map((o) => o.label)).toEqual([
+    const season = createSeason(world, 2026, 9);
+    expect(competitionOptions(world, season, 'club_ndom_fc').map((o) => o.label)).toEqual([
       'Kenyan Premier Division',
       'First Div',
       'Second Div',
