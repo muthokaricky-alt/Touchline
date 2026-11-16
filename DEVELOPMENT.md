@@ -1537,6 +1537,11 @@ drawn, aggregates shown. Zero console errors, no overflow.
 
 ## 5. Next steps
 
+**Release order (user, 16 Nov 2026): phone app first, then the website.**
+Step-by-step for the user: `docs/PHONE_BUILD.md` (Expo Go test → free
+Android APK with EAS). The website (static export on a free host, maybe a
+PWA) comes after; app stores need the user's approval (paid accounts).
+
 All ten roadmap milestones are built. What's left before a release:
 1. **Device testing** with `docs/DEVICE_TEST_CHECKLIST.md` (the user runs
    it in Expo Go; fix whatever it finds). Nothing native has been run on a
