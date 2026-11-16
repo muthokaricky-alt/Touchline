@@ -44,6 +44,12 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "backgroundColor": "#101820"
+    "backgroundColor": "#101820",
+    "extra": {
+      "eas": {
+        "projectId": "577423af-3c3d-4515-9851-4fa462c7d54c"
+      }
+    },
+    "owner": "muthokaricky"
   }
 }
