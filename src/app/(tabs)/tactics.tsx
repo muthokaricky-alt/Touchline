@@ -24,6 +24,7 @@ export default function TacticsRoute() {
   // Actions are stable functions, so selecting them never causes re-renders.
   const changeFormation = useGameStore((s) => s.changeFormation);
   const removeFromLineup = useGameStore((s) => s.removeFromLineup);
+  const swapPlaces = useGameStore((s) => s.swapPlaces);
   const autoPick = useGameStore((s) => s.autoPick);
   const setInstruction = useGameStore((s) => s.setInstruction);
   const applyPlayingStyle = useGameStore((s) => s.applyPlayingStyle);
@@ -37,7 +38,8 @@ export default function TacticsRoute() {
         <TeamSelectionPanel
           sheet={sheet}
           onFormationChange={changeFormation}
-          onSlotPress={openPicker}
+          onChooseForSlot={openPicker}
+          onSwap={swapPlaces}
           onAddSubstitute={() => openPicker('bench')}
           onRemoveSubstitute={removeFromLineup}
           onAutoPick={autoPick}

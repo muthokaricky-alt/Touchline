@@ -11,7 +11,9 @@ import {
   changeFormation,
   clearSlot,
   removeFromLineup,
+  swapPlaces,
   type Lineup,
+  type LineupPlace,
 } from '@/game/lineup';
 import { simulateMatch } from '@/engine/simulate';
 import { adjustMorale, conditionOn, emptyConditions, isInjured, type ConditionState } from '@/game/condition/condition';
@@ -191,6 +193,8 @@ export type SigningOffer = { playerId: PlayerId; fee: number; weeklyWage: number
 export type GameActions = {
   changeFormation: (formationId: FormationId) => void;
   assignToSlot: (slotId: string, playerId: PlayerId) => void;
+  /** Tap one place, tap another: swaps whoever is there (see swapPlaces). */
+  swapPlaces: (a: LineupPlace, b: LineupPlace) => void;
   clearSlot: (slotId: string) => void;
   addSubstitute: (playerId: PlayerId) => void;
   removeFromLineup: (playerId: PlayerId) => void;
@@ -424,6 +428,11 @@ export const useGameStore = create<Store>()(
         set((s) => {
           notLive(s);
           return { lineup: assignToSlot(s.lineup, slotId, playerId) };
+        }),
+      swapPlaces: (a, b) =>
+        set((s) => {
+          notLive(s);
+          return { lineup: swapPlaces(s.lineup, a, b) };
         }),
       clearSlot: (slotId) =>
         set((s) => {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -14,19 +15,24 @@ import {
 } from '@/components/ui';
 import type { PlayerId } from '@/data/schemas';
 import { FORMATION_LIST, type FormationId } from '@/game/formations';
-import type { LineupIssue } from '@/game/lineup';
-import type { TeamSheetView } from '@/game/squad/team-sheet';
+import type { LineupIssue, LineupPlace } from '@/game/lineup';
+import type { TeamSheetSlotView, TeamSheetView } from '@/game/squad/team-sheet';
 import { spacing } from '@/theme';
 
-import { Pitch } from './components/Pitch';
 import { ConditionTag } from '@/features/player/ConditionTag';
+
+import { Pitch } from './components/Pitch';
+import { currentSelection, playerAt, tapOutcome } from './swap';
 
 const FORMATION_OPTIONS = FORMATION_LIST.map((f) => ({ value: f.id, label: f.id }));
 
 type TeamSelectionPanelProps = {
   sheet: TeamSheetView;
   onFormationChange: (formationId: FormationId) => void;
-  onSlotPress: (slotId: string) => void;
+  /** Opens the squad list for a position. */
+  onChooseForSlot: (slotId: string) => void;
+  /** Swaps whoever is in two places (tap one, tap another). */
+  onSwap: (a: LineupPlace, b: LineupPlace) => void;
   onAddSubstitute: () => void;
   onRemoveSubstitute: (playerId: PlayerId) => void;
   onAutoPick: () => void;
@@ -36,21 +42,65 @@ type TeamSelectionPanelProps = {
 export function TeamSelectionPanel({
   sheet,
   onFormationChange,
-  onSlotPress,
+  onChooseForSlot,
+  onSwap,
   onAddSubstitute,
   onRemoveSubstitute,
   onAutoPick,
 }: TeamSelectionPanelProps) {
+  // The player picked for a swap. Local UI state: nothing in the game changes until the second tap.
+  const [picked, setPicked] = useState<LineupPlace | null>(null);
+  const selected = currentSelection(sheet, picked);
+  const selectedPlayer = selected ? playerAt(sheet, selected) : null;
+
+  const tap = (place: LineupPlace) => {
+    const outcome = tapOutcome(sheet, selected, place);
+    if (outcome.kind === 'select') setPicked(outcome.place);
+    else setPicked(null);
+    if (outcome.kind === 'swap') onSwap(outcome.a, outcome.b);
+    if (outcome.kind === 'choose') onChooseForSlot(outcome.slotId);
+  };
+  const slotHint = (slot: TeamSheetSlotView) =>
+    selectedPlayer
+      ? slot.player?.id === selectedPlayer.id
+        ? 'Selected. Tap again to cancel'
+        : `Swap with ${selectedPlayer.shortName}`
+      : slot.player
+        ? 'Select to swap with another player'
+        : 'Choose a player for this position';
+
   return (
     <View style={styles.columns}>
       <View style={styles.column}>
         <Card title="Formation" icon="tactics">
           <ChoiceChips options={FORMATION_OPTIONS} value={sheet.formationId} onChange={onFormationChange} accessibilityLabel="Formation" />
         </Card>
-        <Pitch slots={sheet.slots} onSlotPress={onSlotPress} />
-        <AppText variant="caption" color="textSecondary" align="center">
-          Tap a position to change who plays there. Ring colour: green natural · amber accomplished · red out of position.
-        </AppText>
+        <Pitch
+          slots={sheet.slots}
+          onSlotPress={(slotId) => tap({ kind: 'slot', slotId })}
+          selectedSlotId={selected?.kind === 'slot' ? selected.slotId : null}
+          hintFor={slotHint}
+        />
+        {/* Below the pitch, so selecting a player never moves the pitch under your finger. */}
+        {selected && selectedPlayer ? (
+          <SwapBar
+            name={selectedPlayer.shortName}
+            onChoose={
+              selected.kind === 'slot'
+                ? () => {
+                    setPicked(null);
+                    onChooseForSlot(selected.slotId);
+                  }
+                : undefined
+            }
+            onCancel={() => setPicked(null)}
+          />
+        ) : (
+          <AppText variant="caption" color="textSecondary" align="center">
+            Tap a player, then another player or a substitute, to swap them. Tap an empty position to pick from the squad.
+            Ring colour: green natural · amber accomplished · red out of position.
+          </AppText>
+        )}
       </View>
 
       <View style={styles.column}>
@@ -70,6 +120,16 @@ export function TeamSelectionPanel({
                   key={sub.id}
                   divider={index > 0}
                   title={sub.shortName}
+                  onPress={() => tap({ kind: 'bench', playerId: sub.id })}
+                  selected={selected?.kind === 'bench' && selected.playerId === sub.id}
+                  accessibilityLabel={`${sub.shortName}, ${sub.primaryPosition}, rating ${sub.rating}`}
+                  accessibilityHint={
+                    selectedPlayer
+                      ? selectedPlayer.id === sub.id
+                        ? 'Selected. Tap again to cancel'
+                        : `Swap with ${selectedPlayer.shortName}`
+                      : 'Select to swap with another player'
+                  }
                   leading={<PositionBadge position={sub.primaryPosition} />}
                   trailing={
                     <View style={styles.inline}>
@@ -91,6 +151,24 @@ export function TeamSelectionPanel({
         </Card>
       </View>
     </View>
+  );
+}
+
+/** Shown while a player is picked for a swap. */
+function SwapBar({ name, onChoose, onCancel }: { name: string; onChoose?: () => void; onCancel: () => void }) {
+  return (
+    <Card highlighted>
+      <View accessibilityLiveRegion="polite" style={styles.swapText}>
+        <AppText variant="bodyStrong">{name} selected</AppText>
+        <AppText variant="caption" color="textSecondary">
+          Tap another position or a substitute to swap them.
+        </AppText>
+      </View>
+      <View style={styles.swapButtons}>
+        {onChoose ? <Button label="Pick from squad" icon="squad" variant="secondary" onPress={onChoose} /> : null}
+        <Button label="Cancel" variant="secondary" onPress={onCancel} />
+      </View>
+    </Card>
   );
 }
 
@@ -117,4 +195,6 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   issue: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   issueText: { flex: 1 },
+  swapText: { gap: spacing.xxs },
+  swapButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 });

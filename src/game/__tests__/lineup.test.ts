@@ -15,6 +15,7 @@ import {
   removeFromLineup,
   startingSlotOf,
   starterIds,
+  swapPlaces,
   validateLineup,
   type Lineup,
 } from '../lineup';
@@ -153,6 +154,66 @@ describe('assignToSlot', () => {
 
   it('throws for a slot that is not in the formation', () => {
     expect(() => assignToSlot(picked(), 'DM', candidates[0].player.id)).toThrow(RangeError);
+  });
+});
+
+describe('swapPlaces (tap one, tap another)', () => {
+  const slot = (slotId: string) => ({ kind: 'slot', slotId }) as const;
+  const bench = (playerId: string) => ({ kind: 'bench', playerId }) as const;
+
+  it('swaps two starters, in either order', () => {
+    const lineup = picked();
+    const { LB, RB } = lineup.starters;
+    for (const next of [swapPlaces(lineup, slot('LB'), slot('RB')), swapPlaces(lineup, slot('RB'), slot('LB'))]) {
+      expect(next.starters.LB).toBe(RB);
+      expect(next.starters.RB).toBe(LB);
+      expect(next.substitutes).toEqual(lineup.substitutes);
+    }
+  });
+
+  it('swaps a starter and a substitute, who change places on the bench too', () => {
+    const lineup = picked();
+    const sub = lineup.substitutes[3];
+    const starter = lineup.starters.RM!;
+    for (const next of [swapPlaces(lineup, slot('RM'), bench(sub)), swapPlaces(lineup, bench(sub), slot('RM'))]) {
+      expect(next.starters.RM).toBe(sub);
+      expect(next.substitutes[3]).toBe(starter);
+      expect(next.substitutes).toHaveLength(lineup.substitutes.length);
+    }
+  });
+
+  it('moves a starter into an empty slot (either way round), leaving his old slot empty', () => {
+    const lineup = clearSlot(picked(), 'LM');
+    const rm = lineup.starters.RM!;
+    for (const next of [swapPlaces(lineup, slot('RM'), slot('LM')), swapPlaces(lineup, slot('LM'), slot('RM'))]) {
+      expect(next.starters.LM).toBe(rm);
+      expect(next.starters.RM).toBeNull();
+    }
+  });
+
+  it('a substitute fills an empty slot and leaves the bench', () => {
+    const lineup = clearSlot(picked(), 'GK');
+    const keeper = lineup.substitutes[0];
+    const next = swapPlaces(lineup, slot('GK'), bench(keeper));
+    expect(next.starters.GK).toBe(keeper);
+    expect(next.substitutes).not.toContain(keeper);
+  });
+
+  it('reorders the bench, and leaves the lineup alone for the same place twice', () => {
+    const lineup = picked();
+    const [first, second] = lineup.substitutes;
+    const next = swapPlaces(lineup, bench(first), bench(second));
+    expect(next.substitutes.slice(0, 2)).toEqual([second, first]);
+    expect(swapPlaces(lineup, slot('GK'), slot('GK'))).toBe(lineup);
+  });
+
+  it('never loses or duplicates a player, and refuses places that are not in the lineup', () => {
+    const lineup = picked();
+    const before = [...starterIds(lineup), ...lineup.substitutes].sort();
+    const next = swapPlaces(swapPlaces(lineup, slot('GK'), slot('LST')), bench(lineup.substitutes[1]), slot('LCM'));
+    expect([...starterIds(next), ...next.substitutes].sort()).toEqual(before);
+    expect(() => swapPlaces(lineup, slot('GK'), bench(aReserve(lineup)))).toThrow(RangeError);
+    expect(() => swapPlaces(lineup, slot('GK'), slot('DM'))).toThrow(RangeError);
   });
 });
 

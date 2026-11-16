@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1106,6 +1106,32 @@ the user picks for a new career.
   AI runs this for every formation. `test:all` and the calibration bounds
   are unchanged.
 
+### Lineup swap (after Milestone 10)
+
+Decisions (user): tap one, tap another (not drag and drop: works the same
+with a mouse, a finger and a screen reader, and needs no gesture library).
+
+- **Pure swap** (`swapPlaces` in `game/lineup.ts`) on a `LineupPlace`
+  (a slot, filled or empty, or a substitute): two starters change
+  positions, a substitute and a starter change places (the starter takes
+  his bench place), a starter moves into an empty slot, two substitutes
+  change order. Built on `assignToSlot`, which already sends the displaced
+  player to where the incoming one came from. Store action `swapPlaces`
+  (guarded by `notLive` like every lineup change).
+- **Tap rules** (`features/team/swap.ts`, pure, tested): first tap on a
+  player selects him, the same place again cancels, a second place swaps;
+  an empty position with nothing selected opens the squad list as before.
+  The selection is local UI state, checked against the current sheet on
+  every render (`currentSelection`), so a player who has moved or left
+  can never be swapped by a stale selection.
+- **UI:** the selected marker / bench row is highlighted (`selected` on
+  `ListRow` and the pitch, with `accessibilityState`); screen-reader hints
+  say what a tap will do ("Swap with B. Haywood"). A bar under the pitch
+  names the selected player with **Pick from squad** (for a position) and
+  **Cancel**. First version put the bar above the pitch: the browser check
+  showed it pushed the pitch ~130 px down, so the second tap would land on
+  a different player.
+
 ### The website (after Milestone 10)
 
 Decisions (user): phone app first, then the website (both); hosting on
@@ -1696,6 +1722,17 @@ drawn, aggregates shown. Zero console errors, no overflow.
   "Rick Kyalo joins Northmere Rovers", squad list, profile (all 20s, rating
   20, €290M), Tactics "RST: R. Kyalo, rating 20, natural position", kept
   after a reload. Zero console errors.
+
+### Lineup swap ✅
+- `swapPlaces`, `features/team/swap.ts`, selected states, swap bar, device
+  checklist row.
+- Tests: 6 for `swapPlaces` (each case both ways round, no player lost or
+  duplicated, invalid places refused), 4 for the tap rules.
+- Verified: `tsc` clean, lint clean, tests pass, web export; headless
+  Chrome at 412px: full-backs swapped, a substitute swapped with a striker
+  (who took his bench place), Cancel, Pick from squad opens the picker for
+  that position, all kept after a reload, no horizontal overflow. Zero
+  console errors.
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European

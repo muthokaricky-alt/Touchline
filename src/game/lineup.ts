@@ -80,6 +80,44 @@ export function assignToSlot(lineup: Lineup, slotId: string, playerId: PlayerId)
   return { ...lineup, starters, substitutes };
 }
 
+/** A place in the lineup the user can tap: a starting slot (filled or empty) or a substitute. */
+export type LineupPlace = { kind: 'slot'; slotId: string } | { kind: 'bench'; playerId: PlayerId };
+
+export const samePlace = (a: LineupPlace, b: LineupPlace): boolean =>
+  a.kind === 'slot' ? b.kind === 'slot' && a.slotId === b.slotId : b.kind === 'bench' && a.playerId === b.playerId;
+
+/**
+ * Swaps whoever is in two places (the Tactics tab's tap one, tap another):
+ * two starters change positions, a substitute and a starter change places
+ * (the starter takes his bench place), a starter moves into an empty slot,
+ * and two substitutes change their order on the bench. Built on
+ * assignToSlot, which already sends the displaced player to where the
+ * incoming one came from.
+ */
+export function swapPlaces(lineup: Lineup, a: LineupPlace, b: LineupPlace): Lineup {
+  if (samePlace(a, b)) return lineup;
+  if (a.kind === 'bench' && b.kind === 'bench') {
+    const i = lineup.substitutes.indexOf(a.playerId);
+    const j = lineup.substitutes.indexOf(b.playerId);
+    if (i < 0 || j < 0) throw new RangeError('Both players must be on the bench');
+    const substitutes = [...lineup.substitutes];
+    [substitutes[i], substitutes[j]] = [substitutes[j], substitutes[i]];
+    return { ...lineup, substitutes };
+  }
+  const [slot, other] = a.kind === 'slot' ? [a, b] : [b as Extract<LineupPlace, { kind: 'slot' }>, a];
+  if (other.kind === 'bench') {
+    if (!lineup.substitutes.includes(other.playerId)) throw new RangeError(`${other.playerId} is not on the bench`);
+    return assignToSlot(lineup, slot.slotId, other.playerId);
+  }
+  assertSlotExists(lineup, other.slotId);
+  const inSlot = lineup.starters[slot.slotId] ?? null;
+  const inOther = lineup.starters[other.slotId] ?? null;
+  if (inSlot) return assignToSlot(lineup, other.slotId, inSlot);
+  if (inOther) return assignToSlot(lineup, slot.slotId, inOther);
+  assertSlotExists(lineup, slot.slotId);
+  return lineup; // two empty slots
+}
+
 export function clearSlot(lineup: Lineup, slotId: string): Lineup {
   assertSlotExists(lineup, slotId);
   if (lineup.starters[slotId] === null) return lineup;

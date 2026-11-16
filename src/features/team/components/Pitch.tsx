@@ -30,20 +30,30 @@ const FIT_WORD: Record<PositionFit, string> = {
 type PitchProps = {
   slots: readonly TeamSheetSlotView[];
   onSlotPress: (slotId: string) => void;
+  /** The slot picked for a swap, highlighted. */
+  selectedSlotId?: string | null;
+  /** What tapping a slot will do, for screen readers. */
+  hintFor?: (slot: TeamSheetSlotView) => string;
 };
 
-export function Pitch({ slots, onSlotPress }: PitchProps) {
+export function Pitch({ slots, onSlotPress, selectedSlotId = null, hintFor }: PitchProps) {
   return (
     <View style={styles.pitch}>
       <PitchMarkings />
       {slots.map((slot) => (
-        <SlotMarker key={slot.slotId} slot={slot} onPress={() => onSlotPress(slot.slotId)} />
+        <SlotMarker
+          key={slot.slotId}
+          slot={slot}
+          selected={slot.slotId === selectedSlotId}
+          hint={hintFor?.(slot) ?? 'Choose a player for this position'}
+          onPress={() => onSlotPress(slot.slotId)}
+        />
       ))}
     </View>
   );
 }
 
-function SlotMarker({ slot, onPress }: { slot: TeamSheetSlotView; onPress: () => void }) {
+function SlotMarker({ slot, selected, hint, onPress }: { slot: TeamSheetSlotView; selected: boolean; hint: string; onPress: () => void }) {
   const { player } = slot;
   const unavailable = player ? (player.injured ? 'Injured' : player.suspended ? 'Suspended' : null) : null;
   const label = player
@@ -55,11 +65,13 @@ function SlotMarker({ slot, onPress }: { slot: TeamSheetSlotView; onPress: () =>
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Choose a player for this position"
+      accessibilityHint={hint}
+      accessibilityState={{ selected }}
       style={({ pressed }) => [
         styles.marker,
         { left: `${slot.x * 100}%`, top: `${(1 - slot.y) * 100}%` },
         pressed && styles.markerPressed,
+        selected && styles.markerSelected,
       ]}>
       <View
         style={[
@@ -127,6 +139,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
   },
   markerPressed: { backgroundColor: colors.surfacePressed },
+  markerSelected: { backgroundColor: colors.accentMuted, borderWidth: 1, borderColor: colors.accent },
   shirt: {
     width: 34,
     height: 34,

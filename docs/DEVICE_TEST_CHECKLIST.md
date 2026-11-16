@@ -50,7 +50,8 @@ one) and note anything that doesn't match **Expected**.
 | Step | Expected |
 | --- | --- |
 | Open a player profile, then use Android's **back** gesture/button (iOS: swipe from the left edge) | Returns to the previous screen. |
-| Tactics → tap a pitch slot (the picker opens as a sheet) → swipe it down (iOS) / back (Android) | The picker closes without changing the lineup. |
+| Tactics → tap a player on the pitch → **Pick from squad** (the picker opens as a sheet) → swipe it down (iOS) / back (Android) | The picker closes without changing the lineup. |
+| Tactics → tap one player, then another (pitch or bench) | They swap places; the pitch doesn't jump when the first player is selected. |
 | On the **New career** screen, press back (Android) | Either nothing happens or the app closes. It must **not** show the dashboard or tabs without a career. |
 | Rotate the phone on any screen except a match | Stays in portrait. |
 | During a match (2D view on), tilt the phone sideways | The pitch fills the screen with the score at the top and the commentary line at the bottom; tilting back returns to the normal view. |

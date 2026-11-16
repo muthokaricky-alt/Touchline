@@ -19,6 +19,8 @@ type ListRowProps = {
   /** Screen-reader label for tappable rows; defaults to title + subtitle. */
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** Highlights the row (e.g. the player picked for a swap). */
+  selected?: boolean;
 };
 
 export function ListRow({
@@ -30,6 +32,7 @@ export function ListRow({
   onPress,
   accessibilityLabel,
   accessibilityHint,
+  selected,
 }: ListRowProps) {
   const content = (
     <>
@@ -56,7 +59,8 @@ export function ListRow({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? (subtitle ? `${title}, ${subtitle}` : title)}
       accessibilityHint={accessibilityHint}
-      style={({ pressed }) => [styles.row, styles.pressable, divider && styles.divider, pressed && styles.pressed]}>
+      accessibilityState={selected === undefined ? undefined : { selected }}
+      style={({ pressed }) => [styles.row, styles.pressable, divider && styles.divider, pressed && styles.pressed, selected && styles.selected]}>
       {content}
     </Pressable>
   );
@@ -66,6 +70,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
   pressable: { minHeight: layout.minTouchTarget, borderRadius: radii.sm },
   pressed: { backgroundColor: colors.surfacePressed },
+  selected: { backgroundColor: colors.accentMuted },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   text: { flex: 1, minWidth: 0, gap: spacing.xxs },
 });
