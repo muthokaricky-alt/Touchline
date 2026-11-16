@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view step A (save v12). Next: 2D step B. Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1062,6 +1062,23 @@ as advised.
 - Also: `StyleSheet.absoluteFillObject` no longer exists in RN 0.88 (use
   `absoluteFill`); expo-doctor now passes 20/20.
 
+**Step B: build-ups and the scorer banner.**
+- `buildBuildUps(result)`: 2–3 keyframes before every shot and goal, the
+  path by chance type (through ball: midfielder → playmaker/assister →
+  shooter; cross: out wide → crosser → shooter in the box; long ball:
+  centre-back → shooter; long shot: to the edge of the box; set piece:
+  taker at the corner flag → header). The ball holder is highlighted; the
+  attacking team pushed up. Shared line-up tracking (`walkLineUps`).
+- Played BEFORE the item's commentary line (the line never gives a goal
+  away early): `useReplay` takes a wait per item; the match centre holds
+  the last moment 0.7 s (a goal 2.5 s, so its banner can be read), then a
+  keyframe every 520 ms (`BUILD_UP_STEP_MS`; dots glide in 480 ms), then the
+  line. Pausing stops both. Commentary mode keeps the old 700 ms pace.
+- Banner: "GOAL! Ravensmoor United" / "39' Julien Girard · assist Théo
+  Mercier". A full match without skipping now takes ~46 s (was ~25 s).
+- First browser run caught the banner showing for under a second (the
+  next build-up replaced the goal frame after 0.7 s): goals now hold 2.5 s.
+
 ### The website (after Milestone 10)
 
 Decisions (user): phone app first, then the website (both); hosting on
@@ -1604,6 +1621,19 @@ drawn, aggregates shown. Zero console errors, no overflow.
   Commentary hides it, a landscape window shows the full-screen pitch with
   caption and controls, full time leads to the report. Zero console errors.
   Not verified: real rotation on a phone (device checklist).
+
+### 2D match view, step B ✅
+- Build-ups for every shot and goal by chance type, per-item replay pacing,
+  goal hold, two-line scorer banner.
+- Tests: 26 in the match feature (2 new: every build-up ends with the
+  shooter on the ball moving towards goal; assisted goals involve the
+  assister; set pieces start at the corner flag). Everyday suite 923.
+- Verified: `tsc` clean, lint clean, tests pass, web export; headless
+  Chrome screenshots: a Greywater attack carried forward by #7, #11 on the
+  edge of the box as "Harry Lowther's effort flies over the bar" appears,
+  the goal with the ball in the net, the scorer beside it and the banner
+  "39' Julien Girard · assist Théo Mercier"; a full match 46 s, report
+  reached. Zero console errors.
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European

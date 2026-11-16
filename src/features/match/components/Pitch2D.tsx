@@ -16,12 +16,12 @@ type Pitch2DProps = {
   kits: Record<Side, Kit>;
   /** Shirt number shown on a player's dot. */
   numberOf: (playerId: string) => string;
-  /** Shown over the pitch when a goal is scored, e.g. the scoring team. */
-  goalLabel?: string | null;
+  /** Shown over the pitch when a goal is scored: "GOAL! Ravensmoor United" and "39' Julien Girard · assist Théo Mercier". */
+  goalBanner?: { title: string; detail: string } | null;
 };
 
-/** How long a dot takes to glide to its next spot (the replay reveals an item every 700 ms). */
-const MOVE_MS = 600;
+/** How long a dot takes to glide to its next spot (faster than a build-up step, ../pitch2d BUILD_UP_STEP_MS). */
+const MOVE_MS = 480;
 /** Pitch proportions (105 × 68 m), drawn horizontally: home goal on the left. */
 export const PITCH_RATIO = 105 / 68;
 
@@ -32,7 +32,7 @@ export const PITCH_RATIO = 105 / 68;
  * Positions are fractions of the measured pitch, so it fits any size (a
  * phone in portrait, full screen in landscape, a desktop window).
  */
-export function Pitch2D({ frame, kits, numberOf, goalLabel }: Pitch2DProps) {
+export function Pitch2D({ frame, kits, numberOf, goalBanner }: Pitch2DProps) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const onLayout = (e: LayoutChangeEvent) => setSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
   const dotSize = Math.max(14, Math.min(28, size.height * 0.075));
@@ -59,10 +59,13 @@ export function Pitch2D({ frame, kits, numberOf, goalLabel }: Pitch2DProps) {
           ))
         : null}
       {size.width > 0 ? <Ball x={frame.ball.x * size.width} y={frame.ball.y * size.height} size={Math.max(7, dotSize * 0.42)} /> : null}
-      {frame.goal && goalLabel ? (
-        <View style={styles.goalBanner} pointerEvents="none">
+      {frame.goal && goalBanner ? (
+        <View style={styles.goalBanner} pointerEvents="none" accessibilityLiveRegion="polite">
           <AppText variant="heading" color="onAccent" align="center">
-            GOAL! {goalLabel}
+            {goalBanner.title}
+          </AppText>
+          <AppText variant="caption" color="onAccent" align="center" numberOfLines={1}>
+            {goalBanner.detail}
           </AppText>
         </View>
       ) : null}

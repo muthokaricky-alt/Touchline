@@ -9,7 +9,7 @@ import { MatchManagementPanel, type ManagedPlayer } from '@/features/match/compo
 import { FixtureSetupScreen } from '@/features/match/FixtureSetupScreen';
 import { matchKits } from '@/features/match/kits';
 import { MatchCentreScreen, type MatchPitch, type OtherResult } from '@/features/match/MatchCentreScreen';
-import { buildPitchFrames } from '@/features/match/pitch2d';
+import { buildBuildUps, buildPitchFrames } from '@/features/match/pitch2d';
 import { MatchSetupScreen } from '@/features/match/MatchSetupScreen';
 import { buildRatingRows, buildStatRows, buildTimeline } from '@/features/match/timeline';
 import type { MatchVenue } from '@/game/match/friendly';
@@ -237,12 +237,15 @@ function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentr
     // The 2D view: a frame per commentary item (keys are event indexes), club colours, shirt numbers.
     const timeline = buildTimeline(result, playerName);
     const frames = buildPitchFrames(result);
+    const buildUps = buildBuildUps(result);
     const colours = (id: ClubId) => findClub(database, id)?.colours ?? { primary: '#FFFFFF', secondary: '#101820' };
     const numbers = new Map(database.contracts.map((c) => [c.playerId, String(c.squadNumber)]));
     const pitch: MatchPitch = {
       frames: timeline.map((item) => frames.get(Number(item.key))),
+      buildUps: timeline.map((item) => buildUps.get(Number(item.key))),
       kits: matchKits(colours(result.home.clubId), colours(result.away.clubId)),
       numberOf: (id) => numbers.get(id) ?? '',
+      nameOf: playerName,
     };
     return {
       overline: fixture ? `${competitionName(database, fixture.competitionId)} · ${roundLabel(season, fixture)}` : 'Friendly',

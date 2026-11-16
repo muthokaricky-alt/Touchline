@@ -2,7 +2,7 @@ import { simulateMatch } from '@/engine/simulate';
 import type { MatchResult } from '@/engine/types';
 import { CLUBS, team } from '@/engine/__fixtures__/helpers';
 
-import { buildPitchFrames } from '../pitch2d';
+import { buildBuildUps, buildPitchFrames } from '../pitch2d';
 
 const home = team(CLUBS.middle);
 const away = team(CLUBS.strongest);
@@ -51,7 +51,7 @@ describe('buildPitchFrames', () => {
     const { result: r, index } = findMatch((m) => m.events.findIndex((e) => e.type === 'goal' && e.side === 'home'));
     const goal = r.events[index] as Extract<(typeof r.events)[number], { type: 'goal' }>;
     const frame = buildPitchFrames(r).get(index)!;
-    expect(frame.goal).toBe('home');
+    expect(frame.goal).toEqual({ side: 'home', scorerId: goal.scorerId, assistId: goal.assistId });
     expect(frame.ball.x).toBeGreaterThan(0.9);
     const scorer = frame.dots.find((d) => d.playerId === goal.scorerId)!;
     expect(scorer.highlight).toBe(true);
@@ -76,5 +76,42 @@ describe('buildPitchFrames', () => {
     const sentOff = buildPitchFrames(red.result).get(red.index)!;
     expect(count(sentOff, redEvent.side)).toBe(10);
     expect(sentOff.dots.some((d) => d.playerId === redEvent.playerId)).toBe(false);
+  });
+});
+
+describe('buildBuildUps', () => {
+  type Shot = Extract<MatchResult['events'][number], { type: 'shot' | 'goal' }>;
+  const shooterOf = (e: Shot) => (e.type === 'goal' ? e.scorerId : e.shooterId);
+
+  it('gives every shot and goal a short build-up ending with the shooter on the ball, moving towards goal', () => {
+    const result = play(11);
+    const buildUps = buildBuildUps(result);
+    const shots = result.events.flatMap((e, i) => (e.type === 'shot' || e.type === 'goal' ? [[e, i] as const] : []));
+    expect(shots.length).toBeGreaterThan(0);
+    for (const [event, index] of shots) {
+      const frames = buildUps.get(index)!;
+      expect(frames.length).toBeGreaterThanOrEqual(2);
+      expect(frames.length).toBeLessThanOrEqual(3);
+      const last = frames.at(-1)!;
+      const holder = last.dots.find((d) => d.highlight)!;
+      expect(holder.playerId).toBe(shooterOf(event));
+      // The shot comes from the attacked half.
+      const towardsGoal = (x: number) => (event.side === 'home' ? x : 1 - x);
+      expect(towardsGoal(last.ball.x)).toBeGreaterThan(0.6);
+      if (event.chance !== 'set-piece') expect(towardsGoal(last.ball.x)).toBeGreaterThan(towardsGoal(frames[0].ball.x));
+      expect(count(last, 'home')).toBeLessThanOrEqual(11);
+    }
+  });
+
+  it('involves the assister in an assisted goal, and starts a set piece at the corner flag', () => {
+    const assisted = findMatch((m) => m.events.findIndex((e) => e.type === 'goal' && e.assistId !== null && e.chance !== 'long-shot'));
+    const goal = assisted.result.events[assisted.index] as Extract<MatchResult['events'][number], { type: 'goal' }>;
+    const frames = buildBuildUps(assisted.result).get(assisted.index)!;
+    expect(frames.some((f) => f.dots.some((d) => d.highlight && d.playerId === goal.assistId))).toBe(true);
+
+    const setPiece = findMatch((m) => m.events.findIndex((e) => (e.type === 'shot' || e.type === 'goal') && e.chance === 'set-piece'));
+    const first = buildBuildUps(setPiece.result).get(setPiece.index)![0];
+    expect(Math.min(first.ball.y, 1 - first.ball.y)).toBeLessThan(0.05); // on the byline at a corner
+    expect(Math.min(first.ball.x, 1 - first.ball.x)).toBeLessThan(0.05);
   });
 });

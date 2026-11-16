@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,7 +12,7 @@ import { RatingsList } from './components/RatingsList';
 import { Scoreboard } from './components/Scoreboard';
 import { StatsPanel } from './components/StatsPanel';
 import { phaseLabel, type RatingRow, type StatRow, type TimelineItem } from './timeline';
-import type { PitchFrame } from './pitch2d';
+import { BUILD_UP_STEP_MS, type PitchFrame } from './pitch2d';
 import { useMatchView, type MatchViewMode } from './use-match-view';
 import { useReplay } from './use-replay';
 
@@ -21,12 +21,37 @@ const VIEW_SEGMENTS = [
   { value: 'commentary', label: 'Commentary' },
 ] as const satisfies readonly { value: MatchViewMode; label: string }[];
 
-/** What the 2D view needs: a frame per timeline item (same order), kits, shirt numbers. */
+/** What the 2D view needs, aligned with the timeline: a frame per item and the build-up before chances and goals. */
 export type MatchPitch = {
   frames: readonly (PitchFrame | undefined)[];
+  buildUps: readonly (readonly PitchFrame[] | undefined)[];
   kits: Record<Side, Kit>;
   numberOf: (playerId: string) => string;
+  nameOf: (playerId: string) => string;
 };
+
+/** The last moment stays on the pitch this long before the next build-up starts… */
+const HOLD_MS = 700;
+/** …and a goal (with its banner) this long. */
+const GOAL_HOLD_MS = 2500;
+/** After a build-up, a short pause before the line appears (the shot). */
+const AFTER_BUILD_UP_MS = 300;
+
+/**
+ * The build-up keyframe to show while the next item is pending: -1 (keep
+ * showing the last moment) for HOLD_MS, then one keyframe every
+ * BUILD_UP_STEP_MS. Restarts for each new item; stops while paused.
+ */
+function useBuildUpStep(buildUp: readonly PitchFrame[] | undefined, playing: boolean, itemIndex: number, holdMs: number): number {
+  const [step, setStep] = useState({ itemIndex, value: -1 });
+  const current = step.itemIndex === itemIndex ? step.value : -1;
+  useEffect(() => {
+    if (!buildUp || !playing || current >= buildUp.length - 1) return;
+    const timer = setTimeout(() => setStep({ itemIndex, value: current + 1 }), current < 0 ? holdMs : BUILD_UP_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [buildUp, playing, current, itemIndex, holdMs]);
+  return current;
+}
 
 type ReportView = 'timeline' | 'stats' | 'ratings';
 
@@ -106,7 +131,19 @@ export function MatchCentreScreen({
   initialRevealed,
   pitch,
 }: MatchCentreScreenProps) {
-  const replay = useReplay(timeline.length, undefined, initialRevealed);
+  const matchView = useMatchView();
+  const pitchOn = pitch !== undefined && matchView.mode === '2d';
+  // With the pitch on, a goal stays up a while, and a chance or goal waits for its build-up before its line appears.
+  const holdAfter = useCallback((index: number) => (pitchOn && pitch?.frames[index]?.goal ? GOAL_HOLD_MS : HOLD_MS), [pitchOn, pitch]);
+  const stepFor = useCallback(
+    (next: number) => {
+      const buildUp = pitchOn ? pitch?.buildUps[next] : undefined;
+      if (buildUp?.length) return holdAfter(next - 1) + buildUp.length * BUILD_UP_STEP_MS + AFTER_BUILD_UP_MS;
+      return pitchOn ? holdAfter(next - 1) : 700;
+    },
+    [pitchOn, pitch, holdAfter],
+  );
+  const replay = useReplay(timeline.length, stepFor, initialRevealed);
   const [view, setView] = useState<ReportView>('timeline');
   const [managing, setManaging] = useState(false);
   // Whether the replay was running when the panel opened: closing it carries on the same way.
@@ -114,10 +151,16 @@ export function MatchCentreScreen({
   const shown = timeline.slice(0, replay.revealed);
   const current = shown.at(-1) ?? timeline[0];
   const live = renderManagement !== undefined;
-  const matchView = useMatchView();
-  const frame = pitch?.frames[Math.max(0, replay.revealed - 1)];
-  const showPitch = pitch !== undefined && frame !== undefined && matchView.mode === '2d';
-  const goalLabel = frame?.goal ? (frame.goal === 'home' ? homeName : awayName) : null;
+  const pendingBuildUp = pitchOn && !replay.finished ? pitch?.buildUps[replay.revealed] : undefined;
+  const buildUpStep = useBuildUpStep(pendingBuildUp, replay.playing && !managing, replay.revealed, holdAfter(replay.revealed - 1));
+  const frame = pendingBuildUp && buildUpStep >= 0 ? pendingBuildUp[buildUpStep] : pitch?.frames[Math.max(0, replay.revealed - 1)];
+  const showPitch = pitchOn && frame !== undefined;
+  const goalBanner = frame?.goal
+    ? {
+        title: `GOAL! ${frame.goal.side === 'home' ? homeName : awayName}`,
+        detail: `${current.clock} ${pitch!.nameOf(frame.goal.scorerId)}${frame.goal.assistId ? ` · assist ${pitch!.nameOf(frame.goal.assistId)}` : ''}`,
+      }
+    : null;
 
   // Full time in a live match: record it once (the report then shows the other results too).
   const recorded = useRef(false);
@@ -153,7 +196,7 @@ export function MatchCentreScreen({
         onSkip={replay.skipToEnd}
         onManage={live ? manage : undefined}
         onExit={matchView.exitFullScreen}>
-        <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalLabel={goalLabel} />
+        <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} />
       </FullScreenMatch>
     );
   }
@@ -189,7 +232,7 @@ export function MatchCentreScreen({
               ) : null}
             </View>
           ) : null}
-          {showPitch ? <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalLabel={goalLabel} /> : null}
+          {showPitch ? <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} /> : null}
           {live ? <Button label="Manage team" icon="tactics" variant="secondary" onPress={manage} accessibilityHint="Pauses the match: substitutions and instructions" /> : null}
           <View style={styles.controls}>
             <View style={styles.flex}>

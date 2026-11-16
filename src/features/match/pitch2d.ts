@@ -1,5 +1,5 @@
 import type { PlayerId, Position } from '@/data/schemas';
-import type { MatchEvent, MatchResult, Side } from '@/engine/types';
+import type { ChanceType, MatchEvent, MatchResult, Side } from '@/engine/types';
 
 /**
  * The 2D match view's frames (pure; no React). The engine simulates events,
@@ -25,11 +25,13 @@ export type PitchDot = {
   highlight: boolean;
 };
 
+export type PitchGoal = { side: Side; scorerId: PlayerId; assistId: PlayerId | null };
+
 export type PitchFrame = {
   ball: { x: number; y: number };
   dots: PitchDot[];
-  /** A goal: the side that scored (the screen flashes). */
-  goal: Side | null;
+  /** A goal: who scored (the screen shows a banner). */
+  goal: PitchGoal | null;
 };
 
 /** How far forward a position plays (0 = centre-back line … 1 = striker line). */
@@ -112,11 +114,11 @@ const attackingGoalX = (side: Side) => (side === 'home' ? 1 : 0);
 const towards = (side: Side, t: number) => (side === 'home' ? t : 1 - t);
 
 /**
- * One frame per event of the match (keyed by its index in `result.events`,
- * which is the commentary item's key). Who's on the pitch follows the
- * substitutions, red cards and injuries up to and including that event.
+ * Walks the events in order, keeping track of who's on the pitch: `visit`
+ * gets each event with the line-ups after it (substitutions, red cards and
+ * injuries applied).
  */
-export function buildPitchFrames(result: MatchResult): Map<number, PitchFrame> {
+function walkLineUps(result: MatchResult, visit: (event: MatchEvent, index: number, onPitch: Record<Side, readonly OnPitch[]>) => void): void {
   const positionOf = new Map(result.players.map((p) => [p.playerId, p.position]));
   const onPitch: Record<Side, OnPitch[]> = {
     home: result.players.filter((p) => p.side === 'home' && p.started).map((p) => ({ playerId: p.playerId, position: p.position })),
@@ -125,11 +127,7 @@ export function buildPitchFrames(result: MatchResult): Map<number, PitchFrame> {
   const remove = (side: Side, id: PlayerId) => {
     onPitch[side] = onPitch[side].filter((p) => p.playerId !== id);
   };
-
-  const frames = new Map<number, PitchFrame>();
-  let ball = { x: 0.5, y: 0.5 };
   result.events.forEach((event, index) => {
-    // Line-up changes first, so the frame shows the team after them.
     if (event.type === 'substitution') {
       const slot = onPitch[event.side].find((p) => p.playerId === event.offId)?.position ?? positionOf.get(event.onId) ?? 'CM';
       remove(event.side, event.offId);
@@ -139,7 +137,19 @@ export function buildPitchFrames(result: MatchResult): Map<number, PitchFrame> {
     } else if (event.type === 'injury') {
       remove(event.side, event.playerId);
     }
+    visit(event, index, onPitch);
+  });
+}
 
+/**
+ * One frame per event of the match (keyed by its index in `result.events`,
+ * which is the commentary item's key). Who's on the pitch follows the
+ * substitutions, red cards and injuries up to and including that event.
+ */
+export function buildPitchFrames(result: MatchResult): Map<number, PitchFrame> {
+  const frames = new Map<number, PitchFrame>();
+  let ball = { x: 0.5, y: 0.5 };
+  walkLineUps(result, (event, index, onPitch) => {
     const moment = momentOf(event, `${index}`, ball);
     ball = moment.ball;
     const phase = (side: Side): Phase => (moment.attacking === null ? 'neutral' : moment.attacking === side ? 'attacking' : 'defending');
@@ -153,9 +163,113 @@ export function buildPitchFrames(result: MatchResult): Map<number, PitchFrame> {
         dot.y = ball.y;
       }
     }
-    frames.set(index, { ball, dots: dots.map(clampDot), goal: event.type === 'goal' ? event.side : null });
+    const goal = event.type === 'goal' ? { side: event.side, scorerId: event.scorerId, assistId: event.assistId } : null;
+    frames.set(index, { ball, dots: dots.map(clampDot), goal });
   });
   return frames;
+}
+
+// --- Build-ups (2D step B) ---------------------------------------------------------------
+//
+// For every shot and goal: a few keyframes of the move that led to it, played
+// BEFORE its commentary line appears (so the line never gives a goal away
+// early). The path follows the kind of chance the engine recorded.
+
+/** Time each build-up keyframe is shown (the dots glide between them). */
+export const BUILD_UP_STEP_MS = 520;
+
+/** A ball holder: who, how far up the pitch (0 = own goal … 1 = the goal attacked), and across (0 top … 1 bottom). */
+type Touch = { playerId: PlayerId; t: number; y: number };
+
+const MIDFIELD: readonly Position[] = ['CM', 'DM', 'AM', 'LM', 'RM'];
+const DEFENCE: readonly Position[] = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'DM'];
+const WIDE: readonly Position[] = ['LW', 'RW', 'LM', 'RM', 'LWB', 'RWB', 'LB', 'RB'];
+
+/** The first player (not excluded) in one of `positions`, or any outfielder, or null. */
+function pick(players: readonly OnPitch[], positions: readonly Position[], exclude: readonly PlayerId[], key: string): PlayerId | null {
+  const pool = players.filter((p) => p.position !== 'GK' && !exclude.includes(p.playerId));
+  const preferred = pool.filter((p) => positions.includes(p.position));
+  const from = preferred.length ? preferred : pool;
+  return from.length ? from[Math.floor(jitter(key) * from.length)].playerId : null;
+}
+
+/** The touches leading to a shot by `shooter`, by chance type (the last touch is the shooter's). */
+function buildUpPath(
+  chance: ChanceType,
+  players: readonly OnPitch[],
+  shooter: PlayerId,
+  assist: PlayerId | null,
+  key: string,
+): Touch[] {
+  const wing = jitter(key + 'w') < 0.5 ? 0.12 : 0.88;
+  const centre = 0.42 + jitter(key + 'c') * 0.16;
+  const helper = (positions: readonly Position[], salt: string) => pick(players, positions, [shooter, ...(assist ? [assist] : [])], key + salt);
+  const steps: (Touch | null)[] = (() => {
+    switch (chance) {
+      case 'cross': {
+        const crosser = assist ?? helper(WIDE, 'x');
+        const starter = helper(DEFENCE, 's');
+        return [
+          starter ? { playerId: starter, t: 0.38, y: wing < 0.5 ? 0.2 : 0.8 } : null,
+          crosser ? { playerId: crosser, t: 0.84, y: wing } : null,
+          { playerId: shooter, t: 0.9, y: centre },
+        ];
+      }
+      case 'long-ball': {
+        const starter = helper(['CB', 'DM'], 's');
+        return [starter ? { playerId: starter, t: 0.22, y: centre } : null, assist ? { playerId: assist, t: 0.6, y: centre } : null, { playerId: shooter, t: 0.82, y: centre }];
+      }
+      case 'long-shot': {
+        const starter = helper(MIDFIELD, 's');
+        return [starter ? { playerId: starter, t: 0.5, y: 0.3 + jitter(key + 'l') * 0.4 } : null, assist ? { playerId: assist, t: 0.64, y: centre } : null, { playerId: shooter, t: 0.72, y: centre }];
+      }
+      case 'set-piece': {
+        const taker = assist ?? helper(MIDFIELD, 't');
+        return [taker ? { playerId: taker, t: 0.995, y: wing < 0.5 ? 0.01 : 0.99 } : null, { playerId: shooter, t: 0.92, y: centre }];
+      }
+      case 'through-ball':
+      default: {
+        const starter = helper(['DM', 'CM'], 's');
+        const passer = assist ?? helper(['AM', 'CM', 'LW', 'RW'], 'p');
+        return [
+          starter ? { playerId: starter, t: 0.45, y: centre } : null,
+          passer ? { playerId: passer, t: 0.66, y: 0.35 + jitter(key + 'p') * 0.3 } : null,
+          { playerId: shooter, t: 0.86, y: centre },
+        ];
+      }
+    }
+  })();
+  return steps.filter((s): s is Touch => s !== null);
+}
+
+/**
+ * Build-up keyframes for every shot and goal, keyed by event index. Each
+ * keyframe: the attacking team pushed up, the defending team back, the ball
+ * with the player on it (highlighted), moving towards goal.
+ */
+export function buildBuildUps(result: MatchResult): Map<number, PitchFrame[]> {
+  const buildUps = new Map<number, PitchFrame[]>();
+  walkLineUps(result, (event, index, onPitch) => {
+    if (event.type !== 'goal' && event.type !== 'shot') return;
+    const side = event.side;
+    const shooter = event.type === 'goal' ? event.scorerId : event.shooterId;
+    const assist = event.type === 'goal' ? event.assistId : null;
+    const path = buildUpPath(event.chance, onPitch[side], shooter, assist, `${index}`);
+    const base = [...shape(side, onPitch[side], 'attacking'), ...shape(other(side), onPitch[other(side)], 'defending')];
+    buildUps.set(
+      index,
+      path.map((touch) => {
+        const ball = { x: towards(side, touch.t), y: touch.y };
+        const dots = base.map((d) =>
+          d.playerId === touch.playerId
+            ? { ...d, highlight: true, x: side === 'home' ? ball.x - 0.025 : ball.x + 0.025, y: ball.y }
+            : { ...d },
+        );
+        return { ball: { x: clamp(ball.x), y: clamp(ball.y) }, dots: dots.map(clampDot), goal: null };
+      }),
+    );
+  });
+  return buildUps;
 }
 
 type Moment = { attacking: Side | null; ball: { x: number; y: number }; focus: PlayerId | null };

@@ -8,7 +8,11 @@ import { useEffect, useState } from 'react';
  * than setInterval, so pausing, skipping and unmounting never leave a timer
  * running.
  */
-export function useReplay(length: number, stepMs = 700, initialRevealed = 1) {
+/**
+ * `stepMs`: how long before the next item appears; a function of that item's
+ * index gives each item its own wait (the 2D view's build-ups need longer).
+ */
+export function useReplay(length: number, stepMs: number | ((nextIndex: number) => number) = 700, initialRevealed = 1) {
   // Kick-off is visible straight away; a resumed match starts where it was left.
   const [revealed, setRevealed] = useState(Math.max(1, initialRevealed));
   const [playing, setPlaying] = useState(true);
@@ -16,7 +20,8 @@ export function useReplay(length: number, stepMs = 700, initialRevealed = 1) {
 
   useEffect(() => {
     if (!playing || finished) return;
-    const timer = setTimeout(() => setRevealed((n) => Math.min(length, n + 1)), stepMs);
+    const wait = typeof stepMs === 'function' ? stepMs(revealed) : stepMs;
+    const timer = setTimeout(() => setRevealed((n) => Math.min(length, n + 1)), wait);
     return () => clearTimeout(timer);
   }, [playing, finished, revealed, length, stepMs]);
 
