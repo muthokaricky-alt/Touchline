@@ -1107,9 +1107,12 @@ both); installable and offline (PWA).
 - **Hosting:** the user deploys on Cloudflare, whose dashboard now makes a
   **Worker** (static assets) from the repo: `wrangler.jsonc` (assets-only:
   `dist/`, `not_found_handling: "single-page-application"`, `_headers`
-  applied; checked against Cloudflare's docs) + build command
-  `npm run build:web` in the Worker's build settings. `netlify.toml` stays
-  for Netlify.
+  applied; checked against Cloudflare's docs) with `build.command`
+  `npm run build:web`, so `npx wrangler deploy` builds the site itself (the
+  first two Cloudflare builds failed: the dashboard's build command was
+  "None", so `dist/` didn't exist; verified the fix with
+  `npx wrangler@4.163.0 deploy --dry-run` from an empty `dist/`).
+  `netlify.toml` stays for Netlify.
 - Saves on the web are per browser (localStorage); export/import moves them.
 
 ### Scouting (after Milestone 10)

@@ -36,12 +36,11 @@ site (`dist/`).
 
 1. **Workers & Pages → Create → connect to Git**, choose the `Touchline`
    repository, project name `touchline`.
-2. In the project: **Settings → Build** (build configuration):
-   - **Build command:** `npm run build:web` (it was "None": then nothing
-     builds the site and the deploy fails)
-   - **Deploy command:** `npx wrangler deploy` (the default)
-   - **Build variables:** `NODE_VERSION` = `22`
-3. **Deployments → Retry** (or push to `main`). The site appears at
+2. Nothing else to set: the deploy command `npx wrangler deploy` (the
+   default) reads `wrangler.jsonc`, which builds the site first
+   (`build.command`) and then uploads `dist/`. The dashboard's build command
+   can stay "None".
+3. Every push to `main` deploys. The site appears at
    `https://touchline.<your-subdomain>.workers.dev`.
 
 (A classic Pages project works too: build command `npm run build:web`,
