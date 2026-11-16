@@ -1,3 +1,4 @@
+import { HOME_COUNTRY } from '@/data/fictional';
 import type { ClubId, GameDatabase } from '@/data/schemas';
 
 import { aiSetup } from '../ai/opponent';
@@ -19,9 +20,11 @@ export type ClubChoiceView = {
 
 export type LeagueChoicesView = { leagueName: string; clubs: ClubChoiceView[] };
 
-/** Every club, grouped by league (top tier first), strongest first: what a new manager can choose from. */
+/** Every club in the home country, grouped by league (top tier first), strongest first: what a new manager can choose from. */
 export function selectCareerChoices(db: GameDatabase, season: Season): LeagueChoicesView[] {
-  return [...season.leagues]
+  const home = (competitionId: string) => db.competitions.find((c) => c.id === competitionId)?.country === HOME_COUNTRY;
+  return season.leagues
+    .filter((membership) => home(membership.competitionId))
     .map((membership) => ({ membership, tier: boardExpectation(db, season, membership.clubIds[0])?.tier ?? 9 }))
     .sort((a, b) => a.tier - b.tier)
     .map(({ membership }) => ({

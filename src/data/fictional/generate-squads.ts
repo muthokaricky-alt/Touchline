@@ -149,9 +149,11 @@ export type SquadGenerationOptions = {
   referenceDate: string;
   /** Number of the first player; IDs are sequential across the whole database. */
   firstPlayerNumber: number;
+  /** Where foreign players come from (default: FOREIGN_NATIONS, as for English clubs). */
+  foreignNations?: readonly NationCode[];
 };
 
-export function generateSquad({ rng, club, referenceDate, firstPlayerNumber }: SquadGenerationOptions): GeneratedSquad {
+export function generateSquad({ rng, club, referenceDate, firstPlayerNumber, foreignNations }: SquadGenerationOptions): GeneratedSquad {
   const squad: GeneratedSquad = { players: [], attributes: [], contracts: [] };
   // Reputation 9 → level ~9, reputation 16 → level ~14.
   const clubLevel = 4 + Math.round(club.reputation * 0.6);
@@ -165,7 +167,7 @@ export function generateSquad({ rng, club, referenceDate, firstPlayerNumber }: S
     const youthPenalty = age < 20 ? 2 : 0;
     const level = clamp(clubLevel + rng.int(-3, 2) - youthPenalty, 3, 18);
 
-    squad.players.push(generatePlayer(rng, playerId, slot.position, age, club.country, referenceDate, usedLastNames));
+    squad.players.push(generatePlayer(rng, playerId, slot.position, age, club.country, referenceDate, usedLastNames, foreignNations));
     squad.attributes.push(generateAttributes(rng, playerId, slot.position, level));
     squad.contracts.push(generateContract(rng, `con_${serial}`, playerId, club, slot.squadNumber, level, referenceDate));
   });
@@ -220,12 +222,14 @@ export function generateYouthIntake({
   count,
   referenceDate,
   playerNumber,
+  foreignNations,
 }: {
   rng: Rng;
   club: Club;
   count: number;
   referenceDate: string;
   playerNumber: (k: number) => number;
+  foreignNations?: readonly NationCode[];
 }): { players: Player[]; attributes: PlayerAttributes[] } {
   const players: Player[] = [];
   const attributes: PlayerAttributes[] = [];
@@ -237,7 +241,7 @@ export function generateYouthIntake({
     const id = `plr_${playerNumber(k)}`;
     const age = rng.int(16, 17);
     const level = clamp(academyLevel + rng.int(-2, 1), 3, 14);
-    players.push(generatePlayer(rng, id, position, age, club.country, referenceDate, usedLastNames));
+    players.push(generatePlayer(rng, id, position, age, club.country, referenceDate, usedLastNames, foreignNations));
     attributes.push(generateAttributes(rng, id, position, level));
   }
   return { players, attributes };
@@ -251,8 +255,9 @@ function generatePlayer(
   homeCountry: NationCode,
   referenceDate: string,
   usedLastNames: Set<string>,
+  foreignNations: readonly NationCode[] = FOREIGN_NATIONS,
 ): Player {
-  const nationality = rng.chance(0.7) ? homeCountry : rng.pick(FOREIGN_NATIONS);
+  const nationality = rng.chance(0.7) ? homeCountry : rng.pick(foreignNations);
   const names = NAME_POOLS[nationality] ?? NAME_POOLS.ENG;
   const unused = names.lastNames.filter((name) => !usedLastNames.has(name));
   // Fall back to the full pool only if this nationality's surnames are exhausted.

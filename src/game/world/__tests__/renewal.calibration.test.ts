@@ -44,10 +44,13 @@ describe('ten summers of renewal', () => {
   });
 
   it('stays the same size give or take, with a bounded free-agent pool', () => {
+    // Relative to the generated world (3,184 players with the leagues abroad). Measured with seed
+    // 20260701: it grows about a third and levels off (~4,235), ~14% free agents. Before the
+    // foreign leagues: 940 → ~1,180, ~13–16%.
     for (const w of worlds) {
-      expect(w.players.length).toBeGreaterThan(800);
-      expect(w.players.length).toBeLessThan(1200);
-      expect(w.players.length - w.contracts.length).toBeLessThan(250);
+      expect(w.players.length).toBeGreaterThan(base.players.length * 0.85);
+      expect(w.players.length).toBeLessThan(base.players.length * 1.4);
+      expect(w.players.length - w.contracts.length).toBeLessThan(w.players.length * 0.2);
     }
   });
 
@@ -72,7 +75,7 @@ describe('ten summers of renewal', () => {
     const avg = ages.reduce((s, a) => s + a, 0) / ages.length;
     expect(avg).toBeGreaterThan(22);
     expect(avg).toBeLessThan(29);
-    expect(ages.filter((a) => a >= 38).length).toBeLessThan(10);
+    expect(ages.filter((a) => a >= 38).length).toBeLessThan(last.players.length / 100);
     expect(checkIntegrity(last)).toEqual([]);
   });
 });

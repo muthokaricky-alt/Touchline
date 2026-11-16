@@ -187,14 +187,17 @@ const clubLevelFor = (reputation: number) => 4 + reputation / 8;
 export function jobOffers(db: GameDatabase, reputation: number, currentClubId: ClubId, seed: number, atLeastOne: boolean): ClubId[] {
   const level = clubLevelFor(reputation);
   const rng = createRng(mixSeed(seed, 4242));
-  const candidates = db.clubs
+  // Offers come from clubs in his own country (jobs abroad are a later step).
+  const country = db.clubs.find((c) => c.id === currentClubId)?.country;
+  const home = db.clubs.filter((c) => c.country === country);
+  const candidates = home
     .filter((c) => c.id !== currentClubId && Math.abs(c.reputation - level) <= 2)
     .sort((a, b) => a.id.localeCompare(b.id));
   const shuffled = candidates.map((c) => ({ c, k: rng.next() })).sort((a, b) => a.k - b.k).map((x) => x.c);
   const count = Math.min(shuffled.length, rng.int(atLeastOne ? 1 : 0, 3));
   const offers = shuffled.slice(0, count).map((c) => c.id);
   if (atLeastOne && offers.length === 0) {
-    const smaller = db.clubs.filter((c) => c.id !== currentClubId).sort((a, b) => a.reputation - b.reputation || a.id.localeCompare(b.id));
+    const smaller = home.filter((c) => c.id !== currentClubId).sort((a, b) => a.reputation - b.reputation || a.id.localeCompare(b.id));
     if (smaller.length) offers.push(smaller[0].id);
   }
   return offers;

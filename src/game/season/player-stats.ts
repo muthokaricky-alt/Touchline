@@ -24,13 +24,27 @@ export type PlayerSeasonStats = {
 };
 
 /** Adds one match's player lines to the running totals. Returns a new array (immutable). */
-export function addMatchToStats(
+export function addMatchToStats(lines: readonly PlayerSeasonLine[], fixture: Fixture, result: MatchResult): PlayerSeasonLine[] {
+  return addMatchesToStats(lines, [{ fixture, result }]);
+}
+
+/**
+ * Adds several matches at once (a whole matchday): the lookup of all
+ * season lines is built once, not once per match (~4,000 lines × 65
+ * matches a Saturday with the leagues abroad). Same result as adding them
+ * one by one, in the same order.
+ */
+export function addMatchesToStats(
   lines: readonly PlayerSeasonLine[],
-  fixture: Fixture,
-  result: MatchResult,
+  matches: readonly { fixture: Fixture; result: MatchResult }[],
 ): PlayerSeasonLine[] {
-  const key = (playerId: PlayerId) => `${fixture.competitionId}|${playerId}`;
   const byKey = new Map(lines.map((l) => [`${l.competitionId}|${l.playerId}`, l]));
+  for (const { fixture, result } of matches) addOne(byKey, fixture, result);
+  return [...byKey.values()];
+}
+
+function addOne(byKey: Map<string, PlayerSeasonLine>, fixture: Fixture, result: MatchResult): void {
+  const key = (playerId: PlayerId) => `${fixture.competitionId}|${playerId}`;
   for (const p of result.players) {
     const clubId = p.side === 'home' ? fixture.homeId : fixture.awayId;
     const previous = byKey.get(key(p.playerId));
@@ -49,7 +63,6 @@ export function addMatchToStats(
       ratingTotal: Math.round(((previous?.ratingTotal ?? 0) + p.rating) * 10) / 10,
     });
   }
-  return [...byKey.values()];
 }
 
 /** One competition's player stats (or all competitions combined, per player, when no id is given). */

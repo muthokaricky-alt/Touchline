@@ -314,6 +314,9 @@ function assignBestPlayers(
     .map((slot, index) => ({ slot, index, scarcity: scarcity(slot) }))
     .sort((a, b) => a.scarcity - b.scarcity || a.index - b.index);
 
+  // On an exact tie the more natural fit wins, then the lower id. (Found when the foreign
+  // leagues added squads: an unfamiliar player tied with an unused natural and won on id.)
+  const FIT_ORDER = { natural: 0, accomplished: 1, unfamiliar: 2 } as const;
   const used = new Set<PlayerId>();
   for (const { slot } of order) {
     let best: LineupCandidate | null = null;
@@ -321,7 +324,11 @@ function assignBestPlayers(
     for (const candidate of pool) {
       if (used.has(candidate.player.id)) continue;
       const score = effectiveRating(candidate.player, candidate.attributes, slot.position);
-      if (score > bestScore || (score === bestScore && best && compareIds(candidate, best) < 0)) {
+      const tieBreak = () => {
+        const fit = FIT_ORDER[positionFit(candidate.player, slot.position)] - FIT_ORDER[positionFit(best!.player, slot.position)];
+        return fit < 0 || (fit === 0 && compareIds(candidate, best!) < 0);
+      };
+      if (score > bestScore || (score === bestScore && best && tieBreak())) {
         best = candidate;
         bestScore = score;
       }

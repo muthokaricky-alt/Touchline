@@ -100,9 +100,15 @@ export function tieLoser(fixture: Fixture): ClubId | null {
 
 // --- Cup state, derived from the season --------------------------------------
 
-/** Entrants: every club in the season's leagues. Lowest tier listed last. */
+/** The leagues entering the cup (its country's), top tier first. */
+function entrantLeagues(season: Season) {
+  const ids = season.cupEntrantLeagues;
+  return ids ? season.leagues.filter((l) => ids.includes(l.competitionId)) : season.leagues;
+}
+
+/** Entrants: every club in the cup country's leagues. Lowest tier listed last. */
 export function cupEntrants(season: Season): ClubId[] {
-  return season.leagues.flatMap((l) => l.clubIds);
+  return entrantLeagues(season).flatMap((l) => l.clubIds);
 }
 
 export function cupFixtures(season: Season): Fixture[] {
@@ -122,7 +128,8 @@ export function firstCupRound(season: Season, leagueWeeks: number): Fixture[] {
   const target = floorPow2(entrants.length);
   const needPlay = entrants.length > target ? 2 * (entrants.length - target) : entrants.length;
 
-  const lowestTier = season.leagues[season.leagues.length - 1].clubIds;
+  const leagues = entrantLeagues(season);
+  const lowestTier = leagues[leagues.length - 1].clubIds;
   const rng = createRng(mixSeed(season.seed, 999));
   const pool = [...lowestTier];
   for (let i = pool.length - 1; i > 0; i--) {
@@ -130,7 +137,7 @@ export function firstCupRound(season: Season, leagueWeeks: number): Fixture[] {
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   // If the lowest tier is too small, top up from the tier above (bottom-up).
-  const candidates = [...pool, ...season.leagues.slice(0, -1).reverse().flatMap((l) => l.clubIds)];
+  const candidates = [...pool, ...leagues.slice(0, -1).reverse().flatMap((l) => l.clubIds)];
   const participants = needPlay === entrants.length ? entrants : candidates.slice(0, needPlay);
 
   return drawCupRound({

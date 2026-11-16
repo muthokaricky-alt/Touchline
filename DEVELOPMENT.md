@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management and scouting (save v9). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting and foreign leagues step A (save v10). Next: foreign leagues step B. Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -817,6 +817,61 @@ earned in; then, after measuring, real-league deadlines for yellow cards.
   guard; they use `playUserFixture` (`game/season/__fixtures__/play.ts`),
   which swaps banned players out first, as the store does.
 
+### Foreign leagues, step A: the world (after Milestone 10)
+
+Decisions (user): main leagues England (two divisions + cup), Kenya,
+France, Germany, Italy and Spain, 18 clubs each, fully simulated; all as
+strong as the First Division; Kenyan names = the user's five (Ndom, Topan,
+Chapati, Ruhanga, Meensat FC) + invented city-based clubs (for the user to
+review); "1–2 teams" countries as background clubs. Split: A = world,
+leagues, simulation, viewing; B = transfers/jobs/careers abroad, tuning.
+
+- **Old players unchanged.** England's clubs and the free agents are
+  generated first, from the original random stream, exactly as before
+  (checked against the previous commit's generator: all 940 players,
+  attributes, contracts identical). The 102 clubs abroad come after, from
+  their own stream (`seed ^ 0x5eedab0d`), numbered from 941. English
+  clubs keep `FOREIGN_NATIONS` (changing that list would rename every
+  player); clubs abroad use `FOREIGN_NATIONS_BY_COUNTRY`. New name pools:
+  KEN, GER, ITA, POR, NGA, GHA, UGA, TAN.
+- **World:** 142 clubs (40 England, 5 × 18 abroad, 12 background: two each
+  from NED, POR, NGA, GHA, UGA, TAN), 3,184 players. Leagues abroad: tier
+  1, no promotion/relegation, 34 matchdays on the same Saturdays.
+  Background clubs are in no league: their squads develop, renew, retire
+  and trade, but never play.
+- **Season order:** England's leagues first (so their fixture seeds are
+  what they always were), then abroad. `Season.cupEntrantLeagues`
+  (optional; missing = all leagues, as in older saves) keeps the National
+  Cup English; `nextMemberships` builds a pyramid per country; leagues a
+  save doesn't know join at its next season.
+- **Youth intakes:** the first 100 clubs keep their id scheme and random
+  streams; clubs beyond use a separate range (`clubIndex · 10` would run
+  into the next year's ids, `year · 100 + index` into another club-year's
+  seed).
+- **Step A limits:** job offers only from the manager's own country
+  (`jobOffers`), the new-career screen lists England's clubs only.
+  Transfers already work worldwide (offers from clubs abroad too); the
+  market has an "Abroad" filter; the Fixtures tab lists every league
+  (England first, then the cup, then Kenya, France… by country).
+- **Bug found by the bigger world:** auto-pick broke exact rating ties on
+  player id, so an unfamiliar player could beat an equally rated unused
+  natural (US Morvandelle). Ties now go to the better fit, then the id.
+- **Performance** (3× the matches): `selectSquadCandidates` rebuilt maps
+  of every player for each team of each match (now cached per database,
+  readonly so callers can't corrupt the cache); condition and season stats
+  are applied once per matchday instead of once per match
+  (`applyMatches`, `recordResults`, `addMatchesToStats`, same results in
+  the same order). Jest kick-offs: ~300 ms normal (was ~550–870 before
+  the fixes, ~100 ms before the leagues abroad), ~550 ms after a month
+  boundary (development + every AI club's formation search). Desktop
+  Chrome, full time incl. rendering: 230–520 ms. A late-season save is
+  ~2.4 MB of JSON → ~205 KB compressed, ~170 ms to compress (deflate level
+  makes little difference: measured 1–6). Not yet measured on a phone; if
+  too slow there, the next step is a cheaper results model for matches
+  abroad.
+- **Save v10:** same fields; older saves get the generated contracts of
+  the clubs abroad (only for players without one, so it's safe to re-run).
+
 ### Scouting (after Milestone 10)
 
 Decisions (user): scouting reveals potential only (attributes stay
@@ -1215,7 +1270,29 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   → profile "Scouted", 18–19 → scout again → two matches → "Full report",
   18. Zero console errors, no overflow.
 
+### Foreign leagues, step A ✅ (after the roadmap)
+- Name pools, 90 league clubs + 12 background clubs abroad, five leagues,
+  separate generation stream; per-country cup entrants and pyramids;
+  intake ids/seeds beyond 100 clubs; save v10; Abroad market filter;
+  Fixtures tab ordering; auto-pick tie fix; squad cache and per-matchday
+  batching.
+- Tests: 931 total; world shape and nationalities, leagues/cup per
+  country, no promotion abroad, save size (compressed), v9 → v10 (and
+  re-run safety); calibration bounds made relative to the world's size.
+  `npm test` ~85 s (was ~36 s): store scenarios that play many matches
+  dominate.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px and 1280px: new career → 10 matches (full time
+  230–520 ms) → Fixtures tab shows Kenya, France, Germany, Italy, Spain;
+  Kenyan table (Kisumu Lakeside, Chapati FC, Ndom FC…); Transfers →
+  Abroad lists players at Real Castrovega, AC Valdoro, SV Eichental,
+  Ndom FC. Zero console errors, no overflow.
+
 ### Known issues / not yet verified
+- **Kenyan club names** (and the other invented names abroad) are waiting
+  for the user's review: `src/data/fictional/clubs.ts`.
+- **Performance with the leagues abroad** hasn't been measured on a phone
+  (see "Foreign leagues, step A"). `npm test` takes ~85 s.
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
 - The icon is an original placeholder-quality design; replace with
@@ -1249,6 +1326,9 @@ All ten roadmap milestones are built. What's left before a release:
    eas-cli`, `eas login`, then `eas build --platform android --profile
    preview` for an installable APK (eas.json is already set up).
 3. Then choose: store submission (production profile, store listings,
-   privacy policy) or more gameplay. Parked ideas: foreign leagues,
+   privacy policy) or more gameplay. Next: **foreign leagues step B**
+   (jobs and new careers abroad incl. expectations without relegation,
+   offers from clubs abroad, market/scouting by country, performance after
+   the phone test, faster store tests). Parked ideas:
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

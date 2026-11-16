@@ -15,11 +15,16 @@ let season = createSeason(db, 2026, 8);
 for (let i = 0; i < 3; i++) season = playUserFixture(db, season, user).season;
 
 describe('competitionOptions', () => {
-  it("lists the user's league first, then the other league, then the cup", () => {
-    expect(competitionOptions(db, season, USER).map((o) => [o.id, o.kind])).toEqual([
-      [FIRST, 'league'],
-      ['comp_second_division', 'league'],
-      ['comp_national_cup', 'cup'],
+  it("lists the user's league first, then the other league, the cup, then the leagues abroad by country", () => {
+    expect(competitionOptions(db, season, USER).map((o) => [o.id, o.kind, o.label])).toEqual([
+      [FIRST, 'league', 'First Division'],
+      ['comp_second_division', 'league', 'Second Division'],
+      ['comp_national_cup', 'cup', 'National Cup'],
+      ['comp_kenya_premier', 'league', 'Kenya'],
+      ['comp_france_premier', 'league', 'France'],
+      ['comp_germany_premier', 'league', 'Germany'],
+      ['comp_italy_premier', 'league', 'Italy'],
+      ['comp_spain_premier', 'league', 'Spain'],
     ]);
   });
 });

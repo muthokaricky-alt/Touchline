@@ -5,7 +5,7 @@ import type { MatchChange, MatchInput, MatchResult, Side } from '@/engine/types'
 
 import { aiSetup, buildAiTeam } from '../ai/opponent';
 import { suspendedFor } from '../discipline/suspensions';
-import { applyMatch, conditionOn, emptyConditions, squadIds, type ConditionState, type NewInjury } from '../condition/condition';
+import { applyMatches, conditionOn, emptyConditions, squadIds, type ConditionState, type NewInjury } from '../condition/condition';
 import { starterIds, type Lineup } from '../lineup';
 import { buildMatchTeam, lineupStrength } from '../match/build-match-team';
 import { flattenAttributes } from '../ratings';
@@ -13,7 +13,7 @@ import { selectSquadCandidates } from '../squad/squad-selectors';
 import type { Tactics } from '../tactics/tactics';
 import { cupEntrants, cupRoundCount, cupRoundName, cupWinner, firstCupRound, nextCupRound } from './cup';
 import { scheduleLeague } from './fixtures';
-import { addMatchToStats } from './player-stats';
+import { addMatchesToStats } from './player-stats';
 import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season } from './season';
 import { computeTable, type TableRow } from './table';
 
@@ -66,12 +66,32 @@ export function totalMatchdays(season: Season, competitionId: CompetitionId): nu
 // --- Creating seasons ----------------------------------------------------------------
 
 /**
+ * The database's leagues in season order: the cup's country first, by tier
+ * (England's two divisions, so their fixture seeds are what they always
+ * were), then the leagues abroad in database order.
+ */
+function seasonLeagueOrder(db: GameDatabase): League[] {
+  const cupCountry = db.competitions.find(isCup)?.country;
+  return db.competitions
+    .filter(isLeague)
+    .map((league, order) => ({ league, order }))
+    .sort(
+      (a, b) =>
+        Number(b.league.country === cupCountry) - Number(a.league.country === cupCountry) || a.league.tier - b.league.tier || a.order - b.order,
+    )
+    .map((x) => x.league);
+}
+
+/**
  * A new season. Leagues come from `memberships` (after promotion/relegation)
- * or, for the first season, from the database. Leagues are ordered by tier.
+ * or, for the first season, from the database; a league the memberships
+ * don't mention (a save from before it existed) starts with its database clubs.
  */
 export function createSeason(db: GameDatabase, startYear: number, seed: number, memberships?: LeagueMembership[]): Season {
-  const dbLeagues = db.competitions.filter(isLeague).sort((a, b) => a.tier - b.tier);
-  const leagues = memberships ?? dbLeagues.map((l) => ({ competitionId: l.id, clubIds: [...l.clubIds] }));
+  const dbLeagues = seasonLeagueOrder(db);
+  const leagues = dbLeagues.map(
+    (l) => memberships?.find((m) => m.competitionId === l.id) ?? { competitionId: l.id, clubIds: [...l.clubIds] },
+  );
   const cup = db.competitions.find(isCup) ?? null;
 
   const fixtures = leagues.flatMap((membership, index) => {
@@ -86,7 +106,17 @@ export function createSeason(db: GameDatabase, startYear: number, seed: number, 
     });
   });
 
-  const season: Season = { label: seasonLabel(startYear), startYear, seed, leagues, cupId: cup?.id ?? null, fixtures, playerStats: [] };
+  const cupEntrantLeagues = cup ? dbLeagues.filter((l) => l.country === cup.country).map((l) => l.id) : undefined;
+  const season: Season = {
+    label: seasonLabel(startYear),
+    startYear,
+    seed,
+    leagues,
+    cupId: cup?.id ?? null,
+    ...(cupEntrantLeagues ? { cupEntrantLeagues } : {}),
+    fixtures,
+    playerStats: [],
+  };
   return { ...season, fixtures: [...fixtures, ...firstCupRound(season, leagueWeeks(season))] };
 }
 
@@ -217,13 +247,27 @@ export function compactResult(result: MatchResult): FixtureResult {
 
 /** Stores a result and adds it to the player totals. */
 export function recordResult(season: Season, fixtureId: string, result: MatchResult): Season {
-  const fixture = season.fixtures.find((f) => f.id === fixtureId);
-  if (!fixture) throw new RangeError(`Unknown fixture "${fixtureId}"`);
-  if (fixture.result) throw new RangeError(`Fixture "${fixtureId}" has already been played`);
+  return recordResults(season, [{ fixtureId, result }]);
+}
+
+/** Stores several results at once (a matchday): one pass over the fixtures and the player totals. */
+export function recordResults(season: Season, results: readonly { fixtureId: string; result: MatchResult }[]): Season {
+  const byId = new Map(results.map((r) => [r.fixtureId, r.result]));
+  const fixtures = new Map(season.fixtures.map((f) => [f.id, f]));
+  const played: { fixture: Fixture; result: MatchResult }[] = [];
+  for (const { fixtureId, result } of results) {
+    const fixture = fixtures.get(fixtureId);
+    if (!fixture) throw new RangeError(`Unknown fixture "${fixtureId}"`);
+    if (fixture.result) throw new RangeError(`Fixture "${fixtureId}" has already been played`);
+    played.push({ fixture, result });
+  }
   return {
     ...season,
-    fixtures: season.fixtures.map((f) => (f.id === fixtureId ? { ...f, result: compactResult(result) } : f)),
-    playerStats: addMatchToStats(season.playerStats, fixture, result),
+    fixtures: season.fixtures.map((f) => {
+      const result = byId.get(f.id);
+      return result ? { ...f, result: compactResult(result) } : f;
+    }),
+    playerStats: addMatchesToStats(season.playerStats, played),
   };
 }
 
@@ -250,21 +294,18 @@ export type PlayedDate = {
 export function playDate(db: GameDatabase, season: Season, date: string, user?: UserTeam, condition?: ConditionState): PlayedDate {
   // Every match uses condition as it was at kick-off; the state is updated as each result comes in.
   const before = conditionOn(condition ?? emptyConditions(date), date);
-  let after = before;
-  let next = season;
   let userMatch: PlayedDate['userMatch'] = null;
-  const injuries: NewInjury[] = [];
+  const played: { fixtureId: string; result: MatchResult; squads: Record<Side, readonly string[]> }[] = [];
   for (const fixture of season.fixtures) {
     if (fixture.date !== date || fixture.result) continue;
     const mine = user !== undefined && involves(fixture, user.clubId);
     const result = simulateFixture(db, season, fixture, mine ? user : undefined, before);
-    next = recordResult(next, fixture.id, result);
-    const applied = applyMatch(after, result, { home: squadIds(db, fixture.homeId), away: squadIds(db, fixture.awayId) }, date);
-    after = applied.state;
-    injuries.push(...applied.injuries);
+    played.push({ fixtureId: fixture.id, result, squads: { home: squadIds(db, fixture.homeId), away: squadIds(db, fixture.awayId) } });
     if (mine) userMatch = { fixture, result };
   }
-  return { season: advanceCup(next), userMatch, condition: after, injuries };
+  const next = recordResults(season, played);
+  const applied = applyMatches(before, played, date);
+  return { season: advanceCup(next), userMatch, condition: applied.state, injuries: applied.injuries };
 }
 
 /** Plays every date before the user's next fixture AI-only (e.g. cup rounds after the user was knocked out). */
@@ -370,15 +411,19 @@ export function seasonOutcome(db: GameDatabase, season: Season): SeasonOutcome {
 }
 
 /**
- * Next season's league memberships: each tier's relegated clubs drop one
- * tier, the tier below's promoted clubs go up. Leagues keep their size as
- * long as the places match (3 down, 3 up).
+ * Next season's league memberships: within each country, each tier's
+ * relegated clubs drop one tier and the tier below's promoted clubs go up.
+ * Leagues keep their size as long as the places match (3 down, 3 up).
+ * Single-division countries (abroad) keep their clubs.
  */
 export function nextMemberships(db: GameDatabase, season: Season): LeagueMembership[] {
-  const outcome = seasonOutcome(db, season).leagues.sort((a, b) => a.tier - b.tier);
-  return outcome.map((league, i) => {
-    const above = outcome[i - 1];
-    const below = outcome[i + 1];
+  const outcome = seasonOutcome(db, season).leagues;
+  const countryOf = (competitionId: CompetitionId) => leagueForSeason(db, season, competitionId).country;
+  return outcome.map((league) => {
+    const pyramid = outcome.filter((o) => countryOf(o.competitionId) === countryOf(league.competitionId)).sort((a, b) => a.tier - b.tier);
+    const i = pyramid.indexOf(league);
+    const above = pyramid[i - 1];
+    const below = pyramid[i + 1];
     const leaving = new Set([...(below ? league.relegated : []), ...(above ? league.promoted : [])]);
     const staying = league.table.map((r) => r.clubId).filter((id) => !leaving.has(id));
     const arriving = [...(above ? above.relegated : []), ...(below ? below.promoted : [])];

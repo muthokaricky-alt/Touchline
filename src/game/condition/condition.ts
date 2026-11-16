@@ -161,9 +161,21 @@ function ratingMorale(rating: number): number {
   return 0;
 }
 
-/** Contracted player ids per club, for "left out" morale. */
-export function squadIds(db: GameDatabase, clubId: ClubId): PlayerId[] {
-  return db.contracts.filter((c) => c.clubId === clubId).map((c) => c.playerId);
+const squadIdCache = new WeakMap<GameDatabase, Map<ClubId, PlayerId[]>>();
+
+/** Contracted player ids per club, for "left out" morale. Cached per (immutable) database. */
+export function squadIds(db: GameDatabase, clubId: ClubId): readonly PlayerId[] {
+  let byClub = squadIdCache.get(db);
+  if (!byClub) {
+    byClub = new Map();
+    for (const c of db.contracts) {
+      const ids = byClub.get(c.clubId);
+      if (ids) ids.push(c.playerId);
+      else byClub.set(c.clubId, [c.playerId]);
+    }
+    squadIdCache.set(db, byClub);
+  }
+  return byClub.get(clubId) ?? [];
 }
 
 /**
@@ -177,8 +189,34 @@ export function applyMatch(
   squads: Record<Side, readonly PlayerId[]>,
   date: string,
 ): { state: ConditionState; injuries: NewInjury[] } {
+  return applyMatches(state, [{ result, squads }], date);
+}
+
+/**
+ * Applies every match of one date in a single pass: one copy of the
+ * condition map, not one per match (that cost ~110 ms a matchday with the
+ * leagues abroad). Each player plays at most one match a date, so the order
+ * of the matches doesn't change the outcome.
+ */
+export function applyMatches(
+  state: ConditionState,
+  matches: readonly { result: MatchResult; squads: Record<Side, readonly PlayerId[]> }[],
+  date: string,
+): { state: ConditionState; injuries: NewInjury[] } {
   if (state.date !== date) throw new RangeError(`Condition is on ${state.date}, match on ${date}`);
   const players = new Map(Object.entries(state.players));
+  const injuries: NewInjury[] = [];
+  for (const { result, squads } of matches) applyOne(players, result, squads, date, injuries);
+  return { state: withPlayers(date, players), injuries };
+}
+
+function applyOne(
+  players: Map<PlayerId, PlayerCondition>,
+  result: MatchResult,
+  squads: Record<Side, readonly PlayerId[]>,
+  date: string,
+  injuries: NewInjury[],
+): void {
   const get = (id: PlayerId) => players.get(id) ?? FULLY_FIT;
 
   const outcome = (side: Side): keyof typeof RESULT_MORALE => {
@@ -205,14 +243,12 @@ export function applyMatch(
     }
   }
 
-  const injuries: NewInjury[] = [];
   for (const event of result.events) {
     if (event.type !== 'injury') continue;
     const injury = { name: injuryName(event.playerId, event.days), returns: addDays(date, event.days) };
     players.set(event.playerId, { ...get(event.playerId), injury });
     injuries.push({ playerId: event.playerId, clubId: result[event.side].clubId, injury, days: event.days });
   }
-  return { state: withPlayers(date, players), injuries };
 }
 
 // --- Labels for the UI ------------------------------------------------------------------

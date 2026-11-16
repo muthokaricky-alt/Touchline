@@ -7,7 +7,8 @@ import { ageAt, contractYearsLeft, marketValue, playerAbility, wageDemand } from
 
 /** Transfer market search: every player not at the user's club, filtered and ranked. Pure. */
 
-export type MarketScope = 'all' | 'free' | 'first' | 'second';
+/** 'abroad': players at clubs in other countries than the user's. */
+export type MarketScope = 'all' | 'free' | 'first' | 'second' | 'abroad';
 
 export type MarketFilters = {
   group: PositionGroup | 'all';
@@ -48,6 +49,7 @@ export function searchMarket(
   const attributes = new Map(db.attributes.map((a) => [a.playerId, a]));
   const leagueOf = new Map(season.leagues.flatMap((l, i) => l.clubIds.map((id) => [id, i] as const)));
   const userRep = clubs.get(userClubId)?.reputation ?? 10;
+  const userCountry = clubs.get(userClubId)?.country;
 
   const views: MarketPlayerView[] = [];
   for (const player of db.players) {
@@ -57,6 +59,7 @@ export function searchMarket(
     if (filters.scope === 'free' && contract) continue;
     if (filters.scope === 'first' && (!contract || leagueOf.get(contract.clubId) !== 0)) continue;
     if (filters.scope === 'second' && (!contract || leagueOf.get(contract.clubId) !== 1)) continue;
+    if (filters.scope === 'abroad' && (!contract || clubs.get(contract.clubId)?.country === userCountry)) continue;
     const age = ageAt(player, date);
     if (filters.maxAge !== null && age > filters.maxAge) continue;
 

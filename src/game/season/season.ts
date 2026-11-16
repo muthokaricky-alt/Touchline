@@ -83,6 +83,12 @@ export const SeasonSchema = z.strictObject({
   seed: z.int().min(0),
   leagues: z.array(LeagueMembershipSchema).min(1),
   cupId: CompetitionIdSchema.nullable(),
+  /**
+   * The leagues whose clubs enter the cup (the cup's country), top tier
+   * first. Missing in seasons from before the foreign leagues: then every
+   * league in the season enters.
+   */
+  cupEntrantLeagues: z.array(CompetitionIdSchema).optional(),
   fixtures: z.array(FixtureSchema),
   playerStats: z.array(PlayerSeasonLineSchema),
 });

@@ -52,6 +52,7 @@ const SCOPES: readonly { value: MarketScope; label: string }[] = [
   { value: 'free', label: 'Free agents' },
   { value: 'first', label: 'First Div' },
   { value: 'second', label: 'Second Div' },
+  { value: 'abroad', label: 'Abroad' },
 ];
 const VALUE_CAPS = [
   { value: 'any', label: 'Any value' },

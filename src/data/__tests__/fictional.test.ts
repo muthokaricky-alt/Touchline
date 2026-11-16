@@ -36,15 +36,41 @@ describe('fictional database', () => {
     expect(checkIntegrity(db)).toEqual([]);
   });
 
-  it('has 40 clubs of 22 players in two 20-club divisions and a cup', () => {
-    expect(db.clubs).toHaveLength(40);
-    expect(db.players).toHaveLength(40 * 22 + FREE_AGENT_COUNT);
+  it('has England (two 20-club divisions and a cup), five 18-club leagues abroad and 12 background clubs', () => {
+    const clubs = 40 + 5 * 18 + 12;
+    expect(db.clubs).toHaveLength(clubs);
+    expect(db.players).toHaveLength(clubs * 22 + FREE_AGENT_COUNT);
     expect(db.attributes).toHaveLength(db.players.length);
-    expect(db.contracts).toHaveLength(40 * 22);
+    expect(db.contracts).toHaveLength(clubs * 22);
     const leagues = db.competitions.filter(isLeague);
-    expect(leagues.map((l) => [l.tier, l.clubIds.length])).toEqual([[1, 20], [2, 20]]);
+    expect(leagues.map((l) => [l.country, l.tier, l.clubIds.length])).toEqual([
+      ['ENG', 1, 20],
+      ['ENG', 2, 20],
+      ['KEN', 1, 18],
+      ['FRA', 1, 18],
+      ['GER', 1, 18],
+      ['ITA', 1, 18],
+      ['ESP', 1, 18],
+    ]);
     expect(leagues[0].clubIds.slice(0, 8)).toEqual(FICTIONAL_CLUBS.map((c) => c.id));
     expect(db.competitions.filter(isCup)).toHaveLength(1);
+    // Every club abroad plays in its own country's league; background clubs in none.
+    for (const league of leagues) {
+      expect(league.clubIds.every((id) => db.clubs.find((c) => c.id === id)?.country === league.country)).toBe(true);
+    }
+    const inLeague = new Set(leagues.flatMap((l) => l.clubIds));
+    expect(db.clubs.filter((c) => !inLeague.has(c.id)).map((c) => c.country).sort()).toEqual(
+      ['GHA', 'GHA', 'NED', 'NED', 'NGA', 'NGA', 'POR', 'POR', 'TAN', 'TAN', 'UGA', 'UGA'],
+    );
+  });
+
+  it('gives players abroad mostly their club’s nationality', () => {
+    const country = new Map(db.clubs.map((c) => [c.id, c.country]));
+    const nationality = new Map(db.players.map((p) => [p.id, p.nationality]));
+    const kenyan = db.contracts.filter((c) => country.get(c.clubId) === 'KEN');
+    const share = kenyan.filter((c) => nationality.get(c.playerId) === 'KEN').length / kenyan.length;
+    expect(share).toBeGreaterThan(0.6);
+    expect(share).toBeLessThan(0.8);
   });
 
   it('has a pool of free agents (no contract) covering every position line', () => {

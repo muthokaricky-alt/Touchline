@@ -1,4 +1,5 @@
 import { buildFictionalDatabase } from '@/data/fictional';
+import { compress } from '@/persistence/slot-storage';
 import { autoPickLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
@@ -40,9 +41,22 @@ function playFullSeason(start: Season): Season {
 describe('createSeason', () => {
   const season = createSeason(db, 2026, 1234);
 
-  it('schedules two 20-club leagues (38 matchdays) and the first cup round', () => {
+  it('schedules England’s two 20-club leagues (38 matchdays), the leagues abroad and the first cup round', () => {
     expect(SeasonSchema.safeParse(season).success).toBe(true);
-    expect(season.leagues.map((l) => [l.competitionId, l.clubIds.length])).toEqual([[FIRST, 20], [SECOND, 20]]);
+    // England first (so its fixture seeds never change), then the five leagues abroad.
+    expect(season.leagues.map((l) => [l.competitionId, l.clubIds.length])).toEqual([
+      [FIRST, 20],
+      [SECOND, 20],
+      ['comp_kenya_premier', 18],
+      ['comp_france_premier', 18],
+      ['comp_germany_premier', 18],
+      ['comp_italy_premier', 18],
+      ['comp_spain_premier', 18],
+    ]);
+    expect(totalMatchdays(season, 'comp_kenya_premier')).toBe(34);
+    // Only England's 40 clubs enter the National Cup.
+    expect(season.cupEntrantLeagues).toEqual([FIRST, SECOND]);
+    expect(cupFixtures(season).every((f) => [f.homeId, f.awayId].every((id) => season.leagues.slice(0, 2).some((l) => l.clubIds.includes(id))))).toBe(true);
     expect(totalMatchdays(season, FIRST)).toBe(38);
     expect(totalMatchdays(season, SECOND)).toBe(38);
     expect(season.fixtures.filter((f) => f.competitionId === FIRST)).toHaveLength(380);
@@ -63,7 +77,7 @@ describe('advanceToUserFixture', () => {
     expect(fixture.date).toBe('2026-08-08');
     expect([result.home.clubId, result.away.clubId]).toContain(USER);
     const sameDay = season.fixtures.filter((f) => f.date === fixture.date);
-    expect(sameDay).toHaveLength(20); // 10 First + 10 Second Division
+    expect(sameDay).toHaveLength(20 + 5 * 9); // 10 First + 10 Second Division + 9 in each league abroad
     expect(sameDay.every((f) => f.result)).toBe(true);
     expect(season.fixtures.filter((f) => f.date > fixture.date).every((f) => !f.result)).toBe(true);
   });
@@ -133,7 +147,19 @@ describe('a full season', () => {
   });
 
   it('keeps a season small enough to save', () => {
-    expect(JSON.stringify(finished).length).toBeLessThan(1_000_000);
+    // A finished season is ~2.4 MB of JSON with the leagues abroad (was ~0.9 MB); saves are
+    // compressed, which is what's measured here (see persistence/slot-storage).
+    const json = JSON.stringify(finished);
+    expect(json.length).toBeLessThan(3_000_000);
+    expect(compress(json).length).toBeLessThan(350_000);
+  });
+
+  it('keeps each country’s clubs in its own league; no promotion or relegation abroad', () => {
+    const next = nextMemberships(db, finished);
+    for (const league of next.filter((m) => m.competitionId.endsWith('_premier'))) {
+      const before = finished.leagues.find((l) => l.competitionId === league.competitionId)!;
+      expect([...league.clubIds].sort()).toEqual([...before.clubIds].sort());
+    }
   });
 
   it('averages a believable number of goals', () => {

@@ -32,7 +32,8 @@ describe('board expectations', () => {
   });
 
   it('second-division giants are expected to go up', () => {
-    const second = byRep.find((c) => !FIRST.clubIds.includes(c.id))!;
+    const secondDivision = db.competitions.find((c) => c.id === 'comp_second_division');
+    const second = byRep.find((c) => secondDivision && 'clubIds' in secondDivision && secondDivision.clubIds.includes(c.id))!;
     expect(boardExpectation(db, season, second.id)).toMatchObject({ tier: 2, label: 'Win promotion', target: 3 });
   });
 

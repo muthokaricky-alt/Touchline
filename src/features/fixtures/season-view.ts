@@ -48,13 +48,25 @@ export type CupView = {
   topScorers: LeaderRowView[];
 };
 
-/** The user's league first, then other leagues by tier, then the cup. */
+/**
+ * The user's league first, then the other leagues of the user's country,
+ * the cup, and the leagues abroad (labelled by country, so the chips fit).
+ */
 export function competitionOptions(db: GameDatabase, season: Season, userClubId: ClubId): CompetitionOption[] {
   const userLeague = leagueOfClub(season, userClubId);
+  const competition = (id: CompetitionId) => db.competitions.find((c) => c.id === id);
+  const homeCountry = userLeague ? competition(userLeague)?.country : undefined;
+  const isHome = (id: CompetitionId) => competition(id)?.country === homeCountry;
   const leagues = [...season.leagues].sort((a, b) => Number(b.competitionId === userLeague) - Number(a.competitionId === userLeague));
+  const option = (id: CompetitionId) => ({
+    id,
+    label: isHome(id) ? competitionName(db, id) : (competition(id)?.shortName ?? competitionName(db, id)),
+    kind: 'league' as const,
+  });
   return [
-    ...leagues.map((l) => ({ id: l.competitionId, label: competitionName(db, l.competitionId), kind: 'league' as const })),
+    ...leagues.filter((l) => isHome(l.competitionId)).map((l) => option(l.competitionId)),
     ...(season.cupId ? [{ id: season.cupId, label: competitionName(db, season.cupId), kind: 'cup' as const }] : []),
+    ...leagues.filter((l) => !isHome(l.competitionId)).map((l) => option(l.competitionId)),
   ];
 }
 

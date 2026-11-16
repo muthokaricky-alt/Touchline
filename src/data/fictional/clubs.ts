@@ -1,7 +1,9 @@
 import type { Club, Cup, League } from '../schemas';
 
 /**
- * The fictional world: one country, two 20-club divisions and a cup.
+ * The fictional world: England (two 20-club divisions and a cup), five
+ * foreign 18-club leagues (Kenya, France, Germany, Italy, Spain) and a few
+ * "background" clubs elsewhere that play no matches but buy and sell.
  * Every name, town and stadium is invented; resemblance to real clubs is
  * unintentional.
  *
@@ -171,7 +173,7 @@ export function clubIdFromName(name: string): string {
  * squared (big clubs are *much* bigger); the wage budget is set comfortably
  * above what the squad generator pays (tested in fictional.test.ts).
  */
-function makeClub([name, shortName, reputation]: ClubSpec, index: number): Club {
+function makeClub([name, shortName, reputation]: ClubSpec, index: number, country = 'ENG'): Club {
   const words = name.split(' ');
   const city = words.length > 1 ? words.slice(0, -1).join(' ') : name;
   const [primary, secondary] = KITS[index % KITS.length];
@@ -180,7 +182,7 @@ function makeClub([name, shortName, reputation]: ClubSpec, index: number): Club 
     name,
     shortName,
     city,
-    country: 'ENG',
+    country,
     founded: 1870 + ((index * 7) % 60),
     reputation,
     stadium: {
@@ -236,3 +238,101 @@ export const NATIONAL_CUP: Cup = {
   shortName: 'Cup',
   country: 'ENG',
 };
+
+// --- Foreign leagues (added after Milestone 10) ------------------------------------------
+//
+// Same strength spread as the First Division (17 down to 9), at the user's
+// request. Every name is invented except the five Kenyan names the user
+// suggested (Ndom, Topan, Chapati, Ruhanga, Meensat); city-based names use
+// real towns with invented club names, avoiding real clubs.
+
+/** The First Division's reputations for an 18-club league, strongest first. */
+const FOREIGN_SPREAD = [17, 16, 15, 15, 14, 14, 13, 13, 12, 12, 11, 11, 11, 10, 10, 9, 9, 9] as const;
+
+const withSpread = (names: readonly (readonly [string, string])[]): ClubSpec[] =>
+  names.map(([name, short], i) => [name, short, FOREIGN_SPREAD[i]] as const);
+
+const KENYA = withSpread([
+  ['Ndom FC', 'NDM'], ['Kisumu Lakeside', 'KSL'], ['Topan FC', 'TPN'], ['Mombasa Mariners', 'MBM'],
+  ['Nakuru Flamingos', 'NKF'], ['Chapati FC', 'CHP'], ['Eldoret Highlanders', 'ELH'], ['Ruhanga FC', 'RHG'],
+  ['Thika Falcons', 'THF'], ['Meensat FC', 'MNS'], ['Machakos Wanderers', 'MCW'], ['Kitale Pioneers', 'KTP'],
+  ['Malindi Dolphins', 'MLD'], ['Embu Eagles', 'EBE'], ['Meru Comets', 'MRC'], ['Naivasha Lakers', 'NVL'],
+  ['Kericho Planters', 'KCP'], ['Nyeri Mountaineers', 'NYM'],
+]);
+const FRANCE = withSpread([
+  ['Olympique Valmont', 'OVM'], ['AS Montclair', 'ASM'], ['FC Rochebrune', 'FRB'], ['Stade Lavergne', 'SLV'],
+  ['Racing Beaulac', 'RBL'], ['US Clairmont', 'USC'], ['SC Mirabel', 'SCM'], ['Etoile Sauveterre', 'ESV'],
+  ['AC Bellerive', 'ACB'], ['FC Montrevel', 'FMV'], ['Olympique Castelvieux', 'OCV'], ['AS Hautvallon', 'AHV'],
+  ['Stade Roquefiere', 'SRQ'], ['US Morvandelle', 'UMV'], ['FC Saint-Ambroise', 'FSA'], ['Racing Valdome', 'RVD'],
+  ['SC Pontmarin', 'SPM'], ['AS Lisiere', 'ALS'],
+]);
+const GERMANY = withSpread([
+  ['FC Rabenburg', 'FCR'], ['SV Eichental', 'SVE'], ['Borussia Kaltbach', 'BKB'], ['VfL Steinmark', 'VFS'],
+  ['TSV Sonnfeld', 'TSS'], ['SC Wiesenthal', 'SCW'], ['1. FC Haldenau', 'FCH'], ['Rot-Weiss Falkenried', 'RWF'],
+  ['SpVgg Ostermark', 'SPO'], ['FC Brunnfeld', 'FCB'], ['SV Lindhof', 'SVL'], ['Eintracht Westerau', 'EWA'],
+  ['TuS Hohenfurt', 'THO'], ['FC Kesselbach', 'FCK'], ['SV Ebersfeld', 'SEB'], ['VfB Altweiler', 'VBA'],
+  ['Union Grauberg', 'UGB'], ['SC Moorlingen', 'SCL'],
+]);
+const ITALY = withSpread([
+  ['AC Valdoro', 'ACV'], ['Sporting Castelrocca', 'SCR'], ['US Pietrabianca', 'UPB'], ['FC Lunaria', 'FCL'],
+  ['AS Serravento', 'ASS'], ['Rivalta Nuova', 'RVN'], ['Monteluce Calcio', 'MLC'], ['AC Borgoverde', 'ABV'],
+  ['US San Fiorenzo', 'USF'], ['Torre Alba FC', 'TAF'], ['AS Acquaviva Alta', 'AQA'], ['Campofiore Calcio', 'CFC'],
+  ['US Vallescura', 'UVS'], ['AC Portoreale', 'APR'], ['Fiumalba FC', 'FMB'], ['Colle Ardente', 'CLA'],
+  ['US Selvanera', 'USN'], ['AC Marenzo', 'ACM'],
+]);
+const SPAIN = withSpread([
+  ['Real Castrovega', 'RCV'], ['Atletico Montealto', 'ATM'], ['CD Villarrosa', 'CDV'], ['Real Penablanca', 'RPB'],
+  ['Sierra Dorada CF', 'SDC'], ['UD Puerto Albar', 'UPA'], ['CF Valdelira', 'CFV'], ['Deportivo Marisal', 'DMS'],
+  ['Real Torreluz', 'RTL'], ['CD Campoverde', 'CDC'], ['Atletico Losares', 'ATL'], ['UD Riomar', 'UDR'],
+  ['CF Alcantara Nueva', 'CAN'], ['Real Sotomedina', 'RSM'], ['CD Peralosa', 'CDP'], ['UD Montejara', 'UMJ'],
+  ['CF Navaluz', 'CFN'], ['SD Almenara Baja', 'SDA'],
+]);
+
+/** Background clubs: squads that develop and trade, but play in no league we simulate. */
+const BACKGROUND: readonly (readonly [ClubSpec, string])[] = [
+  [['SV Wadkerk', 'SVW', 13], 'NED'],
+  [['FC Veenhaven', 'FCV', 11], 'NED'],
+  [['Sporting Alvorada', 'SPA', 13], 'POR'],
+  [['FC Serra Azul', 'FSZ', 10], 'POR'],
+  [['Benue Valley FC', 'BVF', 9], 'NGA'],
+  [['Abeokuta Rock FC', 'ARF', 7], 'NGA'],
+  [['Volta Stars FC', 'VSF', 9], 'GHA'],
+  [['Tamale Eagles', 'TME', 7], 'GHA'],
+  [['Jinja Nile FC', 'JNF', 7], 'UGA'],
+  [['Gulu Northern Stars', 'GNS', 6], 'UGA'],
+  [['Arusha Highlands FC', 'AHF', 7], 'TAN'],
+  [['Zanzibar Coral FC', 'ZCF', 6], 'TAN'],
+];
+
+type ForeignLeagueSpec = { id: string; name: string; shortName: string; country: string; clubs: readonly ClubSpec[] };
+
+export const FOREIGN_LEAGUE_SPECS: readonly ForeignLeagueSpec[] = [
+  { id: 'comp_kenya_premier', name: 'Kenyan Premier Division', shortName: 'Kenya', country: 'KEN', clubs: KENYA },
+  { id: 'comp_france_premier', name: 'French Premier Division', shortName: 'France', country: 'FRA', clubs: FRANCE },
+  { id: 'comp_germany_premier', name: 'German Premier Division', shortName: 'Germany', country: 'GER', clubs: GERMANY },
+  { id: 'comp_italy_premier', name: 'Italian Premier Division', shortName: 'Italy', country: 'ITA', clubs: ITALY },
+  { id: 'comp_spain_premier', name: 'Spanish Premier Division', shortName: 'Spain', country: 'ESP', clubs: SPAIN },
+];
+
+let kit = ALL_FICTIONAL_CLUBS.length;
+/** Clubs of the foreign leagues, league by league. */
+export const FOREIGN_LEAGUE_CLUBS: readonly Club[] = FOREIGN_LEAGUE_SPECS.flatMap((league) =>
+  league.clubs.map((spec) => makeClub(spec, kit++, league.country)),
+);
+export const BACKGROUND_CLUBS: readonly Club[] = BACKGROUND.map(([spec, country]) => makeClub(spec, kit++, country));
+
+/** One division each: no promotion or relegation abroad. */
+export const FOREIGN_LEAGUES: readonly League[] = FOREIGN_LEAGUE_SPECS.map((league) => ({
+  id: league.id,
+  type: 'league',
+  name: league.name,
+  shortName: league.shortName,
+  country: league.country,
+  tier: 1,
+  clubIds: league.clubs.map(([name]) => clubIdFromName(name)),
+  rules: { roundsPerOpponent: 2, points: LEAGUE_POINTS, promotionPlaces: 0, relegationPlaces: 0 },
+}));
+
+/** The country the user's career starts in (and the National Cup's). */
+export const HOME_COUNTRY = 'ENG';
+

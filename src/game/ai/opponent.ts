@@ -64,7 +64,7 @@ export function chooseAiTactics(squad: readonly LineupCandidate[], lineup: Lineu
   return PLAYING_STYLES[best].tactics;
 }
 
-type AiSetup = { squad: LineupCandidate[]; lineup: Lineup; strength: number };
+type AiSetup = { squad: readonly LineupCandidate[]; lineup: Lineup; strength: number };
 
 /**
  * Cache of each AI club's squad, best lineup and strength (~9 ms to compute

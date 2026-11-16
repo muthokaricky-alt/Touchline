@@ -1,4 +1,4 @@
-import { buildFictionalDatabase, FICTIONAL_SEED } from '@/data/fictional';
+import { ABROAD_CLUBS, buildFictionalDatabase, FICTIONAL_SEED } from '@/data/fictional';
 import { autoPickLineup } from '@/game/lineup';
 import { advanceToUserFixture, createSeason, nextFixtureFor } from '@/game/season/season-flow';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
@@ -210,6 +210,19 @@ describe('migrateSave', () => {
     const check = checkSave(migrateSave(roundTrip(v6), 6), baseFor, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
     if (check.ok) expect(check.save.manager).toEqual(defaultManager);
+  });
+
+  it('upgrades a version 9 save from before the leagues abroad: their squads get their generated contracts', () => {
+    const abroad = new Set(ABROAD_CLUBS.map((c) => c.id));
+    const v9 = { ...valid, contracts: valid.contracts.filter((c) => !abroad.has(c.clubId)) };
+    const check = checkSave(migrateSave(roundTrip(v9), 9), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) {
+      expect(check.save.contracts).toHaveLength(valid.contracts.length);
+      expect(check.database.contracts.filter((c) => c.clubId === 'club_ndom_fc')).toHaveLength(22);
+    }
+    // Running it on a save that already has them changes nothing.
+    expect((migrateSave(roundTrip(valid), 9) as { contracts: unknown[] }).contracts).toHaveLength(valid.contracts.length);
   });
 
   it('upgrades a version 8 save with nobody scouted', () => {

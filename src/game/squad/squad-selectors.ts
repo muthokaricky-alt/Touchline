@@ -44,19 +44,39 @@ export function findClub(db: GameDatabase, clubId: ClubId): Club | undefined {
 }
 
 /** Players under contract at a club, with their attributes, ordered by squad number. */
-export function selectSquadCandidates(db: GameDatabase, clubId: ClubId): LineupCandidate[] {
-  const contracts = db.contracts
-    .filter((c) => c.clubId === clubId)
-    .sort((a, b) => a.squadNumber - b.squadNumber);
+/**
+ * Every club's squad, built once per database object. Databases are
+ * immutable (every change makes a new one), so a WeakMap keyed by the
+ * database can't go stale and is freed with it. Measured with the leagues
+ * abroad: rebuilding player/attribute maps of ~3,200 players for every
+ * team of every match cost ~150 ms a matchday.
+ */
+const squadCache = new WeakMap<GameDatabase, Map<ClubId, readonly LineupCandidate[]>>();
+
+function squadsOf(db: GameDatabase): Map<ClubId, readonly LineupCandidate[]> {
+  const cached = squadCache.get(db);
+  if (cached) return cached;
   const players = new Map(db.players.map((p) => [p.id, p]));
   const attributes = new Map(db.attributes.map((a) => [a.playerId, a]));
-
-  return contracts.flatMap((contract) => {
+  const byClub = new Map<ClubId, LineupCandidate[]>();
+  for (const contract of [...db.contracts].sort((a, b) => a.squadNumber - b.squadNumber)) {
     const player = players.get(contract.playerId);
     const attrs = attributes.get(contract.playerId);
     // A validated database always has both; skip rather than crash if not.
-    return player && attrs ? [{ player, attributes: attrs }] : [];
-  });
+    if (!player || !attrs) continue;
+    const squad = byClub.get(contract.clubId);
+    if (squad) squad.push({ player, attributes: attrs });
+    else byClub.set(contract.clubId, [{ player, attributes: attrs }]);
+  }
+  squadCache.set(db, byClub);
+  return byClub;
+}
+
+const NO_PLAYERS: readonly LineupCandidate[] = [];
+
+/** A club's players with attributes, by squad number. Shared (cached): never mutate it. */
+export function selectSquadCandidates(db: GameDatabase, clubId: ClubId): readonly LineupCandidate[] {
+  return squadsOf(db).get(clubId) ?? NO_PLAYERS;
 }
 
 function squadNumbers(db: GameDatabase): Map<PlayerId, number> {

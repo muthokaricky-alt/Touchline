@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { buildFictionalDatabase } from '@/data/fictional';
+import { ABROAD_CLUBS, buildFictionalDatabase } from '@/data/fictional';
 import { checkIntegrity } from '@/data/integrity';
 import {
   ATTRIBUTE_KEYS,
@@ -48,9 +48,11 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   7  + manager: name, reputation, board confidence, history (Milestone 9b)
  *   8  + the match in progress and its in-match changes (in-match management)
  *   9  + scouting: assignments in progress, what's known about players' potential
+ *  10  (same fields) the world gained foreign leagues and background clubs; their
+ *        squads' contracts are added to older saves (see migrateSave)
  */
 
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -175,6 +177,9 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v6 → v7: careers from before the manager existed carry on with a default manager.
  *   v7 → v8: matches couldn't be left half-played: no match in progress.
  *   v8 → v9: no scouting yet: nobody scouted.
+ *   v9 → v10: the clubs abroad didn't exist: their generated contracts are
+ *            added (a save stores every contract, so without them their
+ *            squads would be empty). Their leagues start at the next season.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -198,6 +203,15 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
   }
   if (fromVersion < 8) save = { ...save, liveMatch: null };
   if (fromVersion < 9) save = { ...save, scouting: EMPTY_SCOUTING };
+  if (fromVersion < 10) {
+    if (typeof save.worldSeed !== 'number' || !Array.isArray(save.contracts)) return incompatible;
+    const abroad = new Set(ABROAD_CLUBS.map((c) => c.id));
+    const contracts = save.contracts as { playerId?: unknown; id?: unknown }[];
+    // Only players without a contract in the save (safe to run on any save).
+    const taken = new Set(contracts.flatMap((c) => [c.playerId, c.id]));
+    const added = buildFictionalDatabase(save.worldSeed).contracts.filter((c) => abroad.has(c.clubId) && !taken.has(c.playerId) && !taken.has(c.id));
+    save = { ...save, contracts: [...contracts, ...added] };
+  }
   return save;
 }
 

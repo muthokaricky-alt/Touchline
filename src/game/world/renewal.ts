@@ -1,4 +1,4 @@
-import { generateYouthIntake } from '@/data/fictional';
+import { FOREIGN_NATIONS_BY_COUNTRY, generateYouthIntake } from '@/data/fictional';
 import type { Club, ClubId, GameDatabase, Player, PlayerAttributes, PlayerId } from '@/data/schemas';
 import { ageOn } from '@/utils/date';
 import { createRng } from '@/utils/random';
@@ -28,10 +28,19 @@ export const AI_KEEPS = 2;
 const AI_YOUTH_ROOM = 26;
 const YOUTH_CONTRACT_YEARS = 3;
 
-/** Id number of the k-th youngster of a club's intake. Base-world ids are 1…~1000, so these can't collide. */
+/**
+ * Id number of the k-th youngster of a club's intake. Base-world ids are
+ * 1…~3200, so these can't collide. The first 100 clubs (England's 40 and the
+ * first 60 abroad) keep the original scheme; clubs beyond use a range of
+ * their own (clubIndex · 10 would run into the next year's ids).
+ */
 export function intakePlayerNumber(year: number, clubIndex: number, k: number): number {
+  if (clubIndex >= 100) return 1_000_000 + (year - 2000) * 10_000 + clubIndex * 10 + k;
   return 100_000 + (year - 2000) * 1000 + clubIndex * 10 + k;
 }
+
+/** The random stream of a club's intake: unchanged for the first 100 clubs, a separate range beyond (no overlap with other years). */
+const intakeSeedSalt = (year: number, clubIndex: number) => (clubIndex >= 100 ? 10_000_000 + year * 1000 + clubIndex : year * 100 + clubIndex);
 
 export type ClubIntake = { clubId: ClubId; players: Player[]; attributes: PlayerAttributes[] };
 
@@ -44,7 +53,7 @@ export function generatedIntake(clubs: readonly Club[], seed: number, year: numb
   if (cached) return cached;
   const date = `${year}-07-01`;
   const intakes = clubs.map((club, clubIndex) => {
-    const rng = createRng(mixSeed(seed, year * 100 + clubIndex));
+    const rng = createRng(mixSeed(seed, intakeSeedSalt(year, clubIndex)));
     const generated = generateYouthIntake({
       rng,
       club,
@@ -52,6 +61,7 @@ export function generatedIntake(clubs: readonly Club[], seed: number, year: numb
       count: rng.int(2, 4),
       referenceDate: date,
       playerNumber: (k) => intakePlayerNumber(year, clubIndex, k),
+      foreignNations: FOREIGN_NATIONS_BY_COUNTRY[club.country],
     });
     const withPotential = assignPotential(generated, seed, date);
     return { clubId: club.id, players: withPotential.players, attributes: withPotential.attributes };
