@@ -46,9 +46,10 @@ export function MatchdayPager({ day, total, onPrevious, onNext }: MatchdayPagerP
 export function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
   const penalties = fixture.penalties ? `, ${fixture.penalties.home}–${fixture.penalties.away} on penalties` : '';
   const aggregate = fixture.aggregate ? `, ${fixture.aggregate.home}–${fixture.aggregate.away} on aggregate` : '';
+  const firstLeg = fixture.firstLeg ? `; ${fixture.homeName} ${fixture.firstLeg.home}, ${fixture.awayName} ${fixture.firstLeg.away} in the first leg` : '';
   const label = fixture.score
     ? `${fixture.homeName} ${fixture.score.home}, ${fixture.awayName} ${fixture.score.away}${aggregate}${penalties}`
-    : `${fixture.homeName} versus ${fixture.awayName}, not played yet`;
+    : `${fixture.homeName} versus ${fixture.awayName}, not played yet${firstLeg}`;
   return (
     <View style={[styles.row, fixture.involvesUser && styles.userRow]} accessible accessibilityLabel={label}>
       <AppText variant={fixture.involvesUser ? 'bodyStrong' : 'body'} numberOfLines={1} align="right" style={styles.team}>
@@ -58,6 +59,11 @@ export function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
         <AppText variant="bodyStrong" color={fixture.score ? 'textPrimary' : 'textMuted'}>
           {fixture.score ? `${fixture.score.home} – ${fixture.score.away}` : 'v'}
         </AppText>
+        {fixture.firstLeg ? (
+          <AppText variant="caption" color="textSecondary">
+            1st leg {fixture.firstLeg.home}–{fixture.firstLeg.away}
+          </AppText>
+        ) : null}
         {fixture.aggregate ? (
           <AppText variant="caption" color="textSecondary">
             agg {fixture.aggregate.home}–{fixture.aggregate.away}

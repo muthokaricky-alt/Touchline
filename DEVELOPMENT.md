@@ -990,7 +990,9 @@ penalties, no away goals):
   of every national-cup week; the full-world season test checks no club
   plays twice within two days).
 - Fixtures tab: "Round of 16 · 1st leg" etc., "agg 1–2" under second-leg
-  scores, statuses by stage ("In the Round of 16" across both legs).
+  scores, statuses by stage ("In the Round of 16" across both legs). A
+  second leg not played yet shows "1st leg 1–2" under the "v" (that row's
+  home side first, like the aggregate; the screen reader hears it in words).
 - Match report: after a second leg, "Calderbrook City win 2–1 on aggregate"
   (or "2–2 on aggregate" followed by the penalties line), revealed at full
   time like the shootout; `tieAggregate` works live too, because the first

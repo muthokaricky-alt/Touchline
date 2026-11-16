@@ -1,6 +1,7 @@
 import { buildFictionalDatabase } from '@/data/fictional';
 import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { autoPickLineup } from '@/game/lineup';
+import { nextCupRound } from '@/game/season/cup';
 import { createSeason, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
 import { playUserFixture } from '@/game/season/__fixtures__/play';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
@@ -119,5 +120,23 @@ describe('buildCupView for the Continental Cup', () => {
     const row = view.rounds.flatMap((r) => r.ties).find((t) => t.id === match.id)!;
     expect(row.userOutcome).toBe('D');
     expect(view.groups).toHaveLength(6);
+  });
+});
+
+describe('buildCupView: second legs', () => {
+  it('shows the first leg under a second leg not played yet, this row’s home side first', () => {
+    const CUP = 'comp_continental_cup';
+    const result = (home: number, away: number) => ({ score: { home, away }, goals: [], cards: [], playerOfTheMatch: null });
+    let s = createSeason(world, 2026, 1234);
+    s = { ...s, fixtures: s.fixtures.map((f) => (f.competitionId === CUP ? { ...f, result: result(1, 0) } : f)) };
+    s = { ...s, fixtures: [...s.fixtures, ...nextCupRound(s, CUP)] };
+    const leg1 = s.fixtures.find((f) => f.competitionId === CUP && f.matchday === 7)!;
+    // First leg: its hosts win 2–1.
+    s = { ...s, fixtures: s.fixtures.map((f) => (f.id === leg1.id ? { ...f, result: result(2, 1) } : f)) };
+    const view = buildCupView(world, s, CUP, leg1.awayId)!;
+    const leg2 = view.rounds.find((r) => r.round === 8)!.ties.find((t) => t.homeName === world.clubs.find((c) => c.id === leg1.awayId)!.name)!;
+    expect(leg2.score).toBeNull();
+    expect(leg2.firstLeg).toEqual({ home: 1, away: 2 }); // the second leg's hosts lost the first leg 2–1
+    expect(view.rounds.find((r) => r.round === 7)!.ties.every((t) => !t.firstLeg)).toBe(true);
   });
 });

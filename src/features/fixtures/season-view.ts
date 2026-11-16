@@ -39,6 +39,8 @@ export type FixtureRowView = {
   penalties: { home: number; away: number } | null;
   /** Second legs: the score over both legs (this fixture's home side first). */
   aggregate?: { home: number; away: number } | null;
+  /** Second legs not played yet: the first leg's score, this fixture's home side first. */
+  firstLeg?: { home: number; away: number } | null;
   involvesUser: boolean;
   /** From the user's point of view, when played (cup ties: penalties decide). */
   userOutcome: 'W' | 'D' | 'L' | null;
@@ -199,6 +201,11 @@ export function buildCupView(db: GameDatabase, season: Season, cupId: Competitio
     const row = rowView(db, f, userClubId, decidedTieWinner(season, f));
     const leg = groups && seasonCup(season, cupId)?.twoLegged ? twoLegStage(f.matchday) : null;
     if (leg?.leg === 2 && f.result) row.aggregate = aggregateScore(otherLeg(fixtures, f), f.result.score);
+    if (leg?.leg === 2 && !f.result) {
+      // The first leg was the other way round: its away side is this row's home side.
+      const first = otherLeg(fixtures, f)?.result?.score;
+      if (first) row.firstLeg = { home: first.away, away: first.home };
+    }
     round.ties.push(row);
   }
 
