@@ -1,6 +1,6 @@
 import { buildFictionalDatabase, FICTIONAL_SEED } from '@/data/fictional';
 import { autoPickLineup } from '@/game/lineup';
-import { advanceToUserFixture, createSeason } from '@/game/season/season-flow';
+import { advanceToUserFixture, createSeason, nextFixtureFor } from '@/game/season/season-flow';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
@@ -8,7 +8,7 @@ import { DEFAULT_TRAINING, developWorld } from '@/game/development/development';
 import { completeTransfer } from '@/game/transfers/complete';
 import { admitIntake, FIRST_INTAKE_YEAR, retirePlayers, worldFor } from '@/game/world/renewal';
 
-import { applyWorldChanges, checkSave, migrateSave, worldChanges, type GameSave } from '../save';
+import { applyWorldChanges, checkSave, migrateSave, SAVE_VERSION, worldChanges, type GameSave } from '../save';
 
 const db = buildFictionalDatabase();
 /** The generated world for a season: just the base world before the first youth intake. */
@@ -33,6 +33,7 @@ const valid: GameSave = {
   training: DEFAULT_TRAINING,
   retired: [],
   manager: { name: 'Alex Kamau', reputation: 52, confidence: 60, warned: false, sackedOffers: null, history: [] },
+  liveMatch: null,
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -158,7 +159,8 @@ describe('retirement and youth intakes in the save (v6)', () => {
 });
 
 describe('migrateSave', () => {
-  const v6 = (({ manager: _m, ...rest }) => rest)(valid);
+  const v7 = (({ liveMatch: _l, ...rest }) => rest)(valid);
+  const v6 = (({ manager: _m, ...rest }) => rest)(v7);
   const v5 = (({ retired: _r, ...rest }) => rest)(v6);
   const v4 = (({ attributeChanges: _a, training: _t, ...rest }) => rest)(v5);
   const v3 = (({ condition: _c, ...rest }) => rest)(v4);
@@ -208,13 +210,32 @@ describe('migrateSave', () => {
     if (check.ok) expect(check.save.manager).toEqual(defaultManager);
   });
 
+  it('upgrades a version 7 save with no match in progress', () => {
+    const check = checkSave(migrateSave(roundTrip(v7), 7), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save).toEqual(valid);
+  });
+
+  it('accepts a match in progress only if it is still the next fixture and its players exist', () => {
+    const next = nextFixtureFor(season, USER)!;
+    const tactics = { after: { minute: 60 }, side: 'home' as const, kind: 'tactics' as const, tactics: DEFAULT_TACTICS };
+    const live = { kind: 'fixture' as const, fixtureId: next.id, changes: [tactics] };
+    expect(checkSave(roundTrip({ ...valid, liveMatch: live }), baseFor, FICTIONAL_SEED).ok).toBe(true);
+    const played = season.fixtures.find((f) => f.result)!;
+    expect(checkSave(roundTrip({ ...valid, liveMatch: { ...live, fixtureId: played.id } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    const ghostSub = { after: { minute: 60 }, side: 'home', kind: 'substitution', offId: 'plr_999999', onId: lineup.substitutes[0] };
+    expect(checkSave(roundTrip({ ...valid, liveMatch: { ...live, changes: [ghostSub] } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    const friendly = { kind: 'friendly', opponentId: USER, venue: 'home', seed: 1, changes: [] };
+    expect(checkSave(roundTrip({ ...valid, liveMatch: friendly }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+  });
+
   it('rejects a career history with unknown clubs', () => {
     const history = [{ season: '2025/26', clubId: 'club_ghost', finished: 3, target: 5, outcome: 'completed', trophies: [] }];
     expect(checkSave(roundTrip({ ...valid, manager: { ...valid.manager, history } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
   });
 
   it('rejects a current-version save passed to migrate', () => {
-    expect(migrateSave(roundTrip(valid), 7)).toEqual({ incompatibleVersion: 7 });
+    expect(migrateSave(roundTrip(valid), SAVE_VERSION)).toEqual({ incompatibleVersion: SAVE_VERSION });
   });
 
   it('marks unknown versions as incompatible', () => {

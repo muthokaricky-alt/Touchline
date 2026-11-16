@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, IconButton, PageHeader, Screen, SegmentedControl } from '@/components/ui';
+import type { MatchClock } from '@/engine/types';
 import { spacing } from '@/theme';
 
 import { MatchFeed } from './components/MatchFeed';
@@ -45,6 +46,15 @@ type MatchCentreScreenProps = {
   playerOfTheMatch: string | null;
   onPlayAgain: () => void;
   onDone: () => void;
+  /**
+   * Live matches only: the management panel for the moment the replay is
+   * paused at. Without it the match is a plain replay.
+   */
+  renderManagement?: (moment: { at: MatchClock; clock: string; close: () => void }) => ReactNode;
+  /** Live matches only: called once when the replay reaches full time (the match is then recorded). */
+  onFullTime?: () => void;
+  /** How many timeline items are already shown (a resumed match). */
+  initialRevealed?: number;
 };
 
 /**
@@ -64,18 +74,45 @@ export function MatchCentreScreen({
   playerOfTheMatch,
   onPlayAgain,
   onDone,
+  renderManagement,
+  onFullTime,
+  initialRevealed,
 }: MatchCentreScreenProps) {
-  const replay = useReplay(timeline.length);
+  const replay = useReplay(timeline.length, undefined, initialRevealed);
   const [view, setView] = useState<ReportView>('timeline');
+  const [managing, setManaging] = useState(false);
+  // Whether the replay was running when the panel opened: closing it carries on the same way.
+  const [wasPlaying, setWasPlaying] = useState(false);
   const shown = timeline.slice(0, replay.revealed);
   const current = shown.at(-1) ?? timeline[0];
+  const live = renderManagement !== undefined;
+
+  // Full time in a live match: record it once (the report then shows the other results too).
+  const recorded = useRef(false);
+  useEffect(() => {
+    if (replay.finished && onFullTime && !recorded.current) {
+      recorded.current = true;
+      onFullTime();
+    }
+  }, [replay.finished, onFullTime]);
+
+  const manage = () => {
+    setWasPlaying(replay.playing);
+    replay.pause();
+    setManaging(true);
+  };
+  const closeManagement = () => {
+    setManaging(false);
+    if (wasPlaying) replay.resume();
+  };
 
   return (
     <Screen bottomInset>
       <PageHeader
         overline={overline}
         title={replay.finished ? 'Match report' : 'Match centre'}
-        leading={<IconButton icon="back" accessibilityLabel="Back" onPress={onDone} />}
+        // A live match can't be left half-played: it's recorded at full time.
+        leading={live && !replay.finished ? undefined : <IconButton icon="back" accessibilityLabel="Back" onPress={onDone} />}
       />
       <Scoreboard
         homeName={homeName}
@@ -86,8 +123,11 @@ export function MatchCentreScreen({
         live={replay.playing && current.phase !== 'half-time'}
       />
 
-      {!replay.finished ? (
+      {!replay.finished && managing && renderManagement ? (
+        renderManagement({ at: current.at, clock: current.clock, close: closeManagement })
+      ) : !replay.finished ? (
         <>
+          {live ? <Button label="Manage team" icon="tactics" variant="secondary" onPress={manage} accessibilityHint="Pauses the match: substitutions and instructions" /> : null}
           <View style={styles.controls}>
             <View style={styles.flex}>
               <Button

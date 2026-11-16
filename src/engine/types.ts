@@ -34,6 +34,39 @@ export type MatchInput = {
   away: MatchTeamInput;
   /** Same seed + same input → identical match. */
   seed: number;
+  /** The managers' decisions during the match, in the order they were made. */
+  changes?: readonly MatchChange[];
+};
+
+/**
+ * A manager's decision during a match. It takes effect from the first
+ * minute AFTER `after` (the clock the manager paused at), so everything up
+ * to and including `after` plays out exactly as it did without it: same
+ * seed, same random numbers in the same order. That's what lets the game
+ * re-simulate the whole match after each change and carry the replay on
+ * from where it was.
+ */
+export type MatchChange = { after: MatchClock; side: Side } & (
+  | { kind: 'substitution'; offId: PlayerId; onId: PlayerId }
+  | { kind: 'tactics'; tactics: Tactics }
+);
+
+/** A team as it stands at a moment in the match (for the in-match management screen). */
+export type TeamSnapshot = {
+  onPitch: { id: PlayerId; position: Position; energy: number; booked: boolean }[];
+  bench: PlayerId[];
+  subsLeft: number;
+  tactics: Tactics;
+  /** True once the manager has made a change: the assistant stops making fatigue substitutions. */
+  manual: boolean;
+};
+
+export type MatchSnapshot = {
+  clock: MatchClock;
+  score: Score;
+  /** No minutes left to play: changes would have no effect. */
+  finished: boolean;
+  teams: Record<Side, TeamSnapshot>;
 };
 
 export type ChanceType = 'through-ball' | 'cross' | 'long-ball' | 'long-shot' | 'set-piece';
@@ -70,12 +103,17 @@ export type MatchEvent = MatchClock &
     | { type: 'tackle'; side: Side; playerId: PlayerId }
     | { type: 'foul'; side: Side; playerId: PlayerId; victimId: PlayerId }
     | { type: 'card'; side: Side; playerId: PlayerId; card: 'yellow' | 'second-yellow' | 'red' }
-    | { type: 'substitution'; side: Side; offId: PlayerId; onId: PlayerId; reason: 'fatigue' | 'goalkeeper' | 'injury' }
+    | { type: 'substitution'; side: Side; offId: PlayerId; onId: PlayerId; reason: SubstitutionReason }
+    /** The manager changed instructions (an in-match change). */
+    | { type: 'tactics'; side: Side; tactics: Tactics }
     /** `days`: how long he'll be out (the game layer turns it into a return date). */
     | { type: 'injury'; side: Side; playerId: PlayerId; days: number }
   );
 
 export type MatchEventType = MatchEvent['type'];
+
+/** 'manager': the user's own change; the others are made automatically. */
+export type SubstitutionReason = 'fatigue' | 'goalkeeper' | 'injury' | 'manager';
 
 export type Score = { home: number; away: number };
 

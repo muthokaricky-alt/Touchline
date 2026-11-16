@@ -24,7 +24,7 @@ import { worldFor } from '@/game/world/renewal';
 import { afterUserMatchday, closeSeason } from '@/game/career/career-flow';
 import { ManagerSchema, newManager, takeNewJob, type Manager } from '@/game/career/manager';
 import { admitIntakeToCareer, retireFromCareer } from '@/game/world/renewal-career';
-import type { MatchResult } from '@/engine/types';
+import type { MatchClock, MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
 import type { Season } from '@/game/season/season';
 import {
@@ -54,6 +54,7 @@ import { completeTransfer, type TransferRecord } from '@/game/transfers/complete
 import type { TransferOffer } from '@/game/transfers/offers';
 import { formatCompactCurrency } from '@/utils/format';
 import { personalTerms, playerContext, respondToBid, respondToTerms } from '@/game/transfers/negotiation';
+import { addChange, liveView, type LiveContext, type LiveMatch, type UserChange } from '@/game/match/live';
 import { checkSave, migrateSave, SAVE_VERSION, worldChanges, type GameSave, type SaveCheck } from '@/persistence/save';
 import { createSlotStorage, slotKey } from '@/persistence/slot-storage';
 import { saveStatus } from '@/persistence/save-status';
@@ -113,7 +114,35 @@ export type GameState = {
    * or after "Start new game"): the app then shows the new-career screen.
    */
   manager: Manager | null;
+  /**
+   * The match the user has kicked off and not finished, with their in-match
+   * changes (saved, so a closed app resumes it). While it's set, nothing that
+   * affects the match may change: see `notLive`.
+   */
+  liveMatch: LiveMatch | null;
 };
+
+/** The career state a live match is rebuilt from. */
+export function liveContext(s: GameState): LiveContext {
+  return {
+    db: s.database,
+    season: s.season,
+    condition: s.condition,
+    currentDate: s.currentDate,
+    userClubId: s.userClubId,
+    lineup: s.lineup,
+    tactics: s.tactics,
+  };
+}
+
+/**
+ * Guard for actions that would change a match in progress (lineup, tactics,
+ * squad, the calendar). The UI keeps the user on the match screen anyway;
+ * this makes sure the result shown can't differ from the result recorded.
+ */
+function notLive(s: Pick<GameState, 'liveMatch'>): void {
+  if (s.liveMatch) throw new RangeError('Finish the match in progress first.');
+}
 
 /** A club id no club has: used as "the user" in a summer when he's changing clubs, so every club gets the AI's treatment. */
 const VACANT_CLUB = 'club_vacant';
@@ -159,8 +188,22 @@ export type GameActions = {
   applyPlayingStyle: (styleId: PlayingStyleId) => void;
   /** Simulates a friendly with the current lineup and tactics. `seed` is for tests; normally from the clock. */
   playFriendly: (opponentId: ClubId, venue: MatchVenue, seed?: number) => MatchResult;
-  /** Plays every date up to and including the user's next fixture (league or cup). */
+  /**
+   * Plays every date up to and including the user's next fixture (league or
+   * cup), with the in-match changes of a live match of that fixture, and
+   * records it all. Without a live match: the whole fixture at once.
+   */
   playNextFixture: () => MatchResult;
+  /** Starts the user's next fixture as a live match (nothing is recorded until `finishMatch`). */
+  kickOff: () => void;
+  /** Starts a live friendly. `seed` is for tests; normally from the clock. */
+  kickOffFriendly: (opponentId: ClubId, venue: MatchVenue, seed?: number) => void;
+  /** A substitution or tactics change, taking effect from the minute after `after`. Throws a RangeError if it isn't possible. */
+  makeMatchChange: (after: MatchClock, change: UserChange) => void;
+  /** Full time: records a fixture (like `playNextFixture`) or ends a friendly. */
+  finishMatch: () => MatchResult;
+  /** Last resort if a saved match in progress can't be rebuilt: drops it (the fixture is still to be played). */
+  abandonMatch: () => void;
   /** Once the user has no fixtures left: plays the rest of the season (e.g. a cup final between other clubs). */
   finishSeason: () => void;
   /** Only once the current season is complete. `newClubId`: accept that club's job offer. */
@@ -305,6 +348,7 @@ function toSave(state: GameState): GameSave {
     condition: state.condition,
     training: state.training,
     manager: state.manager,
+    liveMatch: state.liveMatch,
   };
 }
 
@@ -343,6 +387,7 @@ export function createInitialGameState(database: GameDatabase = getBaseDatabase(
     condition: emptyConditions(FICTIONAL_REFERENCE_DATE),
     training: DEFAULT_TRAINING,
     manager: null,
+    liveMatch: null,
   };
 }
 
@@ -353,16 +398,80 @@ export const useGameStore = create<Store>()(
     (set, get) => ({
       ...createInitialGameState(),
 
+      // Team selection and tactics: not while a match is being played (in-match changes go through makeMatchChange).
       changeFormation: (formationId) =>
-        set((s) => ({ lineup: changeFormation(s.lineup, formationId, selectSquadCandidates(s.database, s.userClubId)) })),
-      assignToSlot: (slotId, playerId) => set((s) => ({ lineup: assignToSlot(s.lineup, slotId, playerId) })),
-      clearSlot: (slotId) => set((s) => ({ lineup: clearSlot(s.lineup, slotId) })),
-      addSubstitute: (playerId) => set((s) => ({ lineup: addSubstitute(s.lineup, playerId) })),
-      removeFromLineup: (playerId) => set((s) => ({ lineup: removeFromLineup(s.lineup, playerId) })),
-      autoPick: () => set((s) => ({ lineup: autoPickLineup(availableAtKickOff(s), s.lineup.formationId) })),
-      setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
-      applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
+        set((s) => {
+          notLive(s);
+          return { lineup: changeFormation(s.lineup, formationId, selectSquadCandidates(s.database, s.userClubId)) };
+        }),
+      assignToSlot: (slotId, playerId) =>
+        set((s) => {
+          notLive(s);
+          return { lineup: assignToSlot(s.lineup, slotId, playerId) };
+        }),
+      clearSlot: (slotId) =>
+        set((s) => {
+          notLive(s);
+          return { lineup: clearSlot(s.lineup, slotId) };
+        }),
+      addSubstitute: (playerId) =>
+        set((s) => {
+          notLive(s);
+          return { lineup: addSubstitute(s.lineup, playerId) };
+        }),
+      removeFromLineup: (playerId) =>
+        set((s) => {
+          notLive(s);
+          return { lineup: removeFromLineup(s.lineup, playerId) };
+        }),
+      autoPick: () =>
+        set((s) => {
+          notLive(s);
+          return { lineup: autoPickLineup(availableAtKickOff(s), s.lineup.formationId) };
+        }),
+      setInstruction: (key, value) =>
+        set((s) => {
+          notLive(s);
+          return { tactics: setInstruction(s.tactics, key, value) };
+        }),
+      applyPlayingStyle: (styleId) => {
+        notLive(get());
+        set({ tactics: PLAYING_STYLES[styleId].tactics });
+      },
+      kickOff: () => {
+        const s = get();
+        notLive(s);
+        if (s.manager?.sackedOffers) throw new RangeError('Choose your next club first.');
+        const next = nextFixtureFor(s.season, s.userClubId);
+        if (!next) throw new RangeError('No fixture left to play this season');
+        const live: LiveMatch = { kind: 'fixture', fixtureId: next.id, changes: [] };
+        liveView(liveContext(s), live); // throws if the team can't play it (e.g. a suspended player)
+        set({ liveMatch: live, lastMatch: null, lastMatchFixtureId: null });
+      },
+      kickOffFriendly: (opponentId, venue, seed = newMatchSeed()) => {
+        const s = get();
+        notLive(s);
+        const live: LiveMatch = { kind: 'friendly', opponentId, venue, seed, changes: [] };
+        liveView(liveContext(s), live);
+        set({ liveMatch: live, lastMatch: null, lastMatchFixtureId: null });
+      },
+      makeMatchChange: (after, change) => {
+        const s = get();
+        if (!s.liveMatch) throw new RangeError('No match in progress.');
+        set({ liveMatch: addChange(liveView(liveContext(s), s.liveMatch), s.liveMatch, after, change) });
+      },
+      finishMatch: () => {
+        const s = get();
+        const live = s.liveMatch;
+        if (!live) throw new RangeError('No match in progress.');
+        if (live.kind === 'fixture') return get().playNextFixture();
+        const { result } = liveView(liveContext(s), live);
+        set({ liveMatch: null, lastMatch: result, lastMatchFixtureId: null });
+        return result;
+      },
+      abandonMatch: () => set({ liveMatch: null }),
       playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
+        notLive(get());
         const { database, userClubId, lineup, tactics, condition, currentDate } = get();
         // Friendlies use today's condition but don't change it (no injuries or fatigue carried over).
         const today = conditionOn(condition, currentDate);
@@ -373,8 +482,10 @@ export const useGameStore = create<Store>()(
       playNextFixture: () => {
         const state = get();
         if (state.manager?.sackedOffers) throw new RangeError('Choose your next club first.');
+        if (state.liveMatch?.kind === 'friendly') throw new RangeError('Finish the match in progress first.');
         const { database, userClubId, lineup, tactics, season } = state;
-        const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics }, state.condition);
+        const changes = state.liveMatch?.changes ?? [];
+        const played = advanceToUserFixture(database, season, { clubId: userClubId, lineup, tactics, changes }, state.condition);
         const date = played.fixture.date;
         // A new month: players develop, some pick up training knocks.
         const monthly = monthlyStep(state, state.currentDate, date, played.season, played.condition);
@@ -405,11 +516,13 @@ export const useGameStore = create<Store>()(
           season: played.season,
           lastMatch: played.result,
           lastMatchFixtureId: played.fixture.id,
+          liveMatch: null,
         });
         return played.result;
       },
       finishSeason: () => {
         const state = get();
+        notLive(state);
         if (nextFixtureFor(state.season, state.userClubId)) throw new RangeError('You still have fixtures to play');
         const finished = playRemaining(state.database, state.season, state.condition);
         const lastDate = finished.season.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), state.currentDate);
@@ -424,6 +537,7 @@ export const useGameStore = create<Store>()(
       },
       startNextSeason: (newClubId = null) => {
         const state = get();
+        notLive(state);
         if (!isSeasonComplete(state.season)) throw new RangeError('The current season is still in progress');
         // The board's review first: reputation, history, and the user's club for next season.
         const seasonStartDate = `${state.season.startYear + 1}-07-01`;
@@ -494,6 +608,7 @@ export const useGameStore = create<Store>()(
       },
       chooseNewJob: (clubId) =>
         set((s) => {
+          notLive(s);
           if (!s.manager?.sackedOffers?.includes(clubId)) throw new RangeError("That club hasn't offered you a job.");
           const name = s.database.clubs.find((c) => c.id === clubId)?.name ?? clubId;
           return {
@@ -505,6 +620,7 @@ export const useGameStore = create<Store>()(
           };
         }),
       signPlayer: ({ playerId, fee, weeklyWage, years }) => {
+        notLive(get());
         const { database, userClubId, currentDate, transferHistory } = get();
         const ctx = playerContext(database, playerId, currentDate);
         const buyer = database.clubs.find((c) => c.id === userClubId);
@@ -533,20 +649,32 @@ export const useGameStore = create<Store>()(
       },
       toggleTransferListed: (playerId) =>
         set((s) => {
+          notLive(s);
           const listing = !s.transferListed.includes(playerId);
           const career = toggleListed(transferCareer(s), playerId);
           // Being put up for sale hurts; being taken off the list helps a little.
           const condition = adjustMorale(conditionOn(s.condition, s.currentDate), playerId, listing ? LISTED_MORALE : UNLISTED_MORALE);
           return { ...fromCareer(career), condition };
         }),
-      acceptOffer: (offerId) => set((s) => fromCareer(acceptOffer(transferCareer(s), offerId))),
+      acceptOffer: (offerId) =>
+        set((s) => {
+          notLive(s);
+          return fromCareer(acceptOffer(transferCareer(s), offerId));
+        }),
       rejectOffer: (offerId) => set((s) => fromCareer(rejectOffer(transferCareer(s), offerId))),
-      releasePlayer: (playerId) => set((s) => fromCareer(releaseFromSquad(transferCareer(s), playerId))),
+      releasePlayer: (playerId) =>
+        set((s) => {
+          notLive(s);
+          return fromCareer(releaseFromSquad(transferCareer(s), playerId));
+        }),
       renewContract: (offer) =>
-        set((s) => ({
-          ...fromCareer(renewPlayer(transferCareer(s), offer)),
-          condition: adjustMorale(conditionOn(s.condition, s.currentDate), offer.playerId, RENEWED_MORALE),
-        })),
+        set((s) => {
+          notLive(s);
+          return {
+            ...fromCareer(renewPlayer(transferCareer(s), offer)),
+            condition: adjustMorale(conditionOn(s.condition, s.currentDate), offer.playerId, RENEWED_MORALE),
+          };
+        }),
       markMessageRead: (id) => set((s) => ({ inbox: markRead(s.inbox, id) })),
       markAllMessagesRead: () => set((s) => ({ inbox: markAllRead(s.inbox) })),
       setTraining: (change) => set((s) => ({ training: { ...s.training, ...change } })),

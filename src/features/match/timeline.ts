@@ -1,6 +1,6 @@
 import type { PlayerId, Position } from '@/data/schemas';
 import { describeEvent, formatClock } from '@/engine/commentary';
-import type { MatchEvent, MatchResult, Score, Side, TeamMatchStats } from '@/engine/types';
+import type { MatchClock, MatchEvent, MatchResult, Score, Side, TeamMatchStats } from '@/engine/types';
 
 /**
  * Pure helpers that shape a finished MatchResult for the match screen:
@@ -8,10 +8,12 @@ import type { MatchEvent, MatchResult, Score, Side, TeamMatchStats } from '@/eng
  * rating colours. No React here, so it's all unit-tested.
  */
 
-export type TimelineKind = 'goal' | 'chance' | 'card' | 'substitution' | 'injury' | 'whistle';
+export type TimelineKind = 'goal' | 'chance' | 'card' | 'substitution' | 'tactics' | 'injury' | 'whistle';
 
 export type TimelineItem = {
   key: string;
+  /** When it happened: in-match changes are made "after" the clock of the item the replay is showing. */
+  at: MatchClock;
   clock: string;
   kind: TimelineKind;
   side: Side | null;
@@ -35,6 +37,8 @@ function kindOf(event: MatchEvent): TimelineKind | null {
       return 'card';
     case 'substitution':
       return 'substitution';
+    case 'tactics':
+      return 'tactics';
     case 'injury':
       return 'injury';
     case 'kick-off':
@@ -65,6 +69,7 @@ export function buildTimeline(result: MatchResult, playerName: (id: PlayerId) =>
     if (!kind) return;
     items.push({
       key: `${index}`,
+      at: event.addedTime ? { minute: event.minute, addedTime: event.addedTime } : { minute: event.minute },
       clock: formatClock(event),
       kind,
       side: 'side' in event ? event.side : null,

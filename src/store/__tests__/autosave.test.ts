@@ -53,13 +53,26 @@ beforeEach(() => {
 });
 
 describe('autosave', () => {
+  it('resumes a match in progress after a restart, with its changes', async () => {
+    state().kickOff();
+    state().makeMatchChange({ minute: 60 }, { kind: 'tactics', tactics: { ...state().tactics, mentality: 'attacking' } });
+    const live = state().liveMatch;
+    flushSave();
+    await restartWith(savedFile());
+    expect(state().liveMatch).toEqual(live);
+    // Finishing it after the restart records the match with the change in it.
+    const result = state().finishMatch();
+    expect(result.events.some((e) => e.type === 'tactics')).toBe(true);
+    expect(state().liveMatch).toBeNull();
+  });
+
   it('saves the career and world changes, not players/attributes or the match being replayed', () => {
     state().playNextFixture();
     flushSave();
     const { state: s, version } = saved();
     expect(version).toBe(SAVE_VERSION);
     expect(Object.keys(s).sort()).toEqual([
-      'attributeChanges', 'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'manager', 'offers', 'retired', 'season',
+      'attributeChanges', 'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'liveMatch', 'manager', 'offers', 'retired', 'season',
       'tactics', 'training', 'transferHistory', 'transferListed', 'userClubId', 'worldSeed',
     ]);
     expect(useSaveStatus.getState().lastSavedAt).not.toBeNull();

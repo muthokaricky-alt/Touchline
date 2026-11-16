@@ -1,17 +1,22 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
+import { AppText, Button, PageHeader, Screen } from '@/components/ui';
 import type { ClubId } from '@/data/schemas';
+import { clockKey } from '@/engine/simulate';
 import type { MatchResult } from '@/engine/types';
+import { MatchManagementPanel, type ManagedPlayer } from '@/features/match/components/MatchManagementPanel';
 import { FixtureSetupScreen } from '@/features/match/FixtureSetupScreen';
 import { MatchCentreScreen, type OtherResult } from '@/features/match/MatchCentreScreen';
 import { MatchSetupScreen } from '@/features/match/MatchSetupScreen';
 import { buildRatingRows, buildStatRows, buildTimeline } from '@/features/match/timeline';
 import type { MatchVenue } from '@/game/match/friendly';
+import { resumeClock, snapshotAt, type LiveMatch, type LiveView, type UserChange } from '@/game/match/live';
 import { competitionName, roundLabel } from '@/game/season/season-flow';
 import { findClub } from '@/game/squad/squad-selectors';
 import { useGameStore } from '@/store/game-store';
 import {
+  useLiveMatch,
   useLeagueOpponents,
   useNextFixture,
   useOpponentPreview,
@@ -25,14 +30,20 @@ import {
  * Route: match day. State decides what shows (no URL params, so the static
  * web export's pre-rendered page matches the browser's first render):
  *
- *   lastMatch set              → match centre (replay, then report)
+ *   match in progress          → live match centre (replay + in-match changes)
+ *   lastMatch set              → match centre (report of the finished match)
  *   else, league fixture due   → fixture pre-match (unless the user chose a friendly)
  *   else                       → friendly setup
+ *
+ * A live match and its finished report are the same MatchCentre (same key),
+ * so the replay carries straight on into the report at full time.
  */
 export default function MatchRoute() {
   const router = useRouter();
   const lastMatch = useGameStore((s) => s.lastMatch);
   const lastMatchFixtureId = useGameStore((s) => s.lastMatchFixtureId);
+  const liveMatch = useGameStore((s) => s.liveMatch);
+  const live = useLiveMatch();
   const clearMatch = useGameStore((s) => s.clearMatch);
   const nextFixture = useNextFixture();
 
@@ -48,6 +59,20 @@ export default function MatchRoute() {
   };
   const editTeam = () => router.navigate('/tactics');
 
+  if (liveMatch && !live) return <BrokenLiveMatch />;
+  if (live) {
+    const { result } = live.view;
+    return (
+      <MatchCentre
+        key={`${result.seed}-${result.home.clubId}-${result.away.clubId}`}
+        result={result}
+        fixtureId={live.view.fixtureId}
+        live={live}
+        onContinue={clearMatch}
+        onDone={done}
+      />
+    );
+  }
   if (lastMatch) {
     return (
       <MatchCentre
@@ -94,7 +119,7 @@ function useTeamReadiness(kind: 'fixture' | 'friendly') {
 
 function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: () => void; onEditTeam: () => void; onBack: () => void }) {
   const fixture = useNextFixture();
-  const playNextFixture = useGameStore((s) => s.playNextFixture);
+  const kickOff = useGameStore((s) => s.kickOff);
   const opponentPreview = useOpponentPreview(fixture?.opponentId ?? null);
   const { teamSummary, blockingIssues } = useTeamReadiness('fixture');
   if (!fixture) return null;
@@ -111,7 +136,7 @@ function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: (
       teamSummary={teamSummary}
       opponentPreview={opponentPreview}
       blockingIssues={blockingIssues}
-      onKickOff={playNextFixture}
+      onKickOff={kickOff}
       onEditTeam={onEditTeam}
       onPlayFriendly={onPlayFriendly}
       onBack={onBack}
@@ -130,7 +155,7 @@ type FriendlySetupProps = {
 };
 
 function FriendlySetup({ chosenOpponent, onOpponentChange, venue, onVenueChange, onBack, onEditTeam, onBackToLeague }: FriendlySetupProps) {
-  const playFriendly = useGameStore((s) => s.playFriendly);
+  const kickOffFriendly = useGameStore((s) => s.kickOffFriendly);
   const club = useUserClub();
   const opponents = useLeagueOpponents();
   const nextFixture = useNextFixture();
@@ -150,7 +175,7 @@ function FriendlySetup({ chosenOpponent, onOpponentChange, venue, onVenueChange,
       blockingIssues={blockingIssues}
       onOpponentChange={onOpponentChange}
       onVenueChange={onVenueChange}
-      onKickOff={() => opponentId && playFriendly(opponentId, venue)}
+      onKickOff={() => opponentId && kickOffFriendly(opponentId, venue)}
       onEditTeam={onEditTeam}
       onBack={onBack}
       onBackToLeague={onBackToLeague}
@@ -158,18 +183,37 @@ function FriendlySetup({ chosenOpponent, onOpponentChange, venue, onVenueChange,
   );
 }
 
+/** A saved match in progress that no longer fits the career (shouldn't happen: the save check guards it). */
+function BrokenLiveMatch() {
+  const abandon = useGameStore((s) => s.abandonMatch);
+  return (
+    <Screen bottomInset>
+      <PageHeader title="Match unavailable" />
+      <AppText color="textSecondary">The match in progress couldn’t be restored. It hasn’t been recorded: you can play it again.</AppText>
+      <Button label="Back to the dashboard" onPress={abandon} />
+    </Screen>
+  );
+}
+
 type MatchCentreProps = {
   result: MatchResult;
   /** Set for league matches. */
   fixtureId: string | null;
+  /** Set while the match is in progress (changes possible). */
+  live?: { live: LiveMatch; view: LiveView };
   onContinue: () => void;
   onDone: () => void;
 };
 
-function MatchCentre({ result, fixtureId, onContinue, onDone }: MatchCentreProps) {
+function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentreProps) {
   const playerName = usePlayerNames();
   const database = useGameStore((s) => s.database);
   const season = useGameStore((s) => s.season);
+  const finishMatch = useGameStore((s) => s.finishMatch);
+  const makeMatchChange = useGameStore((s) => s.makeMatchChange);
+  const onFullTime = useCallback(() => {
+    finishMatch();
+  }, [finishMatch]);
 
   const view = useMemo(() => {
     const fixture = fixtureId ? season.fixtures.find((f) => f.id === fixtureId) : undefined;
@@ -195,6 +239,48 @@ function MatchCentre({ result, fixtureId, onContinue, onDone }: MatchCentreProps
     };
   }, [result, fixtureId, season, database, playerName]);
 
+  // A resumed match starts where the last change was made (fixed at mount).
+  const [initialRevealed] = useState(() => {
+    if (!live) return undefined;
+    const resume = clockKey(resumeClock(live.live));
+    return view.timeline.filter((item) => clockKey(item.at) <= resume).length;
+  });
+
+  const renderManagement = live
+    ? ({ at, clock, close }: { at: Parameters<typeof snapshotAt>[1]; clock: string; close: () => void }) => {
+        const team = snapshotAt(live.view, at).teams[live.view.side];
+        const attempt = (change: UserChange) => {
+          try {
+            makeMatchChange(at, change);
+            return null;
+          } catch (e) {
+            return e instanceof Error ? e.message : String(e);
+          }
+        };
+        const onPitch: ManagedPlayer[] = team.onPitch
+          .filter((p) => p.position !== 'GK')
+          .map((p) => ({ id: p.id, name: playerName(p.id), position: p.position, detail: `${p.energy}% energy${p.booked ? ' · booked' : ''}` }));
+        const keeper = team.onPitch.find((p) => p.position === 'GK');
+        const bench: ManagedPlayer[] = team.bench.map((id) => {
+          const c = live.view.input[live.view.side].squad.find((x) => x.player.id === id);
+          return { id, name: playerName(id), position: c?.player.primaryPosition ?? 'CM', detail: 'Substitute' };
+        });
+        return (
+          <MatchManagementPanel
+            clock={clock}
+            subsLeft={team.subsLeft}
+            onPitch={keeper ? [{ id: keeper.id, name: playerName(keeper.id), position: 'GK', detail: `${keeper.energy}% energy` }, ...onPitch] : onPitch}
+            bench={bench}
+            tactics={team.tactics}
+            inCharge={team.manual}
+            onSubstitute={(offId, onId) => attempt({ kind: 'substitution', offId, onId })}
+            onApplyTactics={(tactics) => attempt({ kind: 'tactics', tactics })}
+            onClose={close}
+          />
+        );
+      }
+    : undefined;
+
   return (
     <MatchCentreScreen
       overline={view.overline}
@@ -209,6 +295,9 @@ function MatchCentre({ result, fixtureId, onContinue, onDone }: MatchCentreProps
       playerOfTheMatch={view.playerOfTheMatch}
       onPlayAgain={onContinue}
       onDone={onDone}
+      renderManagement={renderManagement}
+      onFullTime={live ? onFullTime : undefined}
+      initialRevealed={initialRevealed}
     />
   );
 }

@@ -25,6 +25,7 @@ import { analyseTactics } from '@/game/tactics/analysis';
 import { matchPlayingStyle } from '@/game/tactics/presets';
 
 import { selectDiscipline } from '@/game/discipline/suspensions';
+import { liveView } from '@/game/match/live';
 import { conditionAtKickOff, suspendedAtKickOff, useGameStore } from './game-store';
 
 /**
@@ -64,6 +65,29 @@ export function useAvailabilityAtKickOff() {
   const season = useGameStore((s) => s.season);
   const userClubId = useGameStore((s) => s.userClubId);
   return useMemo(() => availabilityFrom(atKickOff, suspendedAtKickOff({ season, userClubId })), [atKickOff, season, userClubId]);
+}
+
+/**
+ * The match in progress, re-simulated from the career state and the changes
+ * made so far; null if there's none (or it can no longer be rebuilt).
+ */
+export function useLiveMatch() {
+  const liveMatch = useGameStore((s) => s.liveMatch);
+  const db = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+  const condition = useGameStore((s) => s.condition);
+  const currentDate = useGameStore((s) => s.currentDate);
+  const userClubId = useGameStore((s) => s.userClubId);
+  const lineup = useGameStore((s) => s.lineup);
+  const tactics = useGameStore((s) => s.tactics);
+  return useMemo(() => {
+    if (!liveMatch) return null;
+    try {
+      return { live: liveMatch, view: liveView({ db, season, condition, currentDate, userClubId, lineup, tactics }, liveMatch) };
+    } catch {
+      return null;
+    }
+  }, [liveMatch, db, season, condition, currentDate, userClubId, lineup, tactics]);
 }
 
 /** Players banned from the user's next fixture. */

@@ -20,7 +20,10 @@ const TABS: { name: string; title: string; icon: IconName }[] = [
 export default function TabLayout() {
   // No career yet (first launch, or after "Start new game"): choose a name and club first.
   const hasCareer = useGameStore((s) => s.manager !== null);
+  // A match in progress (e.g. the app was closed during it): back to it until full time.
+  const matchInProgress = useGameStore((s) => s.liveMatch !== null);
   if (!hasCareer) return <Redirect href="/new-career" />;
+  if (matchInProgress) return <Redirect href="/match" />;
   return (
     <Tabs
       screenOptions={{

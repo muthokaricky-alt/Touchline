@@ -33,6 +33,8 @@ export type TeamState = {
   /** Substitutes not yet used. */
   bench: LineupCandidate[];
   subsUsed: number;
+  /** Set by the manager's first in-match change: no more automatic fatigue substitutions. */
+  manual: boolean;
 };
 
 export const MAX_SUBS = 5;
@@ -73,7 +75,7 @@ export function createTeamState(side: Side, input: MatchTeamInput): TeamState {
     const candidate = byId.get(id);
     return candidate ? [candidate] : [];
   });
-  return { side, input, effects: tacticalEffects(input.tactics), onPitch, bench, subsUsed: 0 };
+  return { side, input, effects: tacticalEffects(input.tactics), onPitch, bench, subsUsed: 0, manual: false };
 }
 
 /**

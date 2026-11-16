@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions (first post-roadmap feature). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions and in-match management (save v8). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -77,7 +77,8 @@ src/
     world/               renewal: youth intakes (regenerated from the seed),
                          worldFor(startYear), retirement, leaving football;
                          renewal-career (user side + inbox)
-    match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed
+    match/               buildMatchTeam, lineupStrength, prepareFriendly, newMatchSeed,
+                         live (the match in progress: saved record, rebuild, changes)
     season/              Season/Fixture schemas, fixture generator, table, cup
                          (draws, rounds, ties), running player stats, season flow
                          (date-ordered play, promotion/relegation, roll over)
@@ -91,7 +92,7 @@ src/
                          accumulation with deadlines), messages, profile view
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
     simulate.ts          minute loop: possession → fouls → chance/shot → fatigue →
-                         injuries → subs
+                         injuries → subs; in-match changes, snapshots
     team-state.ts        on-pitch players, energy, unit strengths, replacements
     tactical-effects.ts  instructions → numeric modifiers
     summarise.ts         events → score, team/player stats, ratings (one source of truth)
@@ -813,6 +814,52 @@ earned in; then, after measuring, real-league deadlines for yellow cards.
   guard; they use `playUserFixture` (`game/season/__fixtures__/play.ts`),
   which swaps banned players out first, as the store does.
 
+### In-match management (after Milestone 10)
+
+Decisions (user): substitutions and instruction changes; the assistant
+makes fatigue substitutions until the user's first change; a match in
+progress is saved and resumed.
+
+- **Re-simulate, don't pause the engine.** A `MatchChange` (substitution
+  or new tactics) has an `after` clock and takes effect from the next tick.
+  The engine plays an explicit tick list (minutes, stoppage, half-time) and
+  applies pending changes before each tick, so everything up to `after` is
+  identical with or without the change: same seed, same random numbers in
+  the same order (tested over 32 seed × minute cases). The game re-runs the
+  whole match after each change (a few ms) and the replay simply carries
+  on: the timeline before the pause point can't have changed. The engine
+  stays pure, and "simulate instantly, replay visually" still holds.
+- **Snapshots** (`matchSnapshot(input, at)`): the engine replays up to `at`
+  and reports who's on (with energy, bookings), the bench, subs left,
+  current tactics and whether the manager is in charge. `changeProblem`
+  validates a change against that; the engine itself silently skips an
+  invalid change so a match always finishes.
+- **Assistant subs:** `TeamState.manual` is set by the first change of that
+  side; from then on no fatigue substitutions for it. Injury and goalkeeper
+  replacements stay automatic.
+- **Two-phase league match:** `kickOff` only stores `liveMatch` (fixture id
+  + changes); nothing is recorded. `prepareUserFixture` builds the live
+  match exactly as `advanceToUserFixture` will (earlier AI-only dates,
+  condition at kick-off), and `finishMatch` (= `playNextFixture` with the
+  live match's changes) records the identical result. The match centre
+  calls `finishMatch` when the replay reaches full time, so the report can
+  show the matchday's other results.
+- **Nothing that affects the match may change in between,** because the
+  live match is rebuilt from the career state: `notLive` guards lineup,
+  tactics, transfers, contracts, listing, the calendar and job changes; the
+  tabs layout redirects to `/match` while a match is live (like the
+  new-career redirect), and the match centre hides its Back button.
+- **Save v8** adds `liveMatch` (nullable; a few bytes). Load checks it's
+  still the user's next fixture (or a valid friendly) and that changed
+  players exist; v7 saves have no match in progress. A resumed match
+  starts its replay at the last change.
+- **UI:** "Manage team" pauses the replay and opens `MatchManagementPanel`
+  (take off / bring on with energy and bookings, subs left, the six
+  instructions with "Apply"); closing it resumes if it was playing. New
+  feed kind `tactics`, commentary for manager substitutions and approach
+  changes. Not done: moving players between positions mid-match (a sub
+  takes the departing player's position).
+
 ## 3. Commands
 
 ```
@@ -1102,6 +1149,25 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   in → "is suspended" on the pitch and issues card, league kick-off
   disabled, a friendly still allowed. Zero console errors, no overflow.
 
+### In-match management ✅ (after the roadmap)
+- Engine: `MatchChange`, tick loop, `matchSnapshot`, `changeProblem`,
+  `manual` teams; `game/match/live.ts`; `prepareUserFixture`; store
+  `kickOff`, `kickOffFriendly`, `makeMatchChange`, `finishMatch`,
+  `abandonMatch`, `notLive` guards; save v8; match centre live mode,
+  management panel, redirect to the live match.
+- Tests: 717 total (13 new) incl. the prefix-invariance property, manager
+  subs, assistant hand-over, tactics effect size, snapshots, validation;
+  store flow (locked career, shown = recorded, order, friendly); resume
+  after restart; v7 → v8 and live-match load checks. `npm test` 679 /
+  calibration 38. Engine calibration unchanged by the loop rewrite.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px and 1280px: kick off → no Back button → Manage
+  team at 55' → substitution + very attacking → back to the match (replay
+  resumes) → loading `/squad` mid-match redirects to `/match` and resumes
+  with both changes in the feed → skip to full time → report with the
+  changes and other results → dashboard on matchday 2. Zero console
+  errors, no overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -1136,7 +1202,6 @@ All ten roadmap milestones are built. What's left before a release:
    eas-cli`, `eas login`, then `eas build --platform android --profile
    preview` for an installable APK (eas.json is already set up).
 3. Then choose: store submission (production profile, store listings,
-   privacy policy) or more gameplay. Parked ideas: in-match
-   substitutions, scouting (narrow potential ranges), foreign leagues,
+   privacy policy) or more gameplay. Parked ideas: scouting (narrow potential ranges), foreign leagues,
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

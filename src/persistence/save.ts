@@ -21,6 +21,8 @@ import { ConditionStateSchema, emptyConditions } from '@/game/condition/conditio
 import { DEFAULT_TRAINING, TrainingSchema } from '@/game/development/development';
 import { InboxMessageSchema } from '@/game/inbox/inbox';
 import { LineupSchema } from '@/game/lineup';
+import { LiveMatchSchema } from '@/game/match/live';
+import { nextFixtureFor } from '@/game/season/season-flow';
 import { TransferOfferSchema } from '@/game/transfers/offers';
 import { SeasonSchema } from '@/game/season/season';
 import { TacticsSchema } from '@/game/tactics/tactics';
@@ -43,9 +45,10 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   6  + retired players (Milestone 9a). Youth intakes aren't saved: they're
  *        regenerated from the seed (game/world/renewal.ts worldFor).
  *   7  + manager: name, reputation, board confidence, history (Milestone 9b)
+ *   8  + the match in progress and its in-match changes (in-match management)
  */
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -84,6 +87,8 @@ export const GameSaveSchema = z.strictObject({
   retired: z.array(PlayerIdSchema),
   /** Null until a career has been started (the new-career screen is showing). */
   manager: ManagerSchema.nullable(),
+  /** A match the user kicked off but hasn't finished (null between matches). */
+  liveMatch: LiveMatchSchema.nullable(),
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -165,6 +170,7 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v4 → v5: no development yet: no attribute changes, default training.
  *   v5 → v6: nobody had retired yet.
  *   v6 → v7: careers from before the manager existed carry on with a default manager.
+ *   v7 → v8: matches couldn't be left half-played: no match in progress.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -186,6 +192,7 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
   if (fromVersion < 7) {
     save = { ...save, manager: { name: 'Manager', reputation: 50, confidence: 60, warned: false, sackedOffers: null, history: [] } };
   }
+  if (fromVersion < 8) save = { ...save, liveMatch: null };
   return save;
 }
 
@@ -239,6 +246,18 @@ export function checkSave(raw: unknown, baseFor: (startYear: number) => GameData
   }
   if (!save.season.leagues.some((l) => l.clubIds.includes(save.userClubId))) {
     return { ok: false, reason: "Your club isn't in any league in the saved season." };
+  }
+
+  const live = save.liveMatch;
+  if (live) {
+    const liveOk =
+      live.kind === 'fixture'
+        ? nextFixtureFor(save.season, save.userClubId)?.id === live.fixtureId
+        : clubIds.has(live.opponentId) && live.opponentId !== save.userClubId;
+    const changedPlayers = live.changes.flatMap((c) => (c.kind === 'substitution' ? [c.offId, c.onId] : []));
+    if (!liveOk || changedPlayers.some((id) => !playerIds.has(id))) {
+      return { ok: false, reason: 'Your save’s match in progress doesn’t match your career.' };
+    }
   }
 
   return { ok: true, save, database: db };

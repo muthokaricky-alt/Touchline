@@ -62,7 +62,10 @@ export function describeEvent(event: MatchEvent, ctx: CommentaryContext): string
       if (event.card === 'yellow') return `Yellow card for ${name(event.playerId)}.`;
       if (event.card === 'second-yellow') return `Second yellow! ${name(event.playerId)} is sent off.`;
       return `Straight red card! ${name(event.playerId)} is sent off.`;
+    case 'tactics':
+      return `${ctx.teamName(event.side)} change their approach: ${event.tactics.mentality.replace('-', ' ')} mentality, ${event.tactics.pressing} pressing.`;
     case 'substitution':
+      if (event.reason === 'manager') return `${ctx.teamName(event.side)} make a change: ${name(event.onId)} on, ${name(event.offId)} off.`;
       if (event.reason === 'goalkeeper') return `${ctx.teamName(event.side)} bring on ${name(event.onId)} in goal; ${name(event.offId)} makes way.`;
       if (event.reason === 'injury') return `${name(event.onId)} comes on for the injured ${name(event.offId)}.`;
       return `Substitution for ${ctx.teamName(event.side)}: ${name(event.onId)} replaces ${name(event.offId)}.`;

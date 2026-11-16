@@ -56,7 +56,8 @@ export function InstructionsPanel({ tactics, style, notes, onStyleChange, onInst
   );
 }
 
-function InstructionRow<K extends Instruction>({
+/** One instruction with its options and the selected option's hint (also used in the match centre). */
+export function InstructionRow<K extends Instruction>({
   instruction,
   value,
   divider,

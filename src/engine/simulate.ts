@@ -19,16 +19,20 @@ import {
   type OnPitch,
   type TeamState,
 } from './team-state';
+import { tacticalEffects } from './tactical-effects';
 import type {
   Appearance,
   ChanceType,
+  MatchChange,
   MatchClock,
   MatchEvent,
   MatchInput,
   MatchResult,
+  MatchSnapshot,
   Score,
   Side,
   SimulationOutput,
+  SubstitutionReason,
 } from './types';
 
 /**
@@ -162,6 +166,39 @@ export function runSimulation(input: MatchInput): SimulationOutput {
 }
 
 /**
+ * Orders match clocks: 45' < 45+1' < 46'. Every tick and every change's
+ * `after` is compared with this.
+ */
+export const clockKey = ({ minute, addedTime }: MatchClock) => minute * 100 + (addedTime ?? 0);
+
+/**
+ * The match as it stands at `at`: everything up to and including that
+ * minute played, plus the changes made at `at` (they take effect from the
+ * next minute, but the manager sees them as done). Re-runs the simulation
+ * from kick-off, which is cheap (a few ms) and can't drift from the real thing.
+ */
+export function matchSnapshot(input: MatchInput, at: MatchClock): MatchSnapshot {
+  assertValidInput(input);
+  return new MatchSimulation(input).snapshotAt(at);
+}
+
+/**
+ * Why a change can't be made at its `after` clock, or null if it can. The
+ * engine itself skips invalid changes silently (a match must always finish);
+ * the game layer checks with this before accepting one.
+ */
+export function changeProblem(input: MatchInput, change: MatchChange): string | null {
+  const snapshot = matchSnapshot(input, change.after);
+  if (snapshot.finished) return 'The match is over';
+  if (change.kind === 'tactics') return null;
+  const team = snapshot.teams[change.side];
+  if (team.subsLeft <= 0) return 'No substitutions left';
+  if (!team.onPitch.some((p) => p.id === change.offId)) return 'That player isn’t on the pitch';
+  if (!team.bench.includes(change.onId)) return 'That player isn’t on the bench';
+  return null;
+}
+
+/**
  * Player ids identify players in events and stats, so the two squads must
  * not share any. (A club can't play itself; tests that want two equal sides
  * use a renamed copy.)
@@ -190,7 +227,7 @@ class MatchSimulation {
   private readonly finalEnergy: Record<PlayerId, number> = {};
   private readonly score: Score = { home: 0, away: 0 };
 
-  constructor(input: MatchInput) {
+  constructor(private readonly input: MatchInput) {
     this.rng = createRng(input.seed);
     this.teams = { home: createTeamState('home', input.home), away: createTeamState('away', input.away) };
     for (const team of Object.values(this.teams)) {
@@ -200,19 +237,45 @@ class MatchSimulation {
     }
   }
 
-  run(): SimulationOutput {
+  /**
+   * Plays the match tick by tick (each minute, stoppage time included).
+   * Before each tick, any manager change made at an earlier clock is applied,
+   * so a change never affects the minutes up to the one it was made at.
+   * With `stopAt`, stops after that tick. Returns true if the match finished.
+   */
+  private play(stopAt?: MatchClock): boolean {
     this.events.push({ type: 'kick-off', minute: 0 });
+    // Drawn first, so stoppage time never depends on what happens in the match.
     const firstHalfAdded = this.rng.int(1, 4);
     const secondHalfAdded = this.rng.int(2, 6);
+    const stop = stopAt ? clockKey(stopAt) : Infinity;
 
-    for (let minute = 1; minute <= 45; minute++) this.playMinute({ minute });
-    for (let added = 1; added <= firstHalfAdded; added++) this.playMinute({ minute: 45, addedTime: added });
-    this.events.push({ type: 'half-time', minute: 45, addedTime: firstHalfAdded, score: { ...this.score } });
+    const ticks: (MatchClock | 'half-time' | 'full-time')[] = [];
+    for (let minute = 1; minute <= 45; minute++) ticks.push({ minute });
+    for (let added = 1; added <= firstHalfAdded; added++) ticks.push({ minute: 45, addedTime: added });
+    ticks.push('half-time');
+    for (let minute = 46; minute <= 90; minute++) ticks.push({ minute });
+    for (let added = 1; added <= secondHalfAdded; added++) ticks.push({ minute: 90, addedTime: added });
+    ticks.push('full-time');
 
-    for (let minute = 46; minute <= 90; minute++) this.playMinute({ minute });
-    for (let added = 1; added <= secondHalfAdded; added++) this.playMinute({ minute: 90, addedTime: added });
-    this.events.push({ type: 'full-time', minute: 90, addedTime: secondHalfAdded, score: { ...this.score } });
+    for (const tick of ticks) {
+      if (tick === 'half-time') {
+        this.events.push({ type: 'half-time', minute: 45, addedTime: firstHalfAdded, score: { ...this.score } });
+        continue;
+      }
+      if (tick === 'full-time') {
+        this.events.push({ type: 'full-time', minute: 90, addedTime: secondHalfAdded, score: { ...this.score } });
+        return true;
+      }
+      if (clockKey(tick) > stop) return false;
+      this.applyChanges(tick);
+      this.playMinute(tick);
+    }
+    return true;
+  }
 
+  run(): SimulationOutput {
+    this.play();
     for (const team of Object.values(this.teams)) {
       for (const p of team.onPitch) this.finalEnergy[p.id] = p.energy;
     }
@@ -222,6 +285,54 @@ class MatchSimulation {
       possessionMinutes: this.possession,
       finalEnergy: this.finalEnergy,
     };
+  }
+
+  snapshotAt(at: MatchClock): MatchSnapshot {
+    const finished = this.play(at);
+    // Changes made AT this clock: the manager sees them as done straight away.
+    if (!finished) this.applyChanges(at, true);
+    const team = (t: TeamState) => ({
+      onPitch: t.onPitch.map((p) => ({ id: p.id, position: p.position, energy: Math.round(p.energy), booked: p.booked })),
+      bench: t.bench.map((c) => c.player.id),
+      subsLeft: MAX_SUBS - t.subsUsed,
+      tactics: t.input.tactics,
+      manual: t.manual,
+    });
+    return {
+      clock: at,
+      score: { ...this.score },
+      finished,
+      teams: { home: team(this.teams.home), away: team(this.teams.away) },
+    };
+  }
+
+  // --- Manager changes ------------------------------------------------------
+
+  private readonly applied = new Set<number>();
+
+  /** Applies every not-yet-applied change made before `tick` (or at it, with `inclusive`). */
+  private applyChanges(tick: MatchClock, inclusive = false): void {
+    const changes = this.input.changes ?? [];
+    const key = clockKey(tick);
+    changes.forEach((change, index) => {
+      const at = clockKey(change.after);
+      if (this.applied.has(index) || (inclusive ? at > key : at >= key)) return;
+      this.applied.add(index);
+      const team = this.teams[change.side];
+      if (change.kind === 'tactics') {
+        team.manual = true;
+        team.input = { ...team.input, tactics: change.tactics };
+        team.effects = tacticalEffects(change.tactics);
+        this.events.push({ ...tick, type: 'tactics', side: change.side, tactics: change.tactics });
+        return;
+      }
+      const off = team.onPitch.find((p) => p.id === change.offId);
+      const on = team.bench.find((c) => c.player.id === change.onId);
+      // Invalid (e.g. he was sent off in the meantime): skipped. The game layer checks first.
+      if (!off || !on || team.subsUsed >= MAX_SUBS) return;
+      team.manual = true;
+      this.substitute(team, off, on, off.position, tick, 'manager');
+    });
   }
 
   private playMinute(clock: MatchClock): void {
@@ -267,9 +378,10 @@ class MatchSimulation {
     this.considerInjury(away, clock);
 
     // 6. Substitutions (not in stoppage time)
+    // The assistant makes them until the manager takes charge (any in-match change).
     if (clock.addedTime === undefined && SUB_WINDOWS.includes(clock.minute)) {
-      this.considerSubstitutions(home, clock);
-      this.considerSubstitutions(away, clock);
+      if (!home.manual) this.considerSubstitutions(home, clock);
+      if (!away.manual) this.considerSubstitutions(away, clock);
     }
   }
 
@@ -446,7 +558,7 @@ class MatchSimulation {
     on: TeamState['bench'][number],
     position: Position,
     clock: MatchClock,
-    reason: 'fatigue' | 'goalkeeper' | 'injury',
+    reason: SubstitutionReason,
   ): void {
     const index = team.onPitch.findIndex((p) => p.id === off.id);
     if (index === -1) return;

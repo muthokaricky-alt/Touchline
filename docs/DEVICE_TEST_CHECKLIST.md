@@ -33,6 +33,7 @@ one) and note anything that doesn't match **Expected**.
 | Play two matches (Home → Play match → Kick off → Skip → Continue / Done) | Normal match screens. |
 | **Fully close** the app (swipe it away), then reopen it | Splash, then the dashboard at the same matchday. Club tab → *Career save* says it was loaded from your last session. |
 | Play a match, then **immediately** switch to another app, then close Touchline | On reopening, that last match is still there (the save is flushed when the app goes to the background). |
+| Kick off a league match, tap **Manage team**, make a substitution, go back to the match, then fully close the app | On reopening you're back in the same match (no tabs until full time), with your substitution in the feed. |
 
 ## 3. Save slots, export and import
 
