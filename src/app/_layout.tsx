@@ -1,8 +1,9 @@
 import { Stack, ThemeProvider } from 'expo-router';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui';
@@ -13,6 +14,10 @@ import { colors, navigationTheme, spacing } from '@/theme';
 // Keep the native splash screen up until the autosave has loaded.
 // Module scope, not awaited (per the expo-splash-screen docs).
 SplashScreen.preventAutoHideAsync();
+
+// The app is portrait; only the match screen unlocks rotation (full-screen 2D pitch), see
+// features/match/use-match-view.ts. app.json allows both orientations so that's possible.
+if (Platform.OS !== 'web') void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
 
 /**
  * Root layout: app-wide providers and the top-level stack.

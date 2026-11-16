@@ -1,16 +1,32 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText, Button, Card, IconButton, PageHeader, Screen, SegmentedControl } from '@/components/ui';
-import type { MatchClock } from '@/engine/types';
-import { spacing } from '@/theme';
+import type { MatchClock, Side } from '@/engine/types';
+import { colors, spacing } from '@/theme';
 
 import { MatchFeed } from './components/MatchFeed';
+import { Pitch2D, PITCH_RATIO, type Kit } from './components/Pitch2D';
 import { RatingsList } from './components/RatingsList';
 import { Scoreboard } from './components/Scoreboard';
 import { StatsPanel } from './components/StatsPanel';
 import { phaseLabel, type RatingRow, type StatRow, type TimelineItem } from './timeline';
+import type { PitchFrame } from './pitch2d';
+import { useMatchView, type MatchViewMode } from './use-match-view';
 import { useReplay } from './use-replay';
+
+const VIEW_SEGMENTS = [
+  { value: '2d', label: '2D' },
+  { value: 'commentary', label: 'Commentary' },
+] as const satisfies readonly { value: MatchViewMode; label: string }[];
+
+/** What the 2D view needs: a frame per timeline item (same order), kits, shirt numbers. */
+export type MatchPitch = {
+  frames: readonly (PitchFrame | undefined)[];
+  kits: Record<Side, Kit>;
+  numberOf: (playerId: string) => string;
+};
 
 type ReportView = 'timeline' | 'stats' | 'ratings';
 
@@ -24,13 +40,13 @@ type Score = { home: number; away: number };
 
 export type OtherResult = { key: string; homeName: string; awayName: string; score: Score; penalties?: Score };
 
-/** "Kestrel Bay win 4–3 on penalties" */
 /** "Calderbrook City win 2–1 on aggregate"; a level aggregate just states it (the penalties line says who went through). */
 function aggregateLine(homeName: string, awayName: string, a: Score): string {
   if (a.home === a.away) return `${a.home}–${a.away} on aggregate`;
   return `${a.home > a.away ? homeName : awayName} win ${Math.max(a.home, a.away)}–${Math.min(a.home, a.away)} on aggregate`;
 }
 
+/** "Kestrel Bay win 4–3 on penalties" */
 function penaltiesLine(homeName: string, awayName: string, p: Score): string {
   return `${p.home > p.away ? homeName : awayName} win ${Math.max(p.home, p.away)}–${Math.min(p.home, p.away)} on penalties`;
 }
@@ -63,6 +79,8 @@ type MatchCentreScreenProps = {
   onFullTime?: () => void;
   /** How many timeline items are already shown (a resumed match). */
   initialRevealed?: number;
+  /** The 2D match view (pitch with dots); without it, commentary only. */
+  pitch?: MatchPitch;
 };
 
 /**
@@ -86,6 +104,7 @@ export function MatchCentreScreen({
   renderManagement,
   onFullTime,
   initialRevealed,
+  pitch,
 }: MatchCentreScreenProps) {
   const replay = useReplay(timeline.length, undefined, initialRevealed);
   const [view, setView] = useState<ReportView>('timeline');
@@ -95,6 +114,10 @@ export function MatchCentreScreen({
   const shown = timeline.slice(0, replay.revealed);
   const current = shown.at(-1) ?? timeline[0];
   const live = renderManagement !== undefined;
+  const matchView = useMatchView();
+  const frame = pitch?.frames[Math.max(0, replay.revealed - 1)];
+  const showPitch = pitch !== undefined && frame !== undefined && matchView.mode === '2d';
+  const goalLabel = frame?.goal ? (frame.goal === 'home' ? homeName : awayName) : null;
 
   // Full time in a live match: record it once (the report then shows the other results too).
   const recorded = useRef(false);
@@ -114,6 +137,26 @@ export function MatchCentreScreen({
     setManaging(false);
     if (wasPlaying) replay.resume();
   };
+
+  // Landscape during the match: the full-screen pitch (tilt the phone, or the full-screen button).
+  if (showPitch && matchView.landscape && !replay.finished && !managing) {
+    return (
+      <FullScreenMatch
+        homeName={homeName}
+        awayName={awayName}
+        score={current.score}
+        clock={current.clock}
+        caption={current.text}
+        status={!replay.playing ? 'Paused' : phaseLabel(current.phase)}
+        playing={replay.playing}
+        onTogglePlaying={replay.togglePlaying}
+        onSkip={replay.skipToEnd}
+        onManage={live ? manage : undefined}
+        onExit={matchView.exitFullScreen}>
+        <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalLabel={goalLabel} />
+      </FullScreenMatch>
+    );
+  }
 
   return (
     <Screen bottomInset>
@@ -136,6 +179,17 @@ export function MatchCentreScreen({
         renderManagement({ at: current.at, clock: current.clock, close: closeManagement })
       ) : !replay.finished ? (
         <>
+          {pitch ? (
+            <View style={styles.viewRow}>
+              <View style={styles.flex}>
+                <SegmentedControl segments={VIEW_SEGMENTS} value={matchView.mode} onChange={matchView.setMode} accessibilityLabel="Match view" />
+              </View>
+              {showPitch ? (
+                <IconButton icon="fullscreen" accessibilityLabel="Full screen" onPress={matchView.enterFullScreen} />
+              ) : null}
+            </View>
+          ) : null}
+          {showPitch ? <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalLabel={goalLabel} /> : null}
           {live ? <Button label="Manage team" icon="tactics" variant="secondary" onPress={manage} accessibilityHint="Pauses the match: substitutions and instructions" /> : null}
           <View style={styles.controls}>
             <View style={styles.flex}>
@@ -221,7 +275,63 @@ export function MatchCentreScreen({
   );
 }
 
+type FullScreenMatchProps = {
+  homeName: string;
+  awayName: string;
+  score: Score;
+  clock: string;
+  caption: string;
+  status: string;
+  playing: boolean;
+  onTogglePlaying: () => void;
+  onSkip: () => void;
+  onManage?: () => void;
+  onExit: () => void;
+  children: ReactNode;
+};
+
+/**
+ * Landscape: the pitch as large as the screen allows (keeping its
+ * proportions), a slim scoreboard, the latest commentary line as a caption,
+ * and the replay controls.
+ */
+function FullScreenMatch({ homeName, awayName, score, clock, caption, status, playing, onTogglePlaying, onSkip, onManage, onExit, children }: FullScreenMatchProps) {
+  const [area, setArea] = useState({ width: 0, height: 0 });
+  const onLayout = (e: LayoutChangeEvent) => setArea({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
+  const pitchWidth = Math.min(area.width, area.height * PITCH_RATIO);
+
+  return (
+    <SafeAreaView style={styles.fullScreen} edges={['top', 'bottom', 'left', 'right']}>
+      <View style={styles.fullTopBar}>
+        <AppText variant="bodyStrong" numberOfLines={1} style={styles.flex} accessibilityLiveRegion="polite">
+          {homeName} {score.home} – {score.away} {awayName}
+        </AppText>
+        <AppText variant="caption" color="textSecondary">
+          {clock} · {status}
+        </AppText>
+        <IconButton icon="exitFullscreen" accessibilityLabel="Exit full screen" onPress={onExit} />
+      </View>
+      <View style={styles.fullPitchArea} onLayout={onLayout}>
+        {pitchWidth > 0 ? <View style={{ width: pitchWidth }}>{children}</View> : null}
+      </View>
+      <View style={styles.fullBottomBar}>
+        <AppText numberOfLines={2} style={styles.flex}>
+          {caption}
+        </AppText>
+        {onManage ? <Button label="Manage" variant="secondary" icon="tactics" onPress={onManage} /> : null}
+        <Button label={playing ? 'Pause' : 'Resume'} variant="secondary" onPress={onTogglePlaying} />
+        <Button label="Skip" onPress={onSkip} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
+  viewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  fullScreen: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.md, gap: spacing.sm },
+  fullTopBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingTop: spacing.xs },
+  fullPitchArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  fullBottomBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.xs },
   controls: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },
   columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, alignItems: 'flex-start' },

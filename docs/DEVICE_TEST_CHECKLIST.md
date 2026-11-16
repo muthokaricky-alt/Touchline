@@ -52,7 +52,11 @@ one) and note anything that doesn't match **Expected**.
 | Open a player profile, then use Android's **back** gesture/button (iOS: swipe from the left edge) | Returns to the previous screen. |
 | Tactics → tap a pitch slot (the picker opens as a sheet) → swipe it down (iOS) / back (Android) | The picker closes without changing the lineup. |
 | On the **New career** screen, press back (Android) | Either nothing happens or the app closes. It must **not** show the dashboard or tabs without a career. |
-| Rotate the phone | Stays in portrait (the app is portrait-only). |
+| Rotate the phone on any screen except a match | Stays in portrait. |
+| During a match (2D view on), tilt the phone sideways | The pitch fills the screen with the score at the top and the commentary line at the bottom; tilting back returns to the normal view. |
+| During a match, tap the full-screen button next to "2D / Commentary" (auto-rotate off is fine) | The phone turns to landscape with the full-screen pitch; the exit button turns it back. |
+| Switch to "Commentary", leave the match, start another | It remembers "Commentary" (and "2D" when you switch back). |
+| Leave a match while the phone is sideways | The rest of the app is portrait again. |
 
 ## 5. Look and feel
 

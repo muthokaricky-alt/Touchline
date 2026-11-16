@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues (steps A and B), cups abroad and the Continental Cup (save v11). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view step A (save v12). Next: 2D step B. Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1031,6 +1031,37 @@ penalties, no away goals):
   remaining tests are England-only store scenarios over a real season
   (~19 s each), as before the leagues abroad.
 
+### 2D match view (after Milestone 10)
+
+Decisions (user): two steps (2D-a now; 2D-b animated build-ups + scorer
+banner later); event-by-event pacing as before (no engine change); portrait
+with the pitch above the feed, tilt (or a button) for a full-screen pitch,
+as advised.
+
+- **Illustrative, from events** (`features/match/pitch2d.ts`, pure): the
+  engine has no player positions, so each commentary item gets a frame:
+  who's on the pitch (starters, then substitutions, red cards, injuries),
+  each team's shape from its players' positions (works for any formation
+  and for substitutes) pushed up when attacking / dropped when defending,
+  the ball (centre spot for whistles, the scoring end for goals, near goal
+  or wide for shots, the offender's half for fouls and cards), and the
+  player the moment is about beside it. Horizontal pitch: home attacks right.
+- **Pitch2D** (`components/Pitch2D.tsx`): numbered dots in club colours
+  (`kits.ts`: the away side changes to its second colour on a clash,
+  readable numbers), a ball, a goal banner; Reanimated glides each dot to
+  its next spot in 600 ms (UI thread; the replay steps every 700 ms).
+- **Layout** (`use-match-view.ts`): portrait = scoreboard, "2D /
+  Commentary" switch (remembered on the device in platform storage, not in
+  the save), pitch, controls, feed. Landscape (window wider than tall) =
+  full-screen pitch, slim scoreboard, caption, Manage / Pause / Skip.
+- **Rotation**: `expo-screen-orientation` (Expo module, in Expo Go);
+  `app.json` orientation "default"; the root layout locks portrait (native),
+  the match screen unlocks while open and relocks on leaving; the
+  full-screen button locks landscape (web: browser full screen + landscape
+  lock where allowed). Native config change: takes effect in the next build.
+- Also: `StyleSheet.absoluteFillObject` no longer exists in RN 0.88 (use
+  `absoluteFill`); expo-doctor now passes 20/20.
+
 ### The website (after Milestone 10)
 
 Decisions (user): phone app first, then the website (both); hosting on
@@ -1560,6 +1591,19 @@ drawn, aggregates shown. Zero console errors, no overflow.
   come from names, so save v12 replaces the old ids (and names in text such
   as inbox messages) throughout older saves. Tested: an old-style save
   migrates to exactly today's; the new-career screen lists all 18.
+
+### 2D match view, step A ✅
+- `pitch2d.ts`, `kits.ts`, `Pitch2D`, `use-match-view.ts`, full-screen
+  layout, rotation config, new icons, device checklist rows.
+- Tests: frames (one per event, both full teams, kick-off sides, goal at
+  the scoring end with the scorer, substitutions and sendings-off) and
+  kits (clash, readable numbers). Everyday suite 921.
+- Verified: `tsc` clean, lint clean, tests pass, expo-doctor 20/20, web
+  export; headless Chrome with screenshots: portrait pitch at kick-off,
+  "GOAL! Ravensmoor United" banner with the scorer highlighted, switch to
+  Commentary hides it, a landscape window shows the full-screen pitch with
+  caption and controls, full time leads to the report. Zero console errors.
+  Not verified: real rotation on a phone (device checklist).
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European

@@ -38,6 +38,8 @@ const ICONS = {
   person: { ios: 'person.fill', android: 'person', web: 'person' },
   check: { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' },
   assistant: { ios: 'bubble.left.and.text.bubble.right.fill', android: 'forum', web: 'forum' },
+  fullscreen: { ios: 'arrow.up.left.and.arrow.down.right', android: 'fullscreen', web: 'fullscreen' },
+  exitFullscreen: { ios: 'arrow.down.right.and.arrow.up.left', android: 'fullscreen_exit', web: 'fullscreen_exit' },
 } as const satisfies Record<string, SymbolName>;
 
 export type IconName = keyof typeof ICONS;
