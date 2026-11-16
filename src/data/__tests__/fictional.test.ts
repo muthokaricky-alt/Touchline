@@ -1,6 +1,6 @@
 import { ageOn } from '@/utils/date';
 
-import { buildFictionalDatabase, FICTIONAL_CLUBS, FICTIONAL_REFERENCE_DATE, FREE_AGENT_COUNT } from '../fictional';
+import { buildFictionalDatabase, FICTIONAL_CLUBS, FICTIONAL_REFERENCE_DATE, FREE_AGENT_COUNT, RICK_KYALO_ID } from '../fictional';
 import { SQUAD_TEMPLATE } from '../fictional/generate-squads';
 import { checkIntegrity } from '../integrity';
 import { GameDatabaseSchema, isCup, isLeague, type GameDatabase, type PlayerAttributes } from '../schemas';
@@ -26,6 +26,15 @@ function outfieldAverage(attrs: PlayerAttributes): number {
 }
 
 describe('fictional database', () => {
+  it('adds Rick Kyalo last, as a free agent with every outfield attribute at 20', () => {
+    const rick = db.players.at(-1)!;
+    expect(rick).toMatchObject({ id: RICK_KYALO_ID, firstName: 'Rick', lastName: 'Kyalo', nationality: 'KEN', primaryPosition: 'ST' });
+    expect(ageOn(rick.dateOfBirth, FICTIONAL_REFERENCE_DATE)).toBe(24);
+    expect(db.contracts.some((c) => c.playerId === RICK_KYALO_ID)).toBe(false);
+    const attrs = db.attributes.find((a) => a.playerId === RICK_KYALO_ID)!;
+    expect(new Set([...Object.values(attrs.technical), ...Object.values(attrs.mental), ...Object.values(attrs.physical)])).toEqual(new Set([20]));
+  });
+
   it('passes schema validation', () => {
     const result = GameDatabaseSchema.safeParse(db);
     if (!result.success) throw new Error(result.error.message); // shows the problems if it ever fails
@@ -39,7 +48,7 @@ describe('fictional database', () => {
   it('has England (two 20-club divisions and a cup), five 18-club leagues abroad and 12 background clubs', () => {
     const clubs = 40 + 5 * 18 + 12;
     expect(db.clubs).toHaveLength(clubs);
-    expect(db.players).toHaveLength(clubs * 22 + FREE_AGENT_COUNT);
+    expect(db.players).toHaveLength(clubs * 22 + FREE_AGENT_COUNT + 1); // + Rick Kyalo
     expect(db.attributes).toHaveLength(db.players.length);
     expect(db.contracts).toHaveLength(clubs * 22);
     const leagues = db.competitions.filter(isLeague);
@@ -84,7 +93,7 @@ describe('fictional database', () => {
 
   it('has a pool of free agents (no contract) covering every position line', () => {
     const contracted = new Set(db.contracts.map((c) => c.playerId));
-    const free = db.players.filter((p) => !contracted.has(p.id));
+    const free = db.players.filter((p) => !contracted.has(p.id) && p.id !== RICK_KYALO_ID); // he signs when a career starts
     expect(free).toHaveLength(FREE_AGENT_COUNT);
     for (const position of ['GK', 'CB', 'CM', 'ST'] as const) {
       expect(free.some((p) => p.primaryPosition === position)).toBe(true);

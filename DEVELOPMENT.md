@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1079,6 +1079,33 @@ as advised.
 - First browser run caught the banner showing for under a second (the
   next build-up replaced the goal frame after 0.7 s): goals now hold 2.5 s.
 
+### Rick Kyalo (after Milestone 10)
+
+Decisions (user): an all-20s Kenyan striker, 24, who joins whichever club
+the user picks for a new career.
+
+- **Hand-made, not generated** (`data/fictional/special-players.ts`, id
+  `plr_9000`): added to the world last, with no contract and no random
+  numbers, so every generated player is unchanged and old saves still
+  match. No save change: his contract is saved like any other. In careers
+  started before he existed he's a free agent.
+- **Goalkeeping attributes stay at an outfielder's level** (4–6): with 20s
+  there too, auto pick rated him the best keeper at most clubs even after
+  the unfamiliar-position penalty.
+- **Signing** (`game/career/rick-kyalo.ts`, called by `startCareer` before
+  the lineup is picked): 5 years at the usual wage demand (€21.8K/wk at
+  Northmere Rovers), and the club's wage budget grows by that amount so
+  the user can still sign players. A Director of Football inbox message.
+- **Auto pick fix, found in the browser:** the greedy pick (hardest slots
+  first) spent him at right midfield (15, out of position) while a 13
+  played up front, which can happen with any star, at AI clubs too. An
+  improvement pass after the greedy pick moves a starter to another slot
+  when that raises the XI's total (his old slot goes to the displaced
+  player or the best unused one); it ends because every move strictly
+  raises the total. Ratings are computed once per (player, slot), since the
+  AI runs this for every formation. `test:all` and the calibration bounds
+  are unchanged.
+
 ### The website (after Milestone 10)
 
 Decisions (user): phone app first, then the website (both); hosting on
@@ -1657,6 +1684,18 @@ drawn, aggregates shown. Zero console errors, no overflow.
   the goal with the ball in the net, the scorer beside it and the banner
   "39' Julien Girard · assist Théo Mercier"; a full match 46 s, report
   reached. Zero console errors.
+
+### Rick Kyalo ✅
+- Hand-made player, `signRickKyalo` in `startCareer`, auto pick improvement
+  pass.
+- Tests: 969 total (`test:all`): he's in the world as a free agent with
+  20s, a new career signs him (5 years, budget raised, message), he starts
+  at ST, and he's still there after a restart.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px: new career at Northmere Rovers → inbox
+  "Rick Kyalo joins Northmere Rovers", squad list, profile (all 20s, rating
+  20, €290M), Tactics "RST: R. Kyalo, rating 20, natural position", kept
+  after a reload. Zero console errors.
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European

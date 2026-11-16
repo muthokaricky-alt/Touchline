@@ -1,4 +1,5 @@
 import { seasonEnd } from '@/game/career/career-flow';
+import { getFormation } from '@/game/formations';
 import { validateLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 
@@ -50,6 +51,22 @@ describe('manager career', () => {
     expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
     expect(() => state().startCareer('', OTHER)).toThrow(/name/);
     expect(() => state().startCareer('Alex', 'club_nowhere')).toThrow(/Unknown club/);
+  });
+
+  it('Rick Kyalo joins the club chosen for a new career and starts', () => {
+    state().startCareer('Alex', OTHER);
+    const contract = state().database.contracts.find((c) => c.playerId === 'plr_9000');
+    expect(contract).toMatchObject({ clubId: OTHER, endDate: '2031-06-30' });
+    // Up front, not spent on a hard-to-fill slot out of position (auto pick's improvement pass).
+    const slot = Object.entries(state().lineup.starters).find(([, id]) => id === 'plr_9000')?.[0];
+    const position = getFormation(state().lineup.formationId).slots.find((x) => x.id === slot)?.position;
+    expect(position).toBe('ST');
+    expect(state().inbox[0].title).toBe('Rick Kyalo joins Kestrel Bay');
+    // Before a career he's a free agent; the board's wage budget grew by his wage.
+    const before = createInitialGameState();
+    expect(before.database.contracts.some((c) => c.playerId === 'plr_9000')).toBe(false);
+    const budget = (db: typeof before.database) => db.clubs.find((c) => c.id === OTHER)!.finances.weeklyWageBudget;
+    expect(budget(state().database) - budget(before.database)).toBe(contract!.weeklyWage);
   });
 
   it('a board that has lost confidence sacks him; he must choose a new club before playing on', () => {

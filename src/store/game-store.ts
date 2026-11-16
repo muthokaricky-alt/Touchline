@@ -23,6 +23,7 @@ import { assignPotential } from '@/game/development/potential';
 import { worldFor } from '@/game/world/renewal';
 import { afterUserMatchday, closeSeason } from '@/game/career/career-flow';
 import { ManagerSchema, newManager, takeNewJob, type Manager } from '@/game/career/manager';
+import { RICK_KYALO_YEARS, signRickKyalo } from '@/game/career/rick-kyalo';
 import { admitIntakeToCareer, retireFromCareer } from '@/game/world/renewal-career';
 import type { MatchClock, MatchResult } from '@/engine/types';
 import { newMatchSeed, prepareFriendly, type MatchVenue } from '@/game/match/friendly';
@@ -632,7 +633,21 @@ export const useGameStore = create<Store>()(
         const valid = ManagerSchema.safeParse(manager);
         if (!valid.success) throw new RangeError('Enter a name of 1–30 characters.');
         saveStatus.dismissNotice();
-        set({ ...createInitialGameState(base, clubId), manager: valid.data });
+        // Rick Kyalo signs before the lineup is picked, so he starts.
+        const initial = createInitialGameState(signRickKyalo(base, clubId, FICTIONAL_REFERENCE_DATE), clubId);
+        set({
+          ...initial,
+          manager: valid.data,
+          inbox: addMessages(initial.inbox, [
+            {
+              date: FICTIONAL_REFERENCE_DATE,
+              category: 'transfer',
+              from: 'Director of Football',
+              title: `Rick Kyalo joins ${club.name}`,
+              body: `A ${RICK_KYALO_YEARS}-year contract for the best striker in the game. The board found the wages for him.`,
+            },
+          ]),
+        });
       },
       chooseNewJob: (clubId) =>
         set((s) => {

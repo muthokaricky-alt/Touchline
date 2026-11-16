@@ -14,6 +14,7 @@ import {
 } from './clubs';
 import { generateFreeAgents, generateSquad, SQUAD_TEMPLATE } from './generate-squads';
 import { FOREIGN_NATIONS_BY_COUNTRY } from './names';
+import { RICK_KYALO, RICK_KYALO_ATTRIBUTES } from './special-players';
 
 /** Changing the seed reshuffles every generated player. */
 export const FICTIONAL_SEED = 20260701;
@@ -28,7 +29,8 @@ export const ABROAD_CLUBS = [...FOREIGN_LEAGUE_CLUBS, ...BACKGROUND_CLUBS];
 /**
  * Builds the fictional database: England's 40 clubs in two divisions and a
  * cup, five foreign 18-club leagues, 12 background clubs, 22 generated
- * players per club and a pool of free agents. Deterministic for a given seed.
+ * players per club, a pool of free agents and one hand-made player (Rick
+ * Kyalo, see special-players.ts). Deterministic for a given seed.
  *
  * Order matters for old saves: England's clubs and the free agents come
  * first, from the original random stream, so they're exactly as they were
@@ -86,6 +88,10 @@ export function buildFictionalDatabase(seed: number = FICTIONAL_SEED): GameDatab
     database.contracts.push(...squad.contracts);
   });
 
+  // Hand-made players last, without contracts and without random numbers (nothing above changes).
+  database.players.push(RICK_KYALO);
+  database.attributes.push(RICK_KYALO_ATTRIBUTES);
+
   return database;
 }
 
@@ -107,4 +113,5 @@ export {
   clubIdFromName,
 } from './clubs';
 export { FOREIGN_NATIONS_BY_COUNTRY } from './names';
+export { RICK_KYALO_ID } from './special-players';
 export { generateYouthIntake, SQUAD_TEMPLATE } from './generate-squads';

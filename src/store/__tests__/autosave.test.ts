@@ -58,6 +58,14 @@ beforeEach(() => {
 });
 
 describe('autosave', () => {
+  it('keeps Rick Kyalo at the career club after a restart', async () => {
+    state().startCareer('Alex', 'club_kestrel_bay');
+    flushSave();
+    await restartWith(savedFile());
+    expect(state().database.contracts.find((c) => c.playerId === 'plr_9000')?.clubId).toBe('club_kestrel_bay');
+    expect(Object.values(state().lineup.starters)).toContain('plr_9000');
+  });
+
   it('resumes a match in progress after a restart, with its changes', async () => {
     state().kickOff();
     state().makeMatchChange({ minute: 60 }, { kind: 'tactics', tactics: { ...state().tactics, mentality: 'attacking' } });

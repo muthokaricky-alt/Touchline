@@ -338,7 +338,59 @@ function assignBestPlayers(
       used.add(best.player.id);
     }
   }
+  improveAssignment(slots, pool, starters);
   return starters;
+}
+
+/** Smaller rating differences than this don't count as an improvement (floating-point noise). */
+const IMPROVEMENT_EPSILON = 1e-9;
+
+/**
+ * Greedy can spend a star on the first hard-to-fill slot. Found with Rick
+ * Kyalo, an all-20s striker: picked at right midfield (15, out of position)
+ * while a 13 played up front. This pass moves a starter to another slot
+ * when that raises the XI's total rating: he takes the slot, and his old
+ * slot goes to whichever is better there, the player he displaced or the
+ * best unused player. Repeats until no move helps; every move strictly
+ * raises the total, so it ends. Deterministic (fixed slot and pool order).
+ * Mutates `starters`.
+ */
+function improveAssignment(slots: readonly FormationSlot[], pool: readonly LineupCandidate[], starters: Record<string, PlayerId | null>): void {
+  // Ratings once per (player, slot): the AI runs this for every formation of every club.
+  const rating = pool.map((c) => slots.map((slot) => effectiveRating(c.player, c.attributes, slot.position)));
+  const index = new Map(pool.map((c, i) => [c.player.id, i]));
+  const at = slots.map((slot) => {
+    const id = starters[slot.id];
+    return id === null ? -1 : (index.get(id) ?? -1);
+  });
+
+  for (let round = 0; round < 50; round++) {
+    let improved = false;
+    for (let s = 0; s < slots.length; s++) {
+      for (let t = 0; t < slots.length; t++) {
+        const p = at[s];
+        const r = at[t];
+        if (s === t || p < 0 || r < 0) continue;
+        const gainAtT = rating[p][t] - rating[r][t];
+        if (gainAtT <= IMPROVEMENT_EPSILON) continue;
+        // Who fills s: the displaced player, or a better unused one.
+        const starting = new Set(at);
+        let fill = r;
+        for (let q = 0; q < pool.length; q++) {
+          if (!starting.has(q) && rating[q][s] > rating[fill][s] + IMPROVEMENT_EPSILON) fill = q;
+        }
+        if (gainAtT + rating[fill][s] - rating[p][s] > IMPROVEMENT_EPSILON) {
+          at[t] = p;
+          at[s] = fill;
+          improved = true;
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  slots.forEach((slot, i) => {
+    if (at[i] >= 0) starters[slot.id] = pool[at[i]].player.id;
+  });
 }
 
 function primaryRating(c: LineupCandidate): number {
