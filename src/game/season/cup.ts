@@ -2,6 +2,16 @@ import type { ClubId, CompetitionId } from '@/data/schemas';
 import { addDays } from '@/utils/date';
 import { createRng } from '@/utils/random';
 
+import {
+  drawRoundOf16,
+  GROUP_MATCHDAYS,
+  GROUP_STAGE_ROUNDS,
+  groupCupRoundName,
+  groupOutcome,
+  groupStageComplete,
+  groupStageFixtures,
+  groupTables,
+} from './continental';
 import { seasonStartDate } from './fixtures';
 import { mixSeed, type Fixture, type Season } from './season';
 
@@ -112,6 +122,27 @@ export function seasonCup(season: Season, cupId: CompetitionId) {
 export const isCupFixture = (season: Season, fixture: Pick<Fixture, 'competitionId'>) =>
   season.cups.some((c) => c.competitionId === fixture.competitionId);
 
+/** The cup's groups, when it has a group stage (the Continental Cup). */
+export const cupGroups = (season: Season, cupId: CompetitionId) => seasonCup(season, cupId)?.groups;
+
+/** A knockout tie (level after 90 minutes → penalties). Group matches can end level. */
+export function isKnockoutFixture(season: Season, fixture: Pick<Fixture, 'competitionId' | 'matchday'>): boolean {
+  if (!isCupFixture(season, fixture)) return false;
+  return !cupGroups(season, fixture.competitionId) || fixture.matchday > GROUP_MATCHDAYS;
+}
+
+/** Number of rounds, final included. */
+export function cupTotalRounds(season: Season, cupId: CompetitionId): number {
+  return cupGroups(season, cupId) ? GROUP_STAGE_ROUNDS : cupRoundCount(cupEntrants(season, cupId).length);
+}
+
+/** "Quarter-finals", "First round", "Group stage · Matchday 2"… */
+export function cupRoundLabel(season: Season, cupId: CompetitionId, round: number): string {
+  if (cupGroups(season, cupId)) return groupCupRoundName(round);
+  const entrants = cupEntrants(season, cupId).length;
+  return cupRoundName(round, cupRoundCount(entrants), entrants);
+}
+
 /** The leagues entering the cup (its country's), top tier first. */
 function entrantLeagues(season: Season, cupId: CompetitionId) {
   const ids = seasonCup(season, cupId)?.entrantLeagues ?? [];
@@ -157,7 +188,10 @@ function cupSeed(season: Season, cupId: CompetitionId): number {
  * else gets a bye.
  */
 export function firstCupRound(season: Season, cupId: CompetitionId): Fixture[] {
-  if (!seasonCup(season, cupId)) return [];
+  const cup = seasonCup(season, cupId);
+  if (!cup) return [];
+  // A group stage: every group match is known from the start.
+  if (cup.groups && cup.roundDates) return groupStageFixtures(cupId, cup.groups, cup.roundDates, season.startYear);
   const entrants = cupEntrants(season, cupId);
   const total = cupRoundCount(entrants.length);
   if (total === 0) return [];
@@ -200,6 +234,8 @@ export function firstCupRound(season: Season, cupId: CompetitionId): Fixture[] {
 export function nextCupRound(season: Season, cupId: CompetitionId): Fixture[] {
   const fixtures = cupFixtures(season, cupId);
   if (!seasonCup(season, cupId) || fixtures.length === 0) return [];
+  const groups = cupGroups(season, cupId);
+  if (groups) return nextGroupCupRound(season, cupId, groups, fixtures);
   const latest = Math.max(...fixtures.map((f) => f.matchday));
   const latestTies = fixtures.filter((f) => f.matchday === latest);
   if (latestTies.some((f) => !f.result)) return [];
@@ -219,10 +255,39 @@ export function nextCupRound(season: Season, cupId: CompetitionId): Fixture[] {
   });
 }
 
+/**
+ * After a group stage: the Round of 16 from the group tables (seeded, no
+ * group rematch), then each knockout round from the previous round's winners.
+ */
+function nextGroupCupRound(season: Season, cupId: CompetitionId, groups: readonly ClubId[][], fixtures: readonly Fixture[]): Fixture[] {
+  if (!groupStageComplete(season, cupId)) return [];
+  const knockouts = fixtures.filter((f) => f.matchday > GROUP_MATCHDAYS);
+  const seed = cupSeed(season, cupId);
+  const dateOf = (round: number) => roundDate(season, cupId, round, GROUP_STAGE_ROUNDS);
+  const shortYear = String(season.startYear % 100).padStart(2, '0');
+  if (knockouts.length === 0) {
+    const round = GROUP_MATCHDAYS + 1;
+    return drawRoundOf16(groupOutcome(groupTables(season, cupId, groups)), seed).map(([homeId, awayId], i) => ({
+      id: `fx_${cupId.replace(/^comp_/, '')}_${shortYear}_r${round}_${i + 1}`,
+      competitionId: cupId,
+      matchday: round,
+      date: dateOf(round),
+      homeId,
+      awayId,
+      result: null,
+    }));
+  }
+  const latest = Math.max(...knockouts.map((f) => f.matchday));
+  const latestTies = knockouts.filter((f) => f.matchday === latest);
+  if (latest >= GROUP_STAGE_ROUNDS || latestTies.some((f) => !f.result)) return [];
+  const winners = latestTies.map(tieWinner).filter((id): id is ClubId => id !== null);
+  return drawCupRound({ cupId, round: latest + 1, participants: winners, date: dateOf(latest + 1), startYear: season.startYear, seed });
+}
+
 /** Cup winner once the final is played, else null. */
 export function cupWinner(season: Season, cupId: CompetitionId): ClubId | null {
   const fixtures = cupFixtures(season, cupId);
-  const total = cupRoundCount(cupEntrants(season, cupId).length);
+  const total = cupTotalRounds(season, cupId);
   const final = fixtures.find((f) => f.matchday === total);
   return final ? tieWinner(final) : null;
 }

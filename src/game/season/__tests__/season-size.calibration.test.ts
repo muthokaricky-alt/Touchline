@@ -36,7 +36,7 @@ describe('a full season in the full world', () => {
 
   it('plays the Continental Cup to a winner, and no club ever plays twice within two days', () => {
     expect(cupWinner(finished, 'comp_continental_cup')).not.toBeNull();
-    expect(cupFixtures(finished, 'comp_continental_cup')).toHaveLength(8 + 8 + 4 + 2 + 1);
+    expect(cupFixtures(finished, 'comp_continental_cup')).toHaveLength(72 + 8 + 4 + 2 + 1); // groups, R16, QF, SF, final
     const dates = new Map<string, string[]>();
     for (const f of finished.fixtures) for (const id of [f.homeId, f.awayId]) dates.set(id, [...(dates.get(id) ?? []), f.date]);
     for (const list of dates.values()) {

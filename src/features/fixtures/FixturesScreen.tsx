@@ -90,6 +90,15 @@ function CupSection({ view }: { view: CupView }) {
           </View>
         </View>
       </Card>
+      {view.groups ? (
+        <View style={styles.columns}>
+          {view.groups.map((group) => (
+            <View key={group.name} style={styles.column}>
+              <LeagueTable title={group.name} rows={group.rows} zoneNames={{ promotion: 'Round of 16 (and the 4 best thirds)' }} />
+            </View>
+          ))}
+        </View>
+      ) : null}
       <View style={styles.columns}>
         {[...view.rounds].reverse().map((round) => (
           <View key={round.round} style={styles.column}>

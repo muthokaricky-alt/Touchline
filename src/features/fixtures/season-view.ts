@@ -1,5 +1,18 @@
 import type { ClubId, CompetitionId, GameDatabase } from '@/data/schemas';
-import { cupEntrants, cupFixtures, cupRoundCount, cupRoundName, cupWinner, seasonCup, tieLoser, tieWinner } from '@/game/season/cup';
+import { formatMatchDate } from '@/utils/format';
+import { GROUP_MATCHDAYS, groupName, groupStageComplete, groupTables } from '@/game/season/continental';
+import {
+  cupEntrants,
+  cupFixtures,
+  cupGroups,
+  cupRoundCount,
+  cupRoundLabel,
+  cupRoundName,
+  cupWinner,
+  seasonCup,
+  tieLoser,
+  tieWinner,
+} from '@/game/season/cup';
 import { seasonPlayerStats, topAssists, topScorers, type PlayerSeasonStats } from '@/game/season/player-stats';
 import type { Fixture, Season } from '@/game/season/season';
 import { competitionName, currentMatchday, leagueOfClub, leagueTable, totalMatchdays } from '@/game/season/season-flow';
@@ -42,6 +55,8 @@ export type CupView = {
   kind: 'cup';
   competitionName: string;
   rounds: CupRoundView[];
+  /** A group stage (the Continental Cup): each group's table, top two marked as going through. */
+  groups?: { name: string; rows: TableRowView[] }[];
   winnerName: string | null;
   /** e.g. "Through to the Quarter-finals", "Knocked out in the Round of 16", "Winners!" */
   userStatus: string;
@@ -150,34 +165,70 @@ export function buildCupView(db: GameDatabase, season: Season, cupId: Competitio
   if (!seasonCup(season, cupId)) return null;
   const fixtures = cupFixtures(season, cupId);
   const entrants = cupEntrants(season, cupId);
-  const total = cupRoundCount(entrants.length);
+  const groups = cupGroups(season, cupId);
+  const clubs = new Map(db.clubs.map((c) => [c.id, c]));
+  const label = (round: number) => cupRoundLabel(season, cupId, round);
+
+  // With a group stage, only the current group matchday is listed (all 12 matches); knockout rounds always.
+  const groupDays = groups ? fixtures.filter((f) => f.matchday <= GROUP_MATCHDAYS) : [];
+  const unplayedGroupDays = groupDays.filter((f) => !f.result).map((f) => f.matchday);
+  const currentGroupDay = unplayedGroupDays.length ? Math.min(...unplayedGroupDays) : GROUP_MATCHDAYS;
+  const shown = groups ? fixtures.filter((f) => f.matchday > GROUP_MATCHDAYS || f.matchday === currentGroupDay) : fixtures;
   const rounds: CupRoundView[] = [];
-  for (const f of [...fixtures].sort((a, b) => a.matchday - b.matchday)) {
+  for (const f of [...shown].sort((a, b) => a.matchday - b.matchday)) {
     let round = rounds.find((r) => r.round === f.matchday);
     if (!round) {
-      round = { round: f.matchday, name: cupRoundName(f.matchday, total, entrants.length), date: f.date, ties: [] };
+      round = { round: f.matchday, name: label(f.matchday), date: f.date, ties: [] };
       rounds.push(round);
     }
     round.ties.push(rowView(db, f, userClubId, true));
   }
 
+  const tables = groups ? groupTables(season, cupId, groups) : null;
+  const groupViews = tables?.map((rows, g) => ({
+    name: groupName(g),
+    rows: rows.map((row) => ({
+      ...row,
+      // The top two always go through (the bar); four of the six thirds do too.
+      zone: row.position <= 2 ? ('promotion' as const) : null,
+      clubName: clubs.get(row.clubId)?.name ?? row.clubId,
+      shortName: clubs.get(row.clubId)?.shortName ?? '',
+      isUser: row.clubId === userClubId,
+    })),
+  }));
+
   const winner = cupWinner(season, cupId);
   const nameOf = (id: ClubId) => db.clubs.find((c) => c.id === id)?.name ?? id;
-  const userTies = fixtures.filter((f) => f.homeId === userClubId || f.awayId === userClubId).sort((a, b) => a.matchday - b.matchday);
+  const knockoutTies = fixtures.filter((f) => !groups || f.matchday > GROUP_MATCHDAYS);
+  const userTies = knockoutTies.filter((f) => f.homeId === userClubId || f.awayId === userClubId).sort((a, b) => a.matchday - b.matchday);
   const lastTie = userTies.at(-1);
+  const firstKnockout = groups ? GROUP_MATCHDAYS + 1 : 1;
   let userStatus: string;
   if (winner === userClubId) userStatus = 'Winners!';
-  else if (!lastTie) userStatus = entrants.includes(userClubId) ? `Bye to the ${cupRoundName(2, total, entrants.length)}` : 'Not entered';
-  else if (!lastTie.result) userStatus = `In the ${cupRoundName(lastTie.matchday, total, entrants.length)}`;
-  else if (tieLoser(lastTie) === userClubId) userStatus = `Knocked out in the ${cupRoundName(lastTie.matchday, total, entrants.length)}`;
-  else userStatus = `Through to the ${cupRoundName(lastTie.matchday + 1, total, entrants.length)}`;
+  else if (!entrants.includes(userClubId)) userStatus = 'Not entered';
+  else if (lastTie && !lastTie.result) userStatus = `In the ${label(lastTie.matchday)}`;
+  else if (lastTie && tieLoser(lastTie) === userClubId) userStatus = `Knocked out in the ${label(lastTie.matchday)}`;
+  else if (lastTie) userStatus = `Through to the ${label(lastTie.matchday + 1)}`;
+  else if (tables) {
+    const g = tables.findIndex((rows) => rows.some((r) => r.clubId === userClubId));
+    const row = tables[g].find((r) => r.clubId === userClubId)!;
+    const firstMatch = groupDays.filter((f) => f.homeId === userClubId || f.awayId === userClubId).sort((a, b) => a.matchday - b.matchday)[0];
+    userStatus = groupStageComplete(season, cupId)
+      ? 'Out in the group stage'
+      : row.played === 0 && firstMatch
+        ? `${groupName(g)}: first match ${formatMatchDate(firstMatch.date)}`
+        : `${groupName(g)}: ${ordinal(row.position)} after ${row.played} ${row.played === 1 ? 'game' : 'games'}`;
+  } else userStatus = `Bye to the ${cupRoundName(firstKnockout + 1, cupRoundCount(entrants.length), entrants.length)}`;
 
   return {
     kind: 'cup',
     competitionName: competitionName(db, cupId),
     rounds,
+    ...(groupViews ? { groups: groupViews } : {}),
     winnerName: winner ? nameOf(winner) : null,
     userStatus,
     topScorers: leaders(db, topScorers(seasonPlayerStats(season, cupId)), (s) => s.goals),
   };
 }
+
+const ordinal = (n: number) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;

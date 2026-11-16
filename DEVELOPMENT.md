@@ -944,6 +944,33 @@ clubs); single-leg knockout.
 - No save change: both new fields are optional; v11 saves get the
   Continental Cup from their next season.
 
+**Group stage** (user: 6 groups of 4, home and away, top two + the 4 best
+thirds; pots + country protection; single-leg knockouts, winners and the
+2 best runners-up seeded, no group rematch in the Round of 16):
+
+- `game/season/continental.ts` (pure): `drawGroups` (pots of 6 by
+  qualification place; a Latin square of shuffled countries and per-pot
+  shifts guarantees no two clubs of a country in a group), group fixtures
+  (each club 3 home, 3 away), `groupTables` (the league table code on a
+  four-club "league", so the same tie-breakers apply), `groupOutcome`
+  (thirds ranked across groups by points, GD, goals), `drawRoundOf16`
+  (backtracking so no group rematch).
+- Rounds: matchdays 1–6 the groups, 7 R16, 8 QF, 9 SF, 10 final.
+  `SeasonCup.groups` (optional) switches the generic cup code to this:
+  `cupTotalRounds`, `cupRoundLabel`, `isKnockoutFixture` (penalties only in
+  knockouts; group matches can be draws), `nextCupRound` draws the R16 from
+  the tables once the groups are complete.
+- Calendar: Tuesdays in weeks 4, 6, 8, 13, 15, 17 (groups), 22, 26, 30
+  (R16, QF, SF), final the Saturday after the National Cup final; still no
+  national-cup week, and no club plays twice within two days (full-world
+  season test).
+- Fixtures tab: six group tables (top two marked "Round of 16 (and the 4
+  best thirds)"), the current group matchday and the knockout rounds;
+  status "Group B: first match Tue 1 Sep" → "Group B: 3rd after 1 game" →
+  "Out in the group stage" / knockout statuses.
+- Old saves whose Continental Cup is the plain knockout keep it until the
+  season ends (no `groups` → the knockout code path).
+
 #### Faster tests with the bigger world
 
 - `npm test` had gone from ~36 s to ~85 s: about eight tests play whole
@@ -1421,6 +1448,15 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   "Continental Cup · Round of 16" (won) → "In the Quarter-finals". Zero
   console errors, no overflow. (A first walkthrough hung in the script's
   own waiting loops, not the game; rewritten with step-by-step logging.)
+
+**Group stage** ✅: 948 tests (3 new in `continental.test.ts`: draw
+(pots, country protection), fixtures (72, Tuesdays, 3 home/3 away), the
+whole cup played with favourite-wins results through the R16 draw (seeded
+at home, no rematch) to the final; plus updated season and calibration
+tests). Headless Chrome at 412px and 1280px: a career at Ravensmoor United
+→ six group tables, "Group B: first match Tue 1 Sep" → matchday 1 after
+four league games → "3rd after 1 game" → matchday 2 → "1st after 2 games".
+Zero console errors, no overflow.
 
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting

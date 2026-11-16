@@ -12,7 +12,8 @@ import { buildMatchTeam, lineupStrength } from '../match/build-match-team';
 import { flattenAttributes } from '../ratings';
 import { selectSquadCandidates } from '../squad/squad-selectors';
 import type { Tactics } from '../tactics/tactics';
-import { cupEntrants, cupRoundCount, cupRoundName, cupWinner, firstCupRound, isCupFixture, nextCupRound } from './cup';
+import { drawGroups } from './continental';
+import { cupRoundLabel, cupWinner, firstCupRound, isCupFixture, isKnockoutFixture, nextCupRound } from './cup';
 import { scheduleLeague, seasonStartDate } from './fixtures';
 import { addMatchesToStats } from './player-stats';
 import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season, type SeasonCup } from './season';
@@ -83,11 +84,14 @@ function seasonLeagueOrder(db: GameDatabase): League[] {
 export const CONTINENTAL_PLACES = 4;
 /**
  * Weeks (counted from the season's first Saturday) of the Continental Cup's
- * Tuesday rounds. None is a week with a national-cup round (those are
+ * Tuesday rounds: six group matchdays, then the Round of 16, quarter-finals
+ * and semi-finals. None is a week with a national-cup round (those are
  * Wednesdays in weeks 3, 10, 11, 18, 20, 25, 28 and 32), so no club plays
  * two cup ties in a week. The final is the Saturday after the National Cup final.
  */
-const CONTINENTAL_WEEKS = [6, 13, 21, 29, 36];
+const CONTINENTAL_WEEKS = [4, 6, 8, 13, 15, 17, 22, 26, 30];
+/** Groups of four: 24 entrants → 6 groups. */
+const CONTINENTAL_GROUP_SIZE = 4;
 
 const reputationOf = (db: GameDatabase, id: ClubId) => db.clubs.find((c) => c.id === id)?.reputation ?? 0;
 
@@ -97,7 +101,7 @@ const reputationOf = (db: GameDatabase, id: ClubId) => db.clubs.find((c) => c.id
  * first season). Entrants are listed strongest first, which decides the byes:
  * champions (league order), then runners-up by reputation, then thirds, fourths.
  */
-function continentalCup(db: GameDatabase, leagues: readonly League[], startYear: number, previous?: Season): SeasonCup | null {
+function continentalCup(db: GameDatabase, leagues: readonly League[], startYear: number, seed: number, previous?: Season): SeasonCup | null {
   const cup = db.competitions.find((c) => isCup(c) && c.country === 'INT');
   const tops = leagues.filter((l) => l.tier === 1);
   if (!cup || tops.length < 2) return null;
@@ -115,11 +119,18 @@ function continentalCup(db: GameDatabase, leagues: readonly League[], startYear:
   }).flat();
 
   const start = seasonStartDate(startYear);
-  const rounds = cupRoundCount(entrants.length);
   const lastLeagueWeek = Math.max(...leagues.map((l) => (l.clubIds.length - 1) * l.rules.roundsPerOpponent));
-  const tuesdays = CONTINENTAL_WEEKS.slice(0, rounds - 1).map((week) => addDays(start, (week - 1) * 7 + 3));
+  const tuesdays = CONTINENTAL_WEEKS.map((week) => addDays(start, (week - 1) * 7 + 3));
   const final = addDays(start, (lastLeagueWeek + 1) * 7); // the Saturday after the National Cup final
-  return { competitionId: cup.id, entrantLeagues: tops.map((l) => l.id), entrants, roundDates: [...tuesdays, final] };
+  const countryOf = (id: ClubId) => db.clubs.find((c) => c.id === id)?.country ?? '';
+  const groupCount = Math.floor(entrants.length / CONTINENTAL_GROUP_SIZE);
+  return {
+    competitionId: cup.id,
+    entrantLeagues: tops.map((l) => l.id),
+    entrants,
+    roundDates: [...tuesdays, final],
+    groups: drawGroups(entrants, countryOf, groupCount, seed),
+  };
 }
 
 /**
@@ -153,7 +164,8 @@ export function createSeason(db: GameDatabase, startYear: number, seed: number, 
     .sort((a, b) => countries.indexOf(a.country) - countries.indexOf(b.country))
     .map((cup): SeasonCup => ({ competitionId: cup.id, entrantLeagues: dbLeagues.filter((l) => l.country === cup.country).map((l) => l.id) }));
   const leaguesThisSeason = dbLeagues.map((l) => ({ ...l, clubIds: leagues.find((m) => m.competitionId === l.id)!.clubIds }));
-  const continental = continentalCup(db, leaguesThisSeason, startYear, previous);
+  // Its draws use the seed the cup code derives for the cup at this position (see cupSeed in cup.ts).
+  const continental = continentalCup(db, leaguesThisSeason, startYear, mixSeed(seed, 5000 + cups.length), previous);
   if (continental) cups.push(continental);
   const season: Season = { label: seasonLabel(startYear), startYear, seed, leagues, cups, fixtures, playerStats: [] };
   return { ...season, fixtures: [...fixtures, ...cups.flatMap((cup) => firstCupRound(season, cup.competitionId))] };
@@ -193,10 +205,7 @@ export function currentMatchday(season: Season, competitionId: CompetitionId): n
  * "Quarter-finals" for the cup.
  */
 export function roundLabel(season: Season, fixture: Fixture): string {
-  if (isCupFixture(season, fixture)) {
-    const entrants = cupEntrants(season, fixture.competitionId).length;
-    return cupRoundName(fixture.matchday, cupRoundCount(entrants), entrants);
-  }
+  if (isCupFixture(season, fixture)) return cupRoundLabel(season, fixture.competitionId, fixture.matchday);
   return `Matchday ${fixture.matchday} of ${totalMatchdays(season, fixture.competitionId)}`;
 }
 
@@ -247,7 +256,7 @@ export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fix
 export function simulateFixture(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam, condition?: ConditionState): MatchResult {
   const input = buildFixtureInput(db, season, fixture, user, condition);
   const result = simulateMatch(input);
-  if (!isCupFixture(season, fixture) || result.score.home !== result.score.away) return result;
+  if (!isKnockoutFixture(season, fixture) || result.score.home !== result.score.away) return result;
 
   const finishers = (side: Side) => {
     const squad = new Map(input[side].squad.map((c) => [c.player.id, c]));

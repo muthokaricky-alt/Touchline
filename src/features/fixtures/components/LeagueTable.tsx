@@ -17,8 +17,21 @@ const ZONE_NAME: Record<TableZone, string> = { champion: 'champions', promotion:
 
 const COLUMNS = ['P', 'W', 'D', 'L', 'GD', 'Pts'] as const;
 
-/** Full league table. A coloured bar marks zones, with a text legend (colour isn't the only signal). */
-export function LeagueTable({ title, rows }: { title: string; rows: readonly TableRowView[] }) {
+/**
+ * Full league table. A coloured bar marks zones, with a text legend (colour
+ * isn't the only signal). `zoneNames` renames zones (a group's "promotion"
+ * zone is "Round of 16").
+ */
+export function LeagueTable({
+  title,
+  rows,
+  zoneNames,
+}: {
+  title: string;
+  rows: readonly TableRowView[];
+  zoneNames?: Partial<Record<TableZone, string>>;
+}) {
+  const zoneName = (z: TableZone) => zoneNames?.[z] ?? ZONE_NAME[z];
   const zones = [...new Set(rows.map((r) => r.zone).filter((z): z is TableZone => z !== null))];
   return (
     <Card title={title} icon="table">
@@ -37,7 +50,7 @@ export function LeagueTable({ title, rows }: { title: string; rows: readonly Tab
           key={row.clubId}
           style={[styles.row, row.isUser && styles.userRow]}
           accessible
-          accessibilityLabel={`${row.position}, ${row.clubName}, played ${row.played}, ${row.points} points, goal difference ${row.goalDifference}${row.zone ? `, ${ZONE_NAME[row.zone]} zone` : ''}${row.isUser ? ', your club' : ''}`}>
+          accessibilityLabel={`${row.position}, ${row.clubName}, played ${row.played}, ${row.points} points, goal difference ${row.goalDifference}${row.zone ? `, ${zoneName(row.zone)} zone` : ''}${row.isUser ? ', your club' : ''}`}>
           <View style={[styles.bar, row.zone && { backgroundColor: ZONE_COLOR[row.zone] }]} />
           <AppText variant="bodyStrong" color={row.isUser ? 'accent' : 'textSecondary'} style={styles.pos}>
             {row.position}
@@ -64,7 +77,7 @@ export function LeagueTable({ title, rows }: { title: string; rows: readonly Tab
             <View key={z} style={styles.legendItem}>
               <View style={[styles.swatch, { backgroundColor: ZONE_COLOR[z] }]} />
               <AppText variant="caption" color="textSecondary">
-                {ZONE_NAME[z].charAt(0).toUpperCase() + ZONE_NAME[z].slice(1)}
+                {zoneName(z).charAt(0).toUpperCase() + zoneName(z).slice(1)}
               </AppText>
             </View>
           ))}

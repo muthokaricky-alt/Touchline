@@ -108,12 +108,12 @@ describe('the Continental Cup', () => {
     expect(cup.entrants!.some((id) => season.leagues[1].clubIds.includes(id))).toBe(false);
   });
 
-  it('gives the first eight a bye; the other 16 play the first round, on a Tuesday', () => {
-    const first = cupFixtures(season, 'comp_continental_cup');
-    expect(first).toHaveLength(8);
-    const playing = new Set(first.flatMap((f) => [f.homeId, f.awayId]));
-    expect([...playing].sort()).toEqual([...cup.entrants!.slice(8)].sort());
-    expect(weekdayOf(first[0].date)).toBe(2); // Tuesday
+  it('starts with a group stage: all 24 clubs, every group match scheduled on a Tuesday', () => {
+    const groupStage = cupFixtures(season, 'comp_continental_cup');
+    expect(groupStage).toHaveLength(72);
+    expect(new Set(groupStage.flatMap((f) => [f.homeId, f.awayId])).size).toBe(24);
+    expect(groupStage.every((f) => weekdayOf(f.date) === 2)).toBe(true); // Tuesday
+    expect(cup.groups).toHaveLength(6);
   });
 
   it('never puts a round in a week with a national-cup round', () => {

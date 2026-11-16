@@ -64,6 +64,11 @@ export const SeasonCupSchema = z.strictObject({
   entrants: z.array(ClubIdSchema).min(2).optional(),
   /** Fixed date of each round (the Continental Cup avoids the national cups' weeks). Otherwise computed from the league calendar. */
   roundDates: z.array(IsoDateSchema).min(1).optional(),
+  /**
+   * A group stage (the Continental Cup): the clubs of each group. Rounds 1–6
+   * are then the group matchdays and the knockouts follow (see continental.ts).
+   */
+  groups: z.array(z.array(ClubIdSchema).min(2)).min(2).optional(),
 });
 
 /** Which clubs play in a league THIS season (promotion/relegation changes it). */
