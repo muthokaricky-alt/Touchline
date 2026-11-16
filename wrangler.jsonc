@@ -1,0 +1,13 @@
+// Cloudflare (Workers with static assets): serves the website built by `npm run build:web`.
+// The Worker's build settings: build command `npm run build:web`, deploy command `npx wrangler deploy`
+// (see docs/WEBSITE.md). No Worker script: Cloudflare serves the files in dist/ directly,
+// applies dist/_headers, and answers pages that weren't pre-rendered with index.html (the app,
+// which then shows the right screen).
+{
+  "name": "touchline",
+  "compatibility_date": "2026-11-16",
+  "assets": {
+    "directory": "./dist/",
+    "not_found_handling": "single-page-application",
+  },
+}
