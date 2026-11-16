@@ -66,8 +66,32 @@ export function flattenAttributes(attributes: PlayerAttributes): Record<Attribut
   return { ...attributes.technical, ...attributes.mental, ...attributes.physical, ...attributes.goalkeeping };
 }
 
+/**
+ * Ratings already worked out, per attributes object. Attribute records are
+ * immutable (development replaces a changed player's record and leaves the
+ * rest alone), so a cached number can never go stale, and the WeakMap lets
+ * replaced records be garbage-collected. Auto-pick asks for the same ratings
+ * thousands of times (every candidate × slot × formation). Measured in Jest:
+ * the kick-off after a new month went from ~410 ms to ~180 ms, a normal one
+ * from ~120 ms to ~100 ms.
+ */
+const ratingCache = new WeakMap<PlayerAttributes, Partial<Record<Position, number>>>();
+
 /** Unrounded 1–20 suitability of `attributes` for `position`. */
 export function positionRating(attributes: PlayerAttributes, position: Position): number {
+  let perPosition = ratingCache.get(attributes);
+  if (!perPosition) {
+    perPosition = {};
+    ratingCache.set(attributes, perPosition);
+  }
+  const cached = perPosition[position];
+  if (cached !== undefined) return cached;
+  const rating = computePositionRating(attributes, position);
+  perPosition[position] = rating;
+  return rating;
+}
+
+function computePositionRating(attributes: PlayerAttributes, position: Position): number {
   const values = flattenAttributes(attributes);
   let total = 0;
   let weightSum = 0;

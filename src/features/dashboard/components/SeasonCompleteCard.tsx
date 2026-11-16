@@ -82,7 +82,7 @@ export function SeasonFinishingCard({ onFinishSeason }: { onFinishSeason: () => 
   return (
     <Card title="Your season is over" icon="fixtures" highlighted>
       <AppText color="textSecondary">
-        You've played all your fixtures. A few matches elsewhere are still to be played before the season ends.
+        You’ve played all your fixtures. A few matches elsewhere are still to be played before the season ends.
       </AppText>
       <Button label="Play out the season" icon="match" onPress={onFinishSeason} />
     </Card>

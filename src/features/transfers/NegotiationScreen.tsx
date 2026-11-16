@@ -201,7 +201,7 @@ function TermsStage({
     <Card title="Personal terms" icon="person">
       {fee ? <Pill label={`Fee agreed: ${formatCompactCurrency(fee)}`} tone="accent" /> : null}
       <AppText color="textSecondary">
-        He's asking for {formatWeeklyWage(demand.weeklyWage)} and up to {demand.maxYears} year{demand.maxYears === 1 ? '' : 's'}. Wage room{' '}
+        He’s asking for {formatWeeklyWage(demand.weeklyWage)} and up to {demand.maxYears} year{demand.maxYears === 1 ? '' : 's'}. Wage room{' '}
         {formatWeeklyWage(target.wageRoom)}.
       </AppText>
       <Stepper

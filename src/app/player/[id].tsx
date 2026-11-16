@@ -36,7 +36,7 @@ export default function PlayerRoute() {
     return (
       <Screen bottomInset>
         <PageHeader title="Player not found" />
-        <AppText color="textSecondary">There's no player with id “{id}”.</AppText>
+        <AppText color="textSecondary">There’s no player with id “{id}”.</AppText>
         <Button label="Back to squad" onPress={goBack} />
       </Screen>
     );

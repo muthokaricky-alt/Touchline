@@ -84,10 +84,10 @@ export function ContractCard({ view, onToggleListed, onAcceptOffer, onRejectOffe
         New contract
       </AppText>
       {view.renewal.willing && options.length === 0 ? (
-        <AppText color="textSecondary">His contract already runs until {formatDate(view.contractEnds)}, as long as he'd sign for.</AppText>
+        <AppText color="textSecondary">His contract already runs until {formatDate(view.contractEnds)}, as long as he’d sign for.</AppText>
       ) : view.renewal.willing ? (
         <>
-          <AppText color="textSecondary">He'd sign for {formatWeeklyWage(view.renewal.weeklyWage)}.</AppText>
+          <AppText color="textSecondary">He’d sign for {formatWeeklyWage(view.renewal.weeklyWage)}.</AppText>
           <ChoiceChips
             options={options.map((y) => ({ value: String(y), label: `${y} yr` }))}
             value={String(years)}
@@ -105,7 +105,7 @@ export function ContractCard({ view, onToggleListed, onAcceptOffer, onRejectOffe
       </AppText>
       {!view.canRelease ? (
         <AppText variant="caption" color="textSecondary">
-          You need at least {view.minSquad} players, so you can't release anyone right now.
+          You need at least {view.minSquad} players, so you can’t release anyone right now.
         </AppText>
       ) : confirmRelease ? (
         <>

@@ -1,8 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
+import { useMemo } from 'react';
 
 import { AppText, Button, PageHeader, Screen } from '@/components/ui';
+import { useIsClient } from '@/components/use-is-client';
 import type { PlayerId } from '@/data/schemas';
 import { parsePickerTarget } from '@/game/squad/team-sheet';
 import { PlayerPickerScreen } from '@/features/team/PlayerPickerScreen';
@@ -28,10 +28,9 @@ export default function SelectPlayerRoute() {
 
   // Web static export pre-renders this page WITHOUT the ?target query. If the
   // page is opened directly, the browser's first render must match that HTML
-  // (React "hydration"), so on web we render an empty frame until mounted.
+  // (React "hydration"), so we render an empty frame until we're on the client.
   // Native has no pre-rendered HTML, so it renders immediately.
-  const [mounted, setMounted] = useState(Platform.OS !== 'web');
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsClient();
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/tactics'));
 
@@ -41,7 +40,7 @@ export default function SelectPlayerRoute() {
     return (
       <Screen bottomInset>
         <PageHeader title="Nothing to choose" />
-        <AppText color="textSecondary">This position isn't part of the current formation.</AppText>
+        <AppText color="textSecondary">This position isn’t part of the current formation.</AppText>
         <Button label="Back to team" onPress={close} />
       </Screen>
     );

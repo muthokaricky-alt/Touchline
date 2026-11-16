@@ -1,5 +1,4 @@
 import { conditionOf, conditionOn, isInjured, NEUTRAL_MORALE } from '@/game/condition/condition';
-import { seasonEnd } from '@/game/career/career-flow';
 import { starterIds, validateLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES } from '@/game/tactics/presets';
@@ -205,76 +204,5 @@ describe('player condition in the store', () => {
     expect(conditionOf(state().condition, id).morale).toBe(NEUTRAL_MORALE - 10);
     state().toggleTransferListed(id);
     expect(conditionOf(state().condition, id).morale).toBe(NEUTRAL_MORALE - 5);
-  });
-});
-
-describe('development in the store', () => {
-  it('a new month develops players and sends the coaching report', () => {
-    state().setTraining({ intensity: 'heavy' });
-    const before = state().database.attributes;
-    while (state().currentDate < '2026-09-01') state().playNextFixture();
-    expect(state().database.attributes).not.toBe(before);
-    expect(state().inbox.some((m) => m.from === 'Head of Coaching' && m.title === 'Development report: September')).toBe(true);
-    expect(state().training).toEqual({ focus: 'balanced', intensity: 'heavy' });
-  });
-
-  it('every player has a potential in the live world', () => {
-    expect(state().database.players.every((p) => p.potential !== undefined)).toBe(true);
-  });
-});
-
-describe('manager career', () => {
-  const OTHER = 'club_kestrel_bay';
-
-  it('a new game has no manager until a career starts at the chosen club', () => {
-    expect(state().manager).toBeNull();
-    state().startCareer('  Alex Kamau ', OTHER);
-    expect(state().userClubId).toBe(OTHER);
-    expect(state().manager).toMatchObject({ name: 'Alex Kamau', confidence: 60, sackedOffers: null, history: [] });
-    expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
-    expect(() => state().startCareer('', OTHER)).toThrow(/name/);
-    expect(() => state().startCareer('Alex', 'club_nowhere')).toThrow(/Unknown club/);
-  });
-
-  it('a board that has lost confidence sacks him; he must choose a new club before playing on', () => {
-    state().startCareer('Alex', OTHER);
-    for (let i = 0; i < 9; i++) state().playNextFixture(); // past the grace period
-    useGameStore.setState({ manager: { ...state().manager!, confidence: 1, warned: true } });
-    state().playNextFixture();
-    // From 1, even a win adds only ~7: still below the threshold of 15, so the sack is certain.
-    const offers = state().manager!.sackedOffers!;
-    expect(offers.length).toBeGreaterThanOrEqual(1);
-    expect(state().inbox.some((m) => /sacked/.test(m.title))).toBe(true);
-    expect(() => state().playNextFixture()).toThrow(/Choose your next club/);
-    expect(() => state().chooseNewJob(OTHER)).toThrow(/offered/);
-
-    state().chooseNewJob(offers[0]);
-    expect(state().userClubId).toBe(offers[0]);
-    expect(state().manager).toMatchObject({ sackedOffers: null, confidence: 60 });
-    expect(state().transferListed).toEqual([]);
-    expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
-    state().playNextFixture(); // play goes on with the new club
-  });
-
-  it('at season end he can accept a job offer and starts next season at the new club', () => {
-    state().startCareer('Alex', DEFAULT_USER_CLUB_ID);
-    while (state().season.fixtures.some((f) => !f.result && (f.homeId === DEFAULT_USER_CLUB_ID || f.awayId === DEFAULT_USER_CLUB_ID))) {
-      state().playNextFixture();
-      if (state().manager!.sackedOffers) state().chooseNewJob(state().manager!.sackedOffers![0]);
-    }
-    state().finishSeason();
-    const end = seasonEnd(state().database, state().season, state().userClubId, state().manager!)!;
-    const before = state().userClubId;
-    if (end.offers.length === 0) {
-      state().startNextSeason();
-      expect(state().userClubId).toBe(before);
-      expect(state().manager!.history.at(-1)).toMatchObject({ clubId: before, outcome: 'completed' });
-      return;
-    }
-    state().startNextSeason(end.offers[0]);
-    expect(state().userClubId).toBe(end.offers[0]);
-    expect(state().manager!.history.at(-1)).toMatchObject({ clubId: before, outcome: end.review.sacked ? 'sacked' : 'left' });
-    expect(state().season.startYear).toBe(2027);
-    expect(validateLineup(state().lineup, candidates()).filter((i) => i.severity === 'error')).toEqual([]);
   });
 });

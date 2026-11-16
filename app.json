@@ -8,9 +8,11 @@
     "scheme": "touchline",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.muthokaricky.touchline"
     },
     "android": {
+      "package": "com.muthokaricky.touchline",
       "adaptiveIcon": {
         "backgroundColor": "#101820",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -30,11 +32,13 @@
         {
           "backgroundColor": "#101820",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 160
         }
       ],
       "expo-sqlite",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

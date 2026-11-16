@@ -91,7 +91,7 @@ function AssistantCard({ notes }: { notes: readonly TacticalNote[] }) {
   return (
     <Card title="Assistant manager" icon="assistant">
       {notes.length === 0 ? (
-        <AppText color="textSecondary">No concerns. These instructions suit the players you've picked.</AppText>
+        <AppText color="textSecondary">No concerns. These instructions suit the players you’ve picked.</AppText>
       ) : (
         notes.map((note) => (
           <View key={note.id} style={styles.note}>

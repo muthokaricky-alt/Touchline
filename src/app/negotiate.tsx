@@ -32,7 +32,7 @@ export default function NegotiateRoute() {
     return (
       <Screen bottomInset>
         <PageHeader title="No one to sign" />
-        <AppText color="textSecondary">This player isn't available.</AppText>
+        <AppText color="textSecondary">This player isn’t available.</AppText>
         <Button label="Back" onPress={close} />
       </Screen>
     );

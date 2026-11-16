@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — Milestone 10 step 10a (save slots, compression, backup, export/import) complete; 10b (release readiness) next._
+_Last updated: 16 Nov 2026 — All ten milestones built; 10b (release readiness) done. Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -724,6 +724,49 @@ chosen, then replaced by fflate after measuring, with the user's OK).
   `pickSaveFile` runs synchronously inside the tap handler, before any
   `await`. (The headless test needed `userGesture: true` to simulate it.)
 
+#### 10b: release readiness
+
+Decisions (user): app id `com.muthokaricky.touchline`; EAS configuration
+only (the user runs `eas login` and builds); an original icon.
+
+- **Test split:** statistical suites live in `*.calibration.test.ts`
+  (engine calibration and condition statistics, four-year development
+  rates, ten-summer renewal); `npm test` ignores them, `test:calibration`
+  runs only them, `test:all` runs everything. The long store scenarios were
+  split into `game-store-career.test.ts` so Jest runs them in parallel.
+  `npm test` went from ~55 s to ~36 s. (Gotcha: `--testPathIgnorePatterns`
+  takes several values and swallowed a positional filter; Jest 30 uses
+  `--testPathPatterns`.)
+- **Performance:** the kick-off after a month boundary took ~410 ms
+  because development creates a new database object, which empties the AI
+  setup cache, and every AI club re-ran its formation search; most of that
+  was `positionRating` rebuilding a flattened attribute object thousands
+  of times. Ratings are now cached per (immutable) attributes object in a
+  WeakMap: ~180 ms after a month, ~100 ms normally, first kick-off
+  ~500 → ~300 ms (Jest timings). Rejected: remembering formations across
+  database changes, because a reloaded game would then choose differently
+  from a continuing one (results must not depend on session history).
+- **ESLint** via `npx expo lint` (eslint 9, eslint-config-expo, flat
+  config). Fixed: unescaped apostrophes in JSX text (now typographic ’),
+  `setState` in an effect (the picker's mounted flag → `useIsClient`, built
+  on `useSyncExternalStore`: false while pre-rendering/hydrating, true on
+  the client), unused imports left by the test split, a duplicate import.
+- **Configuration:** `android.package` / `ios.bundleIdentifier`
+  `com.muthokaricky.touchline`; `eas.json` with `preview` (internal APK)
+  and `production` (store build, `autoIncrement`), `appVersionSource:
+  "remote"` (EAS keeps build numbers). No `development` profile: it needs
+  `expo-dev-client` and we use Expo Go.
+- **Icons:** original mark (pitch outline, the left touchline bold in the
+  accent green, ball on the centre spot) in `assets/images/touchline-icon.svg`,
+  rendered to every size by `scripts/render-icons.mjs` (headless Chrome;
+  reproduces the committed PNGs exactly). Replaced Expo's default icons and
+  removed the default `assets/expo.icon`; splash image width 76 → 160.
+- **expo-doctor:** 12 Expo packages were patch releases behind SDK 58 →
+  `npx expo install --fix` (it also added the `expo-status-bar` and
+  `expo-web-browser` config plugins). Remaining: an informational React
+  Native Directory note about two transitive packages (masked-view from
+  expo-router, expo-modules-core from expo), deliberately not silenced.
+
 ## 3. Commands
 
 ```
@@ -731,9 +774,13 @@ npm install
 npm start              # Expo dev server (press a for Android, w for web)
 npm run android        # start + open on Android device/emulator (Expo Go)
 npm run web            # start + open in browser
-npm test               # Jest unit tests
+npm test               # Jest: everyday suite (~35 s), no statistical calibration
+npm run test:calibration  # the statistical suites only (*.calibration.test.ts, ~25 s)
+npm run test:all       # everything (~45 s): run before committing engine/balance changes
 npm run typecheck      # tsc --noEmit
+npm run lint           # ESLint (eslint-config-expo); must be clean
 npm run build:web      # static web export to dist/
+node scripts/render-icons.mjs assets/images   # regenerate the icon set from its SVG design
 ```
 
 Install new Expo/RN packages with `npx expo install <pkg>` so versions match the SDK.
@@ -966,7 +1013,7 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - **Not browser-verified:** accepting a season-end offer (covered by a
   store test that plays a full season).
 
-### Milestone 10 — Persistence and polish (in progress)
+### Milestone 10 — Persistence and polish ✅ (device testing outstanding)
 **10a — Save slots, compression, backup, export/import ✅**
 - `persistence/slot-storage.ts`, `save-transfer.ts`, `save-file(.web).ts`;
   `store/save-slots.ts`; `validatePersisted`; Save slots card on the Club
@@ -983,14 +1030,21 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - **Not yet verified on a device:** native export (share sheet) and import
   (document picker) only run on Android/iOS.
 
+**10b — Release readiness ✅**
+- Test split (`test:calibration`, `test:all`), rating cache, ESLint clean,
+  `useIsClient`, app identifiers, `eas.json`, original icon set + render
+  script, Expo packages aligned with SDK 58, `docs/DEVICE_TEST_CHECKLIST.md`.
+- Tests: 689 total (unchanged; reorganised). `npm test` 653 / calibration 36.
+- Verified: `tsc` clean, lint clean, `test:all` passes, expo-doctor 19/20
+  (the 20th informational, see above), Android + web export; headless
+  Chrome at 412px and 1280px: new career, picker by tap **and by direct
+  URL** (hydration), a match, favicon served. Zero console errors.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
-- `expo-doctor` couldn't complete its online checks in the build environment;
-  re-run locally: `npx expo-doctor`.
-- ESLint isn't configured yet (`npm run lint` will offer to set it up).
-- App icon / splash images are still the Expo defaults (backgrounds recoloured to
-  Touchline navy). Replace with real Touchline artwork later.
+- The icon is an original placeholder-quality design; replace with
+  professional artwork later (edit the SVG and rerun the render script).
 - Fonts are system fonts. A custom typeface can be added via `expo-font` later.
 - Pre-season, the table is in alphabetical order (all on 0 points), so the
   user's club can appear "1st" before a ball is kicked.
@@ -1008,20 +1062,18 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
 - Long names are truncated in the picker when a fit pill is shown (acceptable,
   full name is in the accessibility label).
 
-## 5. Next steps — Milestone 10 step 10b (release readiness)
+## 5. Next steps
 
-Plan details with the user first:
-1. **Device testing in Expo Go** (user runs it; I can't drive a phone):
-   a checklist covering the native SQLite save path, splash gate, new
-   career keyboard, gestures/back button, export via share sheet and
-   import via the document picker.
-2. **Performance:** month-crossing kick-offs ~280 ms in Chrome (all 880+
-   players develop, AI setups recomputed); profile and trim.
-3. **Tests:** split the statistical suites into `npm run test:calibration`
-   so `npm test` stays fast (~45 s now).
-4. **Production builds:** EAS configuration (`eas.json`, app id, version),
-   real app icon and splash art, ESLint setup; `npx expo-doctor` locally.
-5. Cloud saves remain deferred (backend, accounts, costs to decide).
-6. Gameplay ideas parked: suspensions, in-match substitutions, scouting,
-   foreign leagues, season-end offer expectations using next season's
-   league.
+All ten roadmap milestones are built. What's left before a release:
+1. **Device testing** with `docs/DEVICE_TEST_CHECKLIST.md` (the user runs
+   it in Expo Go; fix whatever it finds). Nothing native has been run on a
+   phone yet: SQLite saves, splash gate, keyboard, gestures, share sheet,
+   document picker.
+2. **First EAS build** (user, needs a free Expo account): `npm install -g
+   eas-cli`, `eas login`, then `eas build --platform android --profile
+   preview` for an installable APK (eas.json is already set up).
+3. Then choose: store submission (production profile, store listings,
+   privacy policy) or more gameplay. Parked ideas: suspensions, in-match
+   substitutions, scouting (narrow potential ranges), foreign leagues,
+   season-end offer expectations using next season's league, cloud saves
+   (needs a backend: accounts, costs, privacy).
