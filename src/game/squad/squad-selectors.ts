@@ -16,7 +16,7 @@ import type { LineupCandidate } from '../lineup';
 import { POSITION_GROUP, POSITION_GROUP_LABELS, POSITION_GROUP_ORDER, type PositionGroup } from '../positions';
 import { effectiveRating, positionFit, type PositionFit } from './position-fit';
 import { conditionOf, FULLY_FIT, type ConditionState, type PlayerCondition } from '../condition/condition';
-import { formatPotentialRange, potentialOf, potentialRange } from '../development/potential';
+import { formatPotentialRange, potentialOf, potentialRange, type Knowledge } from '../development/potential';
 import { playerAbility } from '../transfers/valuation';
 
 /**
@@ -156,6 +156,8 @@ export function selectPlayerProfile(
   onDate: string,
   condition?: ConditionState,
   viewerClubId?: ClubId,
+  /** What the viewer knows about his potential (scouting); defaults to "own player or not scouted". */
+  knowledge?: Knowledge,
 ): PlayerProfileView | null {
   const player = db.players.find((p) => p.id === playerId);
   const attributes = db.attributes.find((a) => a.playerId === playerId);
@@ -200,7 +202,8 @@ export function selectPlayerProfile(
     development: (() => {
       const ability = playerAbility(player, attributes);
       const own = contract !== null && contract.clubId === viewerClubId;
-      return { rating: Math.round(ability), potential: formatPotentialRange(potentialRange(player.id, potentialOf(player, attributes), ability, own)) };
+      const known = knowledge ?? (own ? 1 : 0);
+      return { rating: Math.round(ability), potential: formatPotentialRange(potentialRange(player.id, potentialOf(player, attributes), ability, known)) };
     })(),
   };
 }

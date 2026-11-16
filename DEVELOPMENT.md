@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions and in-match management (save v8). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management and scouting (save v9). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -88,6 +88,8 @@ src/
                          contracts (season-end expiries, warnings), career (the
                          user's transfer business as pure state transitions)
     inbox/               inbox messages: schema, add (capped), mark read
+    scouting/            what the user knows about potential: assignments,
+                         reports (delivered as the calendar moves), views
     discipline/          suspensions derived from season results (bans, yellow
                          accumulation with deadlines), messages, profile view
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
@@ -580,7 +582,8 @@ the Squad tab.
   data layer still never imports `src/game`. The store's base world is
   `assignPotential(buildFictionalDatabase(seed))`.
 - **The user sees a range** (`potentialRange`): a fixed per-player offset,
-  ±1 for their own players, ±2 for others; it always contains the truth,
+  ±1 for their own players, ±2 for others (scouting later changed this:
+  ±3 unscouted, ±1 scouted, exact with a full report); it always contains the truth,
   never starts below current ability. Scouting (M9) can narrow it later.
 - **Development is a chance of ±1 per attribute per month** (attributes are
   integers): growth = 0.16 × age (1 at ≤18 … 0 from 28) × gap to potential
@@ -813,6 +816,35 @@ earned in; then, after measuring, real-league deadlines for yellow cards.
 - **Tests that played a season with one fixed user lineup** now hit the
   guard; they use `playUserFixture` (`game/season/__fixtures__/play.ts`),
   which swaps banned players out first, as the store does.
+
+### Scouting (after Milestone 10)
+
+Decisions (user): scouting reveals potential only (attributes stay
+visible); assignments that take time; free, limited to 3 scouts.
+
+- **Knowledge per player** (the user's only): 0 not scouted, 1 scouted,
+  2 full report; own players are always at least 1. `potentialRange`
+  takes the level instead of an "own" flag: ±3 / ±1 / exact, the centre
+  off by a fixed per-player amount (at most half the width) so the range
+  always contains the truth. Unscouted players went from ±2 to ±3, so a
+  report is worth having.
+- **Assignments:** "Scout player" on a profile (not your own players, not
+  someone already being watched or fully known, at most `SCOUTS` = 3 at
+  once); the report is due `REPORT_DAYS` = 14 days later. Nothing ticks:
+  `deliverReports` runs on every calendar move (after a match, at season
+  end, in the summer), raises knowledge one level and sends a Chief Scout
+  message (new inbox category `scouting`) with the range and a verdict.
+  Players who retire are forgotten (`withoutMissingPlayers`).
+- **Only the user's view changes.** AI clubs and market values still use
+  true potential (a young player's price can hint at it, as real markets
+  do).
+- **Save v9** adds `scouting` (assignments + sparse knowledge); load rejects
+  unknown players and assignments started after the save's date; v8 saves
+  start with nobody scouted.
+- **UI:** Scouting card on other clubs' players' and free agents' profiles
+  (status pill, due date, Scout player / Call the scout back, the reason
+  when a scout can't be sent); "Scouts · n of 3 busy" card on the Transfers
+  screen listing assignments (tap to open the player).
 
 ### In-match management (after Milestone 10)
 
@@ -1168,6 +1200,21 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   changes and other results → dashboard on matchday 2. Zero console
   errors, no overflow.
 
+### Scouting ✅ (after the roadmap)
+- `src/game/scouting`, knowledge-based `potentialRange`, store
+  `scoutPlayer` / `cancelScouting` + delivery on calendar moves, save v9,
+  Scouting card, Transfers screen assignments, inbox category.
+- Tests: 724 total (7 new) incl. reports and ranges (wide → narrow →
+  exact, always containing the truth), scout limit, cancel, retired
+  targets, store flow over two matches, v8 → v9 and load checks.
+  `npm test` 686 / calibration 38.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px and 1280px: Transfers → Joe Whitfield (Kestrel
+  Bay) "Not scouted", potential 18–20 → Scout player (report due 15 Jul,
+  Transfers card lists it) → two matches → Chief Scout report in the inbox
+  → profile "Scouted", 18–19 → scout again → two matches → "Full report",
+  18. Zero console errors, no overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -1202,6 +1249,6 @@ All ten roadmap milestones are built. What's left before a release:
    eas-cli`, `eas login`, then `eas build --platform android --profile
    preview` for an installable APK (eas.json is already set up).
 3. Then choose: store submission (production profile, store listings,
-   privacy policy) or more gameplay. Parked ideas: scouting (narrow potential ranges), foreign leagues,
+   privacy policy) or more gameplay. Parked ideas: foreign leagues,
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

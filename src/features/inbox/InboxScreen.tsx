@@ -35,6 +35,7 @@ const CATEGORY_LABEL: Record<MessageCategory, string> = {
   transfer: 'Transfer',
   contract: 'Contract',
   squad: 'Squad',
+  scouting: 'Scouting',
 };
 
 /** The manager's messages: offers to answer, completed deals, contract news. */

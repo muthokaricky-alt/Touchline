@@ -40,7 +40,7 @@ export function selectProspects(db: GameDatabase, clubId: ClubId, date: string):
             age: ageOn(player.dateOfBirth, date),
             position: player.primaryPosition,
             rating: Math.round(ability),
-            potential: formatPotentialRange(potentialRange(player.id, potential, ability, true)),
+            potential: formatPotentialRange(potentialRange(player.id, potential, ability, 1)),
             progress: Math.min(1, ability / potential),
           },
           headroom: potential - ability,

@@ -50,15 +50,26 @@ export function potentialOf(player: Pick<Player, 'potential' | 'primaryPosition'
 }
 
 /**
- * What the user sees: a range around the true potential. Scouting isn't
- * modelled yet (M9), so the error is a fixed, deterministic offset per
- * player: ±1 for the user's own players, ±2 for everyone else. The range
- * never starts below his current ability (rounded) or ends above 20.
+ * How well the user knows a player's potential (see game/scouting):
+ * 0 not scouted, 1 scouted (or one of their own players), 2 full report.
  */
-export function potentialRange(playerId: PlayerId, potential: number, ability: number, own: boolean): { low: number; high: number } {
+export type Knowledge = 0 | 1 | 2;
+
+/** Half-width of the range the user sees, by knowledge. */
+const RANGE_WIDTH: Record<Knowledge, number> = { 0: 3, 1: 1, 2: 0 };
+
+/**
+ * What the user sees: a range around the true potential, ±3 for players
+ * nobody has scouted, ±1 once scouted (and for the user's own players),
+ * exact with a full report. The estimate's centre is off by a fixed,
+ * deterministic amount per player (at most half the width), so the range
+ * always contains the truth. It never starts below his current ability
+ * (rounded) or ends above 20.
+ */
+export function potentialRange(playerId: PlayerId, potential: number, ability: number, knowledge: Knowledge): { low: number; high: number } {
   let h = 2166136261;
   for (let i = 0; i < playerId.length; i++) h = Math.imul(h ^ playerId.charCodeAt(i), 16777619) >>> 0;
-  const width = own ? 1 : 2;
+  const width = RANGE_WIDTH[knowledge];
   const offset = ((h % 1000) / 1000 - 0.5) * width; // the estimate's centre is a little off
   const centre = potential + offset;
   const low = Math.max(Math.round(ability), Math.round(centre - width));

@@ -42,11 +42,12 @@ describe('potential', () => {
   it('shows the user a range that contains the true potential', () => {
     for (const p of world.players.slice(0, 300)) {
       const a = ability(world, p.id);
-      for (const own of [true, false]) {
-        const { low, high } = potentialRange(p.id, p.potential!, a, own);
+      for (const knowledge of [0, 1, 2] as const) {
+        const { low, high } = potentialRange(p.id, p.potential!, a, knowledge);
         expect(low).toBeLessThanOrEqual(Math.round(p.potential!) + 0); // rounding can't push it past the truth
         expect(high).toBeGreaterThanOrEqual(Math.min(20, Math.round(p.potential!)) - 0);
-        expect(high - low).toBeLessThanOrEqual(own ? 2 : 4);
+        // Not scouted ±3, scouted ±1, full report exact.
+        expect(high - low).toBeLessThanOrEqual([6, 2, 0][knowledge]);
       }
     }
     expect(formatPotentialRange({ low: 12, high: 15 })).toBe('12–15');

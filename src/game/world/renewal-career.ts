@@ -49,7 +49,7 @@ export function admitIntakeToCareer(career: TransferCareer, seed: number, year: 
     const describe = (id: PlayerId) => {
       const p = intake.db.players.find((x) => x.id === id)!;
       const a = intake.db.attributes.find((x) => x.playerId === id)!;
-      const range = formatPotentialRange(potentialRange(id, potentialOf(p, a), playerAbility(p, a), true));
+      const range = formatPotentialRange(potentialRange(id, potentialOf(p, a), playerAbility(p, a), 1));
       return `${fullName(p)} (${p.primaryPosition}, ${ageOn(p.dateOfBirth, date)}, potential ${range})`;
     };
     const lines = [

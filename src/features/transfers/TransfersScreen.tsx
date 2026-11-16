@@ -15,6 +15,7 @@ import {
 } from '@/components/ui';
 import type { PlayerId } from '@/data/schemas';
 import type { MarketFilters, MarketPlayerView, MarketScope } from '@/game/transfers/market';
+import type { AssignmentView } from '@/game/scouting/scouting';
 import type { TransferWindow } from '@/game/transfers/window';
 import type { PositionGroup } from '@/game/positions';
 import { spacing } from '@/theme';
@@ -35,6 +36,8 @@ type TransfersScreenProps = {
   results: readonly MarketPlayerView[];
   onPlayerPress: (playerId: PlayerId) => void;
   onBack: () => void;
+  /** The scouts' current assignments (tap one to open the player). */
+  scouting: { assignments: readonly AssignmentView[]; scouts: number };
 };
 
 const GROUPS: readonly { value: PositionGroup | 'all'; label: string }[] = [
@@ -58,7 +61,7 @@ const VALUE_CAPS = [
 ] as const;
 
 /** Transfer market: window status, budgets, filters and the best matching players. */
-export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack }: TransfersScreenProps) {
+export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack, scouting }: TransfersScreenProps) {
   const { window } = budget;
   return (
     <Screen bottomInset>
@@ -88,6 +91,23 @@ export function TransfersScreen({ budget, filters, onFiltersChange, results, onP
           <StatTile label="Wage room" value={formatCompactCurrency(budget.wageRoom)} detail="per week" />
           <StatTile label="Squad" value={`${budget.squadSize}`} detail={`of ${budget.maxSquad}`} />
         </View>
+      </Card>
+
+      <Card title={`Scouts · ${scouting.assignments.length} of ${scouting.scouts} busy`} icon="person">
+        {scouting.assignments.length === 0 ? (
+          <AppText color="textSecondary">Open any player’s profile and tap “Scout player” to learn his real potential.</AppText>
+        ) : (
+          scouting.assignments.map((a, index) => (
+            <ListRow
+              key={a.playerId}
+              title={a.name}
+              subtitle={a.clubName}
+              trailing={<AppText variant="caption" color="textSecondary">Report {formatDate(a.due)}</AppText>}
+              divider={index > 0}
+              onPress={() => onPlayerPress(a.playerId)}
+            />
+          ))
+        )}
       </Card>
 
       <Card title="Search" icon="squad">

@@ -54,6 +54,14 @@ import { completeTransfer, type TransferRecord } from '@/game/transfers/complete
 import type { TransferOffer } from '@/game/transfers/offers';
 import { formatCompactCurrency } from '@/utils/format';
 import { personalTerms, playerContext, respondToBid, respondToTerms } from '@/game/transfers/negotiation';
+import {
+  cancelAssignment,
+  deliverReports,
+  EMPTY_SCOUTING,
+  startAssignment,
+  withoutMissingPlayers,
+  type ScoutingState,
+} from '@/game/scouting/scouting';
 import { addChange, liveView, type LiveContext, type LiveMatch, type UserChange } from '@/game/match/live';
 import { checkSave, migrateSave, SAVE_VERSION, worldChanges, type GameSave, type SaveCheck } from '@/persistence/save';
 import { createSlotStorage, slotKey } from '@/persistence/slot-storage';
@@ -120,6 +128,8 @@ export type GameState = {
    * affects the match may change: see `notLive`.
    */
   liveMatch: LiveMatch | null;
+  /** The user's scouts: assignments in progress and what's known about players' potential. */
+  scouting: ScoutingState;
 };
 
 /** The career state a live match is rebuilt from. */
@@ -204,6 +214,9 @@ export type GameActions = {
   finishMatch: () => MatchResult;
   /** Last resort if a saved match in progress can't be rebuilt: drops it (the fixture is still to be played). */
   abandonMatch: () => void;
+  /** Sends a scout to watch a player; the report arrives REPORT_DAYS later. Throws a RangeError if not possible. */
+  scoutPlayer: (playerId: PlayerId) => void;
+  cancelScouting: (playerId: PlayerId) => void;
   /** Once the user has no fixtures left: plays the rest of the season (e.g. a cup final between other clubs). */
   finishSeason: () => void;
   /** Only once the current season is complete. `newClubId`: accept that club's job offer. */
@@ -349,6 +362,7 @@ function toSave(state: GameState): GameSave {
     training: state.training,
     manager: state.manager,
     liveMatch: state.liveMatch,
+    scouting: state.scouting,
   };
 }
 
@@ -388,6 +402,7 @@ export function createInitialGameState(database: GameDatabase = getBaseDatabase(
     training: DEFAULT_TRAINING,
     manager: null,
     liveMatch: null,
+    scouting: EMPTY_SCOUTING,
   };
 }
 
@@ -470,6 +485,9 @@ export const useGameStore = create<Store>()(
         return result;
       },
       abandonMatch: () => set({ liveMatch: null }),
+      scoutPlayer: (playerId) =>
+        set((s) => ({ scouting: startAssignment(s.scouting, s.database, s.userClubId, playerId, s.currentDate) })),
+      cancelScouting: (playerId) => set((s) => ({ scouting: cancelAssignment(s.scouting, playerId) })),
       playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
         notLive(get());
         const { database, userClubId, lineup, tactics, condition, currentDate } = get();
@@ -494,6 +512,8 @@ export const useGameStore = create<Store>()(
         // The board reacts to the league results (warning, or the sack with job offers).
         const board = state.manager ? afterUserMatchday(career.db, season, played.season, userClubId, state.manager, date) : null;
         const playedFixture = played.season.fixtures.find((f) => f.id === played.fixture.id) ?? played.fixture;
+        // Scouting reports due by the match date arrive.
+        const scouted = deliverReports(state.scouting, career.db, userClubId, date);
         set({
           ...fromCareer(career),
           manager: board?.manager ?? state.manager,
@@ -510,8 +530,10 @@ export const useGameStore = create<Store>()(
             ...injuryMessages(career.db, userClubId, played.injuries, date),
             ...disciplineMessages(career.db, played.season, playedFixture, userClubId, date),
             ...monthly.messages,
+            ...scouted.messages,
             ...(board?.messages ?? []),
           ]),
+          scouting: scouted.state,
           condition: monthly.condition,
           season: played.season,
           lastMatch: played.result,
@@ -528,9 +550,11 @@ export const useGameStore = create<Store>()(
         const lastDate = finished.season.fixtures.reduce((latest, f) => (f.date > latest ? f.date : latest), state.currentDate);
         const monthly = monthlyStep(state, state.currentDate, lastDate, finished.season, finished.condition ?? state.condition);
         const career = afterCalendarMove({ ...transferCareer(state), db: monthly.database, date: lastDate }, state.currentDate, state.season.seed);
+        const scouted = deliverReports(state.scouting, career.db, state.userClubId, lastDate);
         set({
           ...fromCareer(career),
-          inbox: addMessages(career.inbox, monthly.messages),
+          inbox: addMessages(career.inbox, [...monthly.messages, ...scouted.messages]),
+          scouting: scouted.state,
           season: finished.season,
           condition: monthly.condition,
         });
@@ -571,8 +595,12 @@ export const useGameStore = create<Store>()(
         const stillHere = new Set(rolled.db.players.map((p) => p.id));
         const condition = { ...recovered, players: Object.fromEntries(Object.entries(recovered.players).filter(([id]) => stillHere.has(id))) };
         const after = { database: career.db, condition, currentDate: seasonStart, season: next };
+        // Scouting: players who retired are forgotten; reports due over the summer arrive.
+        const scouted = deliverReports(withoutMissingPlayers(state.scouting, career.db), career.db, closed?.clubId ?? state.userClubId, seasonStart);
         set({
           ...fromCareer(career),
+          inbox: addMessages(career.inbox, scouted.messages),
+          scouting: scouted.state,
           ...(moving
             ? switchClub(after, closed!.clubId)
             : {

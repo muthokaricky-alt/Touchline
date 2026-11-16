@@ -72,7 +72,7 @@ describe('autosave', () => {
     const { state: s, version } = saved();
     expect(version).toBe(SAVE_VERSION);
     expect(Object.keys(s).sort()).toEqual([
-      'attributeChanges', 'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'liveMatch', 'manager', 'offers', 'retired', 'season',
+      'attributeChanges', 'clubFinances', 'condition', 'contracts', 'currentDate', 'inbox', 'lineup', 'liveMatch', 'manager', 'offers', 'retired', 'scouting', 'season',
       'tactics', 'training', 'transferHistory', 'transferListed', 'userClubId', 'worldSeed',
     ]);
     expect(useSaveStatus.getState().lastSavedAt).not.toBeNull();

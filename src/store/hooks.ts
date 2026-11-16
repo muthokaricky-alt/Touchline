@@ -26,6 +26,7 @@ import { matchPlayingStyle } from '@/game/tactics/presets';
 
 import { selectDiscipline } from '@/game/discipline/suspensions';
 import { liveView } from '@/game/match/live';
+import { assignmentViews, knowledgeOf, SCOUTS, scoutingStatus } from '@/game/scouting/scouting';
 import { conditionAtKickOff, suspendedAtKickOff, useGameStore } from './game-store';
 
 /**
@@ -111,7 +112,26 @@ export function usePlayerProfile(playerId: PlayerId) {
   const date = useGameStore((s) => s.currentDate);
   const clubId = useGameStore((s) => s.userClubId);
   const today = useConditionToday();
-  return useMemo(() => selectPlayerProfile(database, playerId, date, today, clubId), [database, playerId, date, today, clubId]);
+  const scouting = useGameStore((s) => s.scouting);
+  return useMemo(
+    () => selectPlayerProfile(database, playerId, date, today, clubId, knowledgeOf(scouting, database, clubId, playerId)),
+    [database, playerId, date, today, clubId, scouting],
+  );
+}
+
+/** What the user knows about a player and whether a scout can be sent (other clubs' players and free agents). */
+export function useScoutingStatus(playerId: PlayerId) {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const scouting = useGameStore((s) => s.scouting);
+  return useMemo(() => scoutingStatus(scouting, database, clubId, playerId), [scouting, database, clubId, playerId]);
+}
+
+/** The scouts' current assignments, for the Transfers screen. */
+export function useScoutAssignments() {
+  const database = useGameStore((s) => s.database);
+  const scouting = useGameStore((s) => s.scouting);
+  return useMemo(() => ({ assignments: assignmentViews(scouting, database), scouts: SCOUTS }), [scouting, database]);
 }
 
 /** A player's suspensions and bookings this season, for the profile. */

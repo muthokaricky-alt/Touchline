@@ -1,6 +1,7 @@
 import { conditionOf, conditionOn, isInjured, NEUTRAL_MORALE } from '@/game/condition/condition';
 import { starterIds, validateLineup } from '@/game/lineup';
-import { selectSquadCandidates } from '@/game/squad/squad-selectors';
+import { knowledgeOf } from '@/game/scouting/scouting';
+import { selectPlayerProfile, selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES } from '@/game/tactics/presets';
 import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 
@@ -163,6 +164,28 @@ describe('game store', () => {
     const before = state().lineup;
     state().clearSlot('LM');
     expect(state().lineup).not.toBe(before);
+  });
+});
+
+describe('scouting in the store', () => {
+  it('a scout’s report arrives as the calendar moves and narrows what the user sees', () => {
+    const target = state().database.contracts.find((c) => c.clubId !== state().userClubId)!.playerId;
+    const seen = () => {
+      const s = state();
+      return selectPlayerProfile(s.database, target, s.currentDate, undefined, s.userClubId, knowledgeOf(s.scouting, s.database, s.userClubId, target))!
+        .development.potential;
+    };
+    const before = seen();
+    state().scoutPlayer(target);
+    expect(state().scouting.assignments).toHaveLength(1);
+    expect(() => state().scoutPlayer(target)).toThrow(/already watching/);
+
+    // Two Saturdays later (more than 14 days after 1 July pre-season): the report is in.
+    while (state().scouting.assignments.length) state().playNextFixture();
+    expect(knowledgeOf(state().scouting, state().database, state().userClubId, target)).toBe(1);
+    expect(state().inbox.some((m) => m.from === 'Chief Scout' && m.category === 'scouting')).toBe(true);
+    const width = (range: string) => (range.includes('–') ? Number(range.split('–')[1]) - Number(range.split('–')[0]) : 0);
+    expect(width(seen())).toBeLessThanOrEqual(Math.min(2, width(before)));
   });
 });
 

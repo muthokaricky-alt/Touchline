@@ -34,6 +34,7 @@ const valid: GameSave = {
   retired: [],
   manager: { name: 'Alex Kamau', reputation: 52, confidence: 60, warned: false, sackedOffers: null, history: [] },
   liveMatch: null,
+  scouting: { assignments: [], knowledge: {} },
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -159,7 +160,8 @@ describe('retirement and youth intakes in the save (v6)', () => {
 });
 
 describe('migrateSave', () => {
-  const v7 = (({ liveMatch: _l, ...rest }) => rest)(valid);
+  const v8 = (({ scouting: _s, ...rest }) => rest)(valid);
+  const v7 = (({ liveMatch: _l, ...rest }) => rest)(v8);
   const v6 = (({ manager: _m, ...rest }) => rest)(v7);
   const v5 = (({ retired: _r, ...rest }) => rest)(v6);
   const v4 = (({ attributeChanges: _a, training: _t, ...rest }) => rest)(v5);
@@ -208,6 +210,20 @@ describe('migrateSave', () => {
     const check = checkSave(migrateSave(roundTrip(v6), 6), baseFor, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
     if (check.ok) expect(check.save.manager).toEqual(defaultManager);
+  });
+
+  it('upgrades a version 8 save with nobody scouted', () => {
+    const check = checkSave(migrateSave(roundTrip(v8), 8), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save).toEqual(valid);
+  });
+
+  it('rejects scouting records for players the world doesn’t have', () => {
+    const ghost = { assignments: [{ playerId: 'plr_999999', started: '2026-08-01', due: '2026-08-15' }], knowledge: {} };
+    expect(checkSave(roundTrip({ ...valid, scouting: ghost }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, scouting: { assignments: [], knowledge: { plr_999999: 1 } } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    const someone = db.players[0].id;
+    expect(checkSave(roundTrip({ ...valid, scouting: { assignments: [], knowledge: { [someone]: 2 } } }), baseFor, FICTIONAL_SEED).ok).toBe(true);
   });
 
   it('upgrades a version 7 save with no match in progress', () => {

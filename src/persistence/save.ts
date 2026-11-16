@@ -22,6 +22,7 @@ import { DEFAULT_TRAINING, TrainingSchema } from '@/game/development/development
 import { InboxMessageSchema } from '@/game/inbox/inbox';
 import { LineupSchema } from '@/game/lineup';
 import { LiveMatchSchema } from '@/game/match/live';
+import { EMPTY_SCOUTING, ScoutingStateSchema } from '@/game/scouting/scouting';
 import { nextFixtureFor } from '@/game/season/season-flow';
 import { TransferOfferSchema } from '@/game/transfers/offers';
 import { SeasonSchema } from '@/game/season/season';
@@ -46,9 +47,10 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *        regenerated from the seed (game/world/renewal.ts worldFor).
  *   7  + manager: name, reputation, board confidence, history (Milestone 9b)
  *   8  + the match in progress and its in-match changes (in-match management)
+ *   9  + scouting: assignments in progress, what's known about players' potential
  */
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -89,6 +91,7 @@ export const GameSaveSchema = z.strictObject({
   manager: ManagerSchema.nullable(),
   /** A match the user kicked off but hasn't finished (null between matches). */
   liveMatch: LiveMatchSchema.nullable(),
+  scouting: ScoutingStateSchema,
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -171,6 +174,7 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v5 → v6: nobody had retired yet.
  *   v6 → v7: careers from before the manager existed carry on with a default manager.
  *   v7 → v8: matches couldn't be left half-played: no match in progress.
+ *   v8 → v9: no scouting yet: nobody scouted.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -193,6 +197,7 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
     save = { ...save, manager: { name: 'Manager', reputation: 50, confidence: 60, warned: false, sackedOffers: null, history: [] } };
   }
   if (fromVersion < 8) save = { ...save, liveMatch: null };
+  if (fromVersion < 9) save = { ...save, scouting: EMPTY_SCOUTING };
   return save;
 }
 
@@ -258,6 +263,11 @@ export function checkSave(raw: unknown, baseFor: (startYear: number) => GameData
     if (!liveOk || changedPlayers.some((id) => !playerIds.has(id))) {
       return { ok: false, reason: 'Your save’s match in progress doesn’t match your career.' };
     }
+  }
+
+  const scoutedIds = [...save.scouting.assignments.map((a) => a.playerId), ...Object.keys(save.scouting.knowledge)];
+  if (scoutedIds.some((id) => !playerIds.has(id)) || save.scouting.assignments.some((a) => a.started > save.currentDate)) {
+    return { ok: false, reason: 'Your save’s scouting records don’t match this world.' };
   }
 
   return { ok: true, save, database: db };
