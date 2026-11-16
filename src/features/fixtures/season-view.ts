@@ -1,5 +1,5 @@
 import type { ClubId, CompetitionId, GameDatabase } from '@/data/schemas';
-import { cupEntrants, cupFixtures, cupRoundCount, cupRoundName, cupWinner, tieLoser, tieWinner } from '@/game/season/cup';
+import { cupEntrants, cupFixtures, cupRoundCount, cupRoundName, cupWinner, seasonCup, tieLoser, tieWinner } from '@/game/season/cup';
 import { seasonPlayerStats, topAssists, topScorers, type PlayerSeasonStats } from '@/game/season/player-stats';
 import type { Fixture, Season } from '@/game/season/season';
 import { competitionName, currentMatchday, leagueOfClub, leagueTable, totalMatchdays } from '@/game/season/season-flow';
@@ -62,14 +62,16 @@ export function competitionOptions(db: GameDatabase, season: Season, userClubId:
   const countries = [...new Set([homeCountry, ...leagues.map((l) => competition(l.competitionId)?.country)])].filter(
     (c): c is string => c !== undefined,
   );
-  const cup = season.cupId ? competition(season.cupId) : undefined;
+
   return countries.flatMap((country) => {
     const label = (id: CompetitionId) => (country === homeCountry ? competitionName(db, id) : (competition(id)?.shortName ?? competitionName(db, id)));
     return [
       ...leagues
         .filter((l) => competition(l.competitionId)?.country === country)
         .map((l) => ({ id: l.competitionId, label: label(l.competitionId), kind: 'league' as const })),
-      ...(cup && season.cupId && cup.country === country ? [{ id: season.cupId, label: competitionName(db, season.cupId), kind: 'cup' as const }] : []),
+      ...season.cups
+        .filter((cup) => competition(cup.competitionId)?.country === country)
+        .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const })),
     ];
   });
 }
@@ -139,10 +141,10 @@ export function buildLeagueView(db: GameDatabase, season: Season, competitionId:
   };
 }
 
-export function buildCupView(db: GameDatabase, season: Season, userClubId: ClubId): CupView | null {
-  if (!season.cupId) return null;
-  const fixtures = cupFixtures(season);
-  const entrants = cupEntrants(season);
+export function buildCupView(db: GameDatabase, season: Season, cupId: CompetitionId, userClubId: ClubId): CupView | null {
+  if (!seasonCup(season, cupId)) return null;
+  const fixtures = cupFixtures(season, cupId);
+  const entrants = cupEntrants(season, cupId);
   const total = cupRoundCount(entrants.length);
   const rounds: CupRoundView[] = [];
   for (const f of [...fixtures].sort((a, b) => a.matchday - b.matchday)) {
@@ -154,7 +156,7 @@ export function buildCupView(db: GameDatabase, season: Season, userClubId: ClubI
     round.ties.push(rowView(db, f, userClubId, true));
   }
 
-  const winner = cupWinner(season);
+  const winner = cupWinner(season, cupId);
   const nameOf = (id: ClubId) => db.clubs.find((c) => c.id === id)?.name ?? id;
   const userTies = fixtures.filter((f) => f.homeId === userClubId || f.awayId === userClubId).sort((a, b) => a.matchday - b.matchday);
   const lastTie = userTies.at(-1);
@@ -167,10 +169,10 @@ export function buildCupView(db: GameDatabase, season: Season, userClubId: ClubI
 
   return {
     kind: 'cup',
-    competitionName: competitionName(db, season.cupId),
+    competitionName: competitionName(db, cupId),
     rounds,
     winnerName: winner ? nameOf(winner) : null,
     userStatus,
-    topScorers: leaders(db, topScorers(seasonPlayerStats(season, season.cupId)), (s) => s.goals),
+    topScorers: leaders(db, topScorers(seasonPlayerStats(season, cupId)), (s) => s.goals),
   };
 }

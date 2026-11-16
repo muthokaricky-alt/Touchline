@@ -45,7 +45,7 @@ function baseSeason(): Season {
     startYear: 2026,
     seed: 1,
     leagues: [{ competitionId: LEAGUE, clubIds: ['club_a', 'club_b'] }],
-    cupId: CUP,
+    cups: [{ competitionId: CUP, entrantLeagues: [LEAGUE] }],
     fixtures: [...league, cup],
     playerStats: [],
   };
@@ -167,7 +167,7 @@ describe('discipline in the game', () => {
 
   it("refuses to play the user's fixture with a suspended player", () => {
     const season = createSeason(db, 2026, 99);
-    const first = season.fixtures.find((f) => f.matchday === 1 && (f.homeId === clubId || f.awayId === clubId) && f.competitionId !== season.cupId)!;
+    const first = season.fixtures.find((f) => f.matchday === 1 && (f.homeId === clubId || f.awayId === clubId) && !f.competitionId.endsWith('_cup'))!;
     // A straight red in a (made-up) earlier league fixture of the same competition.
     const earlier: Fixture = {
       ...first,
@@ -195,7 +195,7 @@ describe('discipline in the game', () => {
 
   it('warns when a player is one league booking from a ban', () => {
     const season = createSeason(db, 2026, 99);
-    const mine = season.fixtures.filter((f) => f.competitionId !== season.cupId && (f.homeId === clubId || f.awayId === clubId)).slice(0, 4);
+    const mine = season.fixtures.filter((f) => !f.competitionId.endsWith('_cup') && (f.homeId === clubId || f.awayId === clubId)).slice(0, 4);
     const booked = mine.map((f) => ({
       ...f,
       result: {

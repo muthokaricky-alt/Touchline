@@ -24,10 +24,15 @@ describe('competitionOptions', () => {
       ['comp_second_division', 'league', 'Second Division'],
       ['comp_national_cup', 'cup', 'National Cup'],
       ['comp_kenya_premier', 'league', 'Kenya'],
+      ['comp_kenya_cup', 'cup', 'Kenyan Cup'],
       ['comp_france_premier', 'league', 'France'],
+      ['comp_france_cup', 'cup', 'French Cup'],
       ['comp_germany_premier', 'league', 'Germany'],
+      ['comp_germany_cup', 'cup', 'German Cup'],
       ['comp_italy_premier', 'league', 'Italy'],
+      ['comp_italy_cup', 'cup', 'Italian Cup'],
       ['comp_spain_premier', 'league', 'Spain'],
+      ['comp_spain_cup', 'cup', 'Spanish Cup'],
     ]);
   });
 });
@@ -58,7 +63,7 @@ describe('buildLeagueView', () => {
 
 describe('buildCupView', () => {
   it('shows the first round and the user’s bye before it is played', () => {
-    const view = buildCupView(db, createSeason(db, 2026, 8), USER)!;
+    const view = buildCupView(db, createSeason(db, 2026, 8), 'comp_national_cup', USER)!;
     expect(view.rounds.map((r) => r.name)).toEqual(['First round']);
     expect(view.rounds[0].ties).toHaveLength(8);
     expect(view.userStatus).toBe('Bye to the Round of 32');
@@ -69,7 +74,7 @@ describe('buildCupView', () => {
     let full = season;
     while (nextFixtureFor(full, USER)) full = playUserFixture(db, full, user).season;
     full = playRemaining(db, full).season;
-    const view = buildCupView(db, full, USER)!;
+    const view = buildCupView(db, full, 'comp_national_cup', USER)!;
     expect(view.rounds.map((r) => r.name)).toEqual(['First round', 'Round of 32', 'Round of 16', 'Quarter-finals', 'Semi-finals', 'Final']);
     expect(view.winnerName).not.toBeNull();
     expect(view.userStatus).toMatch(/^(Winners!|Knocked out in the .+)$/);
@@ -83,13 +88,18 @@ describe('competitionOptions for a manager abroad', () => {
     const season = createSeason(world, 2026, 9);
     expect(competitionOptions(world, season, 'club_ndom_fc').map((o) => o.label)).toEqual([
       'Kenyan Premier Division',
+      'Kenyan Cup',
       'First Div',
       'Second Div',
       'National Cup',
       'France',
+      'French Cup',
       'Germany',
+      'German Cup',
       'Italy',
+      'Italian Cup',
       'Spain',
+      'Spanish Cup',
     ]);
   });
 });

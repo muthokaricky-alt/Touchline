@@ -2,7 +2,7 @@ import type { ClubId, GameDatabase } from '@/data/schemas';
 import { conditionOf, type ConditionState } from '@/game/condition/condition';
 import { suspendedFor } from '@/game/discipline/suspensions';
 import { unreadCount, type InboxMessage as GameMessage } from '@/game/inbox/inbox';
-import { cupWinner } from '@/game/season/cup';
+import { cupWinner, isCupFixture } from '@/game/season/cup';
 import type { Season } from '@/game/season/season';
 import {
   competitionName,
@@ -56,7 +56,7 @@ export function buildDashboardSummary(
         const venue = fixture.homeId === clubId ? ('home' as const) : ('away' as const);
         const opponentId = venue === 'home' ? fixture.awayId : fixture.homeId;
         const opponentRow = table.find((r) => r.clubId === opponentId); // undefined for a cup opponent from another league
-        const isCup = fixture.competitionId === season.cupId;
+        const isCup = isCupFixture(season, fixture);
         return {
           opponentId,
           opponentName: nameOf(opponentId),
@@ -71,7 +71,10 @@ export function buildDashboardSummary(
     : null;
 
   const complete = isSeasonComplete(season);
-  const winner = cupWinner(season);
+  // The season summary names the winner of the user's country's cup.
+  const country = db.competitions.find((c) => c.id === leagueId)?.country;
+  const homeCup = season.cups.find((cup) => db.competitions.find((c) => c.id === cup.competitionId)?.country === country);
+  const winner = homeCup ? cupWinner(season, homeCup.competitionId) : null;
   const contracts = db.contracts.filter((c) => c.clubId === clubId);
 
   return {
@@ -92,7 +95,7 @@ export function buildDashboardSummary(
             championName: nameOf(table[0].clubId),
             userPosition: userRow.position,
             userZone: userRow.zone,
-            cupName: season.cupId ? competitionName(db, season.cupId) : null,
+            cupName: homeCup ? competitionName(db, homeCup.competitionId) : null,
             cupWinnerName: winner ? nameOf(winner) : null,
           }
         : null,

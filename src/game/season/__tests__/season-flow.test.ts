@@ -57,12 +57,26 @@ describe('createSeason', () => {
     ]);
     expect(totalMatchdays(season, 'comp_kenya_premier')).toBe(34);
     // Only England's 40 clubs enter the National Cup.
-    expect(season.cupEntrantLeagues).toEqual([FIRST, SECOND]);
-    expect(cupFixtures(season).every((f) => [f.homeId, f.awayId].every((id) => season.leagues.slice(0, 2).some((l) => l.clubIds.includes(id))))).toBe(true);
+    expect(season.cups.map((c) => [c.competitionId, c.entrantLeagues])).toEqual([
+      ['comp_national_cup', [FIRST, SECOND]],
+      ['comp_kenya_cup', ['comp_kenya_premier']],
+      ['comp_france_cup', ['comp_france_premier']],
+      ['comp_germany_cup', ['comp_germany_premier']],
+      ['comp_italy_cup', ['comp_italy_premier']],
+      ['comp_spain_cup', ['comp_spain_premier']],
+    ]);
+    // Each cup abroad: its league's 18 clubs, a first round of 2 ties (18 → 16).
+    for (const cup of season.cups.slice(1)) {
+      const league = season.leagues.find((l) => l.competitionId === cup.entrantLeagues[0])!;
+      const first = cupFixtures(season, cup.competitionId);
+      expect(first).toHaveLength(2);
+      expect(first.every((f) => league.clubIds.includes(f.homeId) && league.clubIds.includes(f.awayId))).toBe(true);
+    }
+    expect(cupFixtures(season, 'comp_national_cup').every((f) => [f.homeId, f.awayId].every((id) => season.leagues.slice(0, 2).some((l) => l.clubIds.includes(id))))).toBe(true);
     expect(totalMatchdays(season, FIRST)).toBe(38);
     expect(totalMatchdays(season, SECOND)).toBe(38);
     expect(season.fixtures.filter((f) => f.competitionId === FIRST)).toHaveLength(380);
-    expect(cupFixtures(season)).toHaveLength(8);
+    expect(cupFixtures(season, 'comp_national_cup')).toHaveLength(8);
     expect(leagueOfClub(season, USER)).toBe(FIRST);
   });
 
@@ -104,9 +118,9 @@ describe('a full season', () => {
     expect(isSeasonComplete(finished)).toBe(true);
     expect(finished.fixtures.every((f) => f.result)).toBe(true);
     // 40 entrants: 8 + 16 + 8 + 4 + 2 + 1 ties.
-    expect(cupFixtures(finished)).toHaveLength(39);
-    expect(cupWinner(finished)).not.toBeNull();
-    expect(cupFixtures(finished).every((f) => tieWinner(f) !== null)).toBe(true);
+    expect(cupFixtures(finished, 'comp_national_cup')).toHaveLength(39);
+    expect(cupWinner(finished, 'comp_national_cup')).not.toBeNull();
+    expect(cupFixtures(finished, 'comp_national_cup').every((f) => tieWinner(f) !== null)).toBe(true);
     expect(SeasonSchema.safeParse(finished).success).toBe(true);
   });
 

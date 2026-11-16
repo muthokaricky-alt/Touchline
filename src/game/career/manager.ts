@@ -162,7 +162,7 @@ export function seasonReview(db: GameDatabase, season: Season, clubId: ClubId, c
   const outcome = seasonOutcome(db, season).leagues.find((l) => l.competitionId === expectation.competitionId)!;
   const trophies = [
     ...(outcome.champion === clubId ? [expectation.leagueName] : []),
-    ...(season.cupId && cupWinner(season) === clubId ? [competitionName(db, season.cupId)] : []),
+    ...season.cups.filter((cup) => cupWinner(season, cup.competitionId) === clubId).map((cup) => competitionName(db, cup.competitionId)),
   ];
   const promoted = outcome.promoted.includes(clubId);
   const relegated = outcome.relegated.includes(clubId);

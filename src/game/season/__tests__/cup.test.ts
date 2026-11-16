@@ -57,7 +57,7 @@ describe('drawCupRound', () => {
 describe('first round with 40 entrants', () => {
   const db = buildFictionalDatabase();
   const season = createSeason(db, 2026, 11);
-  const first = firstCupRound(season, 38);
+  const first = firstCupRound(season, 'comp_national_cup');
 
   it('has 8 ties, all between Second Division clubs, giving everyone else a bye', () => {
     expect(first).toHaveLength(8);

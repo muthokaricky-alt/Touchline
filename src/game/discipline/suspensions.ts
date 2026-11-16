@@ -2,6 +2,7 @@ import type { ClubId, CompetitionId, GameDatabase, PlayerId } from '@/data/schem
 import { formatDate } from '@/utils/format';
 
 import type { NewMessage } from '../inbox/inbox';
+import { isCupFixture } from '../season/cup';
 import type { Fixture, Season } from '../season/season';
 import { fullName } from '../squad/squad-selectors';
 
@@ -235,7 +236,7 @@ export function disciplineMessages(db: GameDatabase, season: Season, fixture: Fi
     const p = db.players.find((x) => x.id === id);
     return p ? fullName(p) : id;
   };
-  const isCup = fixture.competitionId === season.cupId;
+  const isCup = isCupFixture(season, fixture);
   const side = fixture.homeId === clubId ? 'home' : 'away';
   const bans = bansFrom(season, fixture.id).filter((b) => b.clubId === clubId);
   const banned = new Set(bans.map((b) => b.playerId));
@@ -278,7 +279,7 @@ export type DisciplineView = {
 
 export function selectDiscipline(db: GameDatabase, season: Season, playerId: PlayerId): DisciplineView {
   const bans = activeBans(season, playerId).map(
-    (b) => `Suspended for ${matchesLabel(b.remaining, b.competitionId === season.cupId)} (${banReasonLabel(b)})`,
+    (b) => `Suspended for ${matchesLabel(b.remaining, isCupFixture(season, b))} (${banReasonLabel(b)})`,
   );
   const clubId = db.contracts.find((c) => c.playerId === playerId)?.clubId;
   // Looked up here rather than via season-flow, which imports this module.

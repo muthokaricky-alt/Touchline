@@ -1,7 +1,16 @@
 import { createRng } from '@/utils/random';
 
 import { DATABASE_VERSION, type GameDatabase } from '../schemas';
-import { ALL_FICTIONAL_CLUBS, BACKGROUND_CLUBS, FIRST_DIVISION, FOREIGN_LEAGUE_CLUBS, FOREIGN_LEAGUES, NATIONAL_CUP, SECOND_DIVISION_LEAGUE } from './clubs';
+import {
+  ALL_FICTIONAL_CLUBS,
+  BACKGROUND_CLUBS,
+  FIRST_DIVISION,
+  FOREIGN_CUPS,
+  FOREIGN_LEAGUE_CLUBS,
+  FOREIGN_LEAGUES,
+  NATIONAL_CUP,
+  SECOND_DIVISION_LEAGUE,
+} from './clubs';
 import { generateFreeAgents, generateSquad, SQUAD_TEMPLATE } from './generate-squads';
 import { FOREIGN_NATIONS_BY_COUNTRY } from './names';
 
@@ -30,7 +39,7 @@ export function buildFictionalDatabase(seed: number = FICTIONAL_SEED): GameDatab
   const database: GameDatabase = {
     version: DATABASE_VERSION,
     clubs: [...ALL_FICTIONAL_CLUBS],
-    competitions: [FIRST_DIVISION, SECOND_DIVISION_LEAGUE, NATIONAL_CUP, ...FOREIGN_LEAGUES],
+    competitions: [FIRST_DIVISION, SECOND_DIVISION_LEAGUE, NATIONAL_CUP, ...FOREIGN_LEAGUES, ...FOREIGN_CUPS],
     players: [],
     attributes: [],
     contracts: [],
@@ -86,6 +95,7 @@ export {
   countryName,
   FICTIONAL_CLUBS,
   FIRST_DIVISION,
+  FOREIGN_CUPS,
   FOREIGN_LEAGUE_CLUBS,
   FOREIGN_LEAGUES,
   HOME_COUNTRY,

@@ -26,6 +26,7 @@ import { matchPlayingStyle } from '@/game/tactics/presets';
 
 import { selectDiscipline } from '@/game/discipline/suspensions';
 import { liveView } from '@/game/match/live';
+import { isCupFixture } from '@/game/season/cup';
 import { assignmentViews, knowledgeOf, SCOUTS, scoutingStatus } from '@/game/scouting/scouting';
 import { conditionAtKickOff, suspendedAtKickOff, useGameStore } from './game-store';
 
@@ -226,7 +227,7 @@ export function useNextFixture() {
     return {
       fixtureId: fixture.id,
       competitionName: competitionName(database, fixture.competitionId),
-      isCup: fixture.competitionId === season.cupId,
+      isCup: isCupFixture(season, fixture),
       roundLabel: roundLabel(season, fixture),
       date: fixture.date,
       venue,

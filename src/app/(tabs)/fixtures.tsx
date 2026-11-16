@@ -17,7 +17,7 @@ export default function FixturesRoute() {
 
   const view = useMemo(() => {
     const option = options.find((o) => o.id === selected)!;
-    return option.kind === 'cup' ? buildCupView(database, season, clubId)! : buildLeagueView(database, season, selected, clubId);
+    return option.kind === 'cup' ? buildCupView(database, season, selected, clubId)! : buildLeagueView(database, season, selected, clubId);
   }, [options, selected, database, season, clubId]);
 
   return <FixturesScreen seasonLabel={season.label} options={options} selected={selected} onSelect={setChosen} view={view} />;

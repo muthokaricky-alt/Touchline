@@ -11,7 +11,7 @@ import { buildMatchTeam, lineupStrength } from '../match/build-match-team';
 import { flattenAttributes } from '../ratings';
 import { selectSquadCandidates } from '../squad/squad-selectors';
 import type { Tactics } from '../tactics/tactics';
-import { cupEntrants, cupRoundCount, cupRoundName, cupWinner, firstCupRound, nextCupRound } from './cup';
+import { cupEntrants, cupRoundCount, cupRoundName, cupWinner, firstCupRound, isCupFixture, nextCupRound } from './cup';
 import { scheduleLeague } from './fixtures';
 import { addMatchesToStats } from './player-stats';
 import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season } from './season';
@@ -53,12 +53,6 @@ export function leagueOfClub(season: Season, clubId: ClubId): CompetitionId | nu
   return season.leagues.find((l) => l.clubIds.includes(clubId))?.competitionId ?? null;
 }
 
-/** Number of league matchdays (all leagues share the calendar; the longest decides). */
-function leagueWeeks(season: Season): number {
-  const leagueIds = new Set(season.leagues.map((l) => l.competitionId));
-  return Math.max(0, ...season.fixtures.filter((f) => leagueIds.has(f.competitionId)).map((f) => f.matchday));
-}
-
 export function totalMatchdays(season: Season, competitionId: CompetitionId): number {
   return Math.max(0, ...season.fixtures.filter((f) => f.competitionId === competitionId).map((f) => f.matchday));
 }
@@ -92,8 +86,6 @@ export function createSeason(db: GameDatabase, startYear: number, seed: number, 
   const leagues = dbLeagues.map(
     (l) => memberships?.find((m) => m.competitionId === l.id) ?? { competitionId: l.id, clubIds: [...l.clubIds] },
   );
-  const cup = db.competitions.find(isCup) ?? null;
-
   const fixtures = leagues.flatMap((membership, index) => {
     const league = dbLeagues.find((l) => l.id === membership.competitionId);
     if (!league) throw new RangeError(`Unknown league "${membership.competitionId}"`);
@@ -106,18 +98,15 @@ export function createSeason(db: GameDatabase, startYear: number, seed: number, 
     });
   });
 
-  const cupEntrantLeagues = cup ? dbLeagues.filter((l) => l.country === cup.country).map((l) => l.id) : undefined;
-  const season: Season = {
-    label: seasonLabel(startYear),
-    startYear,
-    seed,
-    leagues,
-    cupId: cup?.id ?? null,
-    ...(cupEntrantLeagues ? { cupEntrantLeagues } : {}),
-    fixtures,
-    playerStats: [],
-  };
-  return { ...season, fixtures: [...fixtures, ...firstCupRound(season, leagueWeeks(season))] };
+  // One cup per country that has one, in league order (so the National Cup comes first), for that country's leagues.
+  const countries = [...new Set(dbLeagues.map((l) => l.country))];
+  const cups = db.competitions
+    .filter(isCup)
+    .filter((cup) => countries.includes(cup.country))
+    .sort((a, b) => countries.indexOf(a.country) - countries.indexOf(b.country))
+    .map((cup) => ({ competitionId: cup.id, entrantLeagues: dbLeagues.filter((l) => l.country === cup.country).map((l) => l.id) }));
+  const season: Season = { label: seasonLabel(startYear), startYear, seed, leagues, cups, fixtures, playerStats: [] };
+  return { ...season, fixtures: [...fixtures, ...cups.flatMap((cup) => firstCupRound(season, cup.competitionId))] };
 }
 
 // --- Queries -----------------------------------------------------------------------
@@ -154,8 +143,8 @@ export function currentMatchday(season: Season, competitionId: CompetitionId): n
  * "Quarter-finals" for the cup.
  */
 export function roundLabel(season: Season, fixture: Fixture): string {
-  if (fixture.competitionId === season.cupId) {
-    const entrants = cupEntrants(season).length;
+  if (isCupFixture(season, fixture)) {
+    const entrants = cupEntrants(season, fixture.competitionId).length;
     return cupRoundName(fixture.matchday, cupRoundCount(entrants), entrants);
   }
   return `Matchday ${fixture.matchday} of ${totalMatchdays(season, fixture.competitionId)}`;
@@ -208,7 +197,7 @@ export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fix
 export function simulateFixture(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam, condition?: ConditionState): MatchResult {
   const input = buildFixtureInput(db, season, fixture, user, condition);
   const result = simulateMatch(input);
-  if (fixture.competitionId !== season.cupId || result.score.home !== result.score.away) return result;
+  if (!isCupFixture(season, fixture) || result.score.home !== result.score.away) return result;
 
   const finishers = (side: Side) => {
     const squad = new Map(input[side].squad.map((c) => [c.player.id, c]));
@@ -271,9 +260,9 @@ export function recordResults(season: Season, results: readonly { fixtureId: str
   };
 }
 
-/** Draws the next cup round if the previous one has just finished. */
+/** Draws the next round of every cup whose previous round has just finished. */
 function advanceCup(season: Season): Season {
-  const drawn = nextCupRound(season, leagueWeeks(season));
+  const drawn = season.cups.flatMap((cup) => nextCupRound(season, cup.competitionId));
   return drawn.length ? { ...season, fixtures: [...season.fixtures, ...drawn] } : season;
 }
 
@@ -390,7 +379,7 @@ export type LeagueOutcome = {
   relegated: ClubId[];
 };
 
-export type SeasonOutcome = { leagues: LeagueOutcome[]; cupWinner: ClubId | null };
+export type SeasonOutcome = { leagues: LeagueOutcome[]; cups: { competitionId: CompetitionId; winner: ClubId | null }[] };
 
 export function seasonOutcome(db: GameDatabase, season: Season): SeasonOutcome {
   return {
@@ -406,7 +395,7 @@ export function seasonOutcome(db: GameDatabase, season: Season): SeasonOutcome {
         relegated: table.filter((r) => r.zone === 'relegation').map((r) => r.clubId),
       };
     }),
-    cupWinner: cupWinner(season),
+    cups: season.cups.map((cup) => ({ competitionId: cup.competitionId, winner: cupWinner(season, cup.competitionId) })),
   };
 }
 

@@ -304,14 +304,14 @@ const BACKGROUND: readonly (readonly [ClubSpec, string])[] = [
   [['Zanzibar Coral FC', 'ZCF', 6], 'TAN'],
 ];
 
-type ForeignLeagueSpec = { id: string; name: string; shortName: string; country: string; clubs: readonly ClubSpec[] };
+type ForeignLeagueSpec = { id: string; name: string; shortName: string; country: string; cup: string; clubs: readonly ClubSpec[] };
 
 export const FOREIGN_LEAGUE_SPECS: readonly ForeignLeagueSpec[] = [
-  { id: 'comp_kenya_premier', name: 'Kenyan Premier Division', shortName: 'Kenya', country: 'KEN', clubs: KENYA },
-  { id: 'comp_france_premier', name: 'French Premier Division', shortName: 'France', country: 'FRA', clubs: FRANCE },
-  { id: 'comp_germany_premier', name: 'German Premier Division', shortName: 'Germany', country: 'GER', clubs: GERMANY },
-  { id: 'comp_italy_premier', name: 'Italian Premier Division', shortName: 'Italy', country: 'ITA', clubs: ITALY },
-  { id: 'comp_spain_premier', name: 'Spanish Premier Division', shortName: 'Spain', country: 'ESP', clubs: SPAIN },
+  { id: 'comp_kenya_premier', name: 'Kenyan Premier Division', shortName: 'Kenya', country: 'KEN', cup: 'Kenyan Cup', clubs: KENYA },
+  { id: 'comp_france_premier', name: 'French Premier Division', shortName: 'France', country: 'FRA', cup: 'French Cup', clubs: FRANCE },
+  { id: 'comp_germany_premier', name: 'German Premier Division', shortName: 'Germany', country: 'GER', cup: 'German Cup', clubs: GERMANY },
+  { id: 'comp_italy_premier', name: 'Italian Premier Division', shortName: 'Italy', country: 'ITA', cup: 'Italian Cup', clubs: ITALY },
+  { id: 'comp_spain_premier', name: 'Spanish Premier Division', shortName: 'Spain', country: 'ESP', cup: 'Spanish Cup', clubs: SPAIN },
 ];
 
 let kit = ALL_FICTIONAL_CLUBS.length;
@@ -331,6 +331,18 @@ export const FOREIGN_LEAGUES: readonly League[] = FOREIGN_LEAGUE_SPECS.map((leag
   tier: 1,
   clubIds: league.clubs.map(([name]) => clubIdFromName(name)),
   rules: { roundsPerOpponent: 2, points: LEAGUE_POINTS, promotionPlaces: 0, relegationPlaces: 0 },
+}));
+
+/**
+ * One knockout cup per country abroad, for its league's 18 clubs (same format
+ * as the National Cup: a first round of two ties trims the field to 16).
+ */
+export const FOREIGN_CUPS: readonly Cup[] = FOREIGN_LEAGUE_SPECS.map((league) => ({
+  id: league.id.replace('_premier', '_cup'),
+  type: 'cup',
+  name: league.cup,
+  shortName: 'Cup',
+  country: league.country,
 }));
 
 /** The National Cup's country, listed first wherever countries are listed. */

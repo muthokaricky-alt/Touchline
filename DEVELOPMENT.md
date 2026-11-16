@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting and foreign leagues (steps A and B, save v10). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues (steps A and B) and cups abroad (save v11). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -900,6 +900,29 @@ chips; no further performance work until the phone test.
   existing career flow unchanged (tested: a full season at Ndom FC, review,
   rollover, still in the Kenyan league).
 
+#### Cups abroad
+
+Decisions (user): Kenyan Cup, French Cup, German Cup, Italian Cup, Spanish
+Cup; the National Cup's format (single leg, penalties, all 18 clubs: a
+first round of 2 ties trims the field to 16, then 16 → 8 → 4 → 2 → final).
+
+- **A season has a list of cups:** `season.cups: [{ competitionId,
+  entrantLeagues }]` replaced `cupId` (+ `cupEntrantLeagues`). The National
+  Cup comes first, then the cups abroad in league order. Every cup function
+  takes the cup id (`cupFixtures`, `cupEntrants`, `firstCupRound`,
+  `nextCupRound`, `cupWinner`, `seasonCup`, `isCupFixture`).
+- **Old draws unchanged:** the first cup's draws use the season seed exactly
+  as when it was the only cup, so a save mid-season draws its remaining
+  National Cup rounds as before; other cups get `mixSeed(seed, 5000 + i)`.
+- **Each cup follows its own league's calendar** (`cupLeagueWeeks`): the
+  cups abroad end the Saturday after matchday 34.
+- Views: Fixtures shows each country's cup inside that country; trophies
+  include every cup won; the season summary names the winner of the
+  user's country's cup; cup bans and the dashboard's cup ties work for any
+  cup. `seasonOutcome` has `cups` (winner per cup) instead of `cupWinner`.
+- **Save v11:** the old one-cup fields become a one-cup list (or are kept
+  if a save already has `cups`); the cups abroad start next season.
+
 #### Faster tests with the bigger world
 
 - `npm test` had gone from ~36 s to ~85 s: about eight tests play whole
@@ -1349,6 +1372,18 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   First Div, Second Div, National Cup, France… → market chips Everyone,
   Free agents, Kenya, Abroad. Zero console errors, no overflow.
 
+### Cups abroad ✅ (after the roadmap)
+- Five cups abroad; `season.cups`; per-cup draws, seeds and calendars;
+  views, trophies, bans and dashboard per cup; save v11.
+- Tests: 940 total (3 new) incl. cup entrants per country, first rounds of
+  2 ties, finals after each league, winners from the right country (full-
+  world calibration season), v10 → v11 (both old shapes).
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px: a career at Chapati FC → Fixtures shows Kenyan
+  Cup ("Bye to the Round of 16"), National Cup, French Cup… → 11 league
+  matches → "Kenyan Cup · Round of 16" → "Knocked out in the Round of 16".
+  Zero console errors, no overflow.
+
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting
   for the user's review: `src/data/fictional/clubs.ts`.
@@ -1389,7 +1424,7 @@ All ten roadmap milestones are built. What's left before a release:
 3. Then choose: store submission (production profile, store listings,
    privacy policy) or more gameplay. Performance with the
    leagues abroad after the phone test (a cheaper results model for
-   matches abroad if needed). Parked ideas: cups for
-   the countries abroad,
+   matches abroad if needed). Parked ideas: a continental
+   cup between the countries' top clubs,
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

@@ -53,7 +53,15 @@ describe('fictional database', () => {
       ['ESP', 1, 18],
     ]);
     expect(leagues[0].clubIds.slice(0, 8)).toEqual(FICTIONAL_CLUBS.map((c) => c.id));
-    expect(db.competitions.filter(isCup)).toHaveLength(1);
+    // The National Cup and one cup per country abroad.
+    expect(db.competitions.filter(isCup).map((c) => [c.name, c.country])).toEqual([
+      ['National Cup', 'ENG'],
+      ['Kenyan Cup', 'KEN'],
+      ['French Cup', 'FRA'],
+      ['German Cup', 'GER'],
+      ['Italian Cup', 'ITA'],
+      ['Spanish Cup', 'ESP'],
+    ]);
     // Every club abroad plays in its own country's league; background clubs in none.
     for (const league of leagues) {
       expect(league.clubIds.every((id) => db.clubs.find((c) => c.id === id)?.country === league.country)).toBe(true);

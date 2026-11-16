@@ -1,7 +1,8 @@
 import { buildFictionalDatabase } from '@/data/fictional';
 import { compress } from '@/persistence/slot-storage';
 
-import { createSeason, playRemaining } from '../season-flow';
+import { cupFixtures, cupWinner } from '../cup';
+import { createSeason, playRemaining, totalMatchdays } from '../season-flow';
 
 /**
  * A whole season in the FULL world (England + the leagues abroad), played
@@ -18,6 +19,18 @@ describe('a full season in the full world', () => {
     const json = JSON.stringify(finished);
     expect(json.length).toBeLessThan(3_000_000);
     expect(compress(json).length).toBeLessThan(350_000);
+  });
+
+  it('plays every cup abroad to a final after its league ends, with a winner from that country', () => {
+    for (const cup of finished.cups.slice(1)) {
+      const league = finished.leagues.find((l) => l.competitionId === cup.entrantLeagues[0])!;
+      const rounds = cupFixtures(finished, cup.competitionId);
+      expect(rounds).toHaveLength(2 + 8 + 4 + 2 + 1); // first round, 16, quarter-finals, semis, final
+      const lastLeagueDate = finished.fixtures.filter((f) => f.competitionId === league.competitionId).map((f) => f.date).sort().at(-1)!;
+      expect(rounds.find((f) => f.matchday === 5)!.date > lastLeagueDate).toBe(true);
+      expect(totalMatchdays(finished, league.competitionId)).toBe(34);
+      expect(league.clubIds).toContain(cupWinner(finished, cup.competitionId));
+    }
   });
 
   it('plays every league to the end, abroad too', () => {

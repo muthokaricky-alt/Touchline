@@ -99,20 +99,49 @@ export function tieLoser(fixture: Fixture): ClubId | null {
 }
 
 // --- Cup state, derived from the season --------------------------------------
+//
+// A season can have several cups (England's National Cup and one per
+// country abroad), listed in `season.cups`. Every function takes the cup's id.
+
+/** The season's entry for a cup, or undefined if it isn't played this season. */
+export function seasonCup(season: Season, cupId: CompetitionId) {
+  return season.cups.find((c) => c.competitionId === cupId);
+}
+
+/** True for a fixture of any of the season's cups. */
+export const isCupFixture = (season: Season, fixture: Pick<Fixture, 'competitionId'>) =>
+  season.cups.some((c) => c.competitionId === fixture.competitionId);
 
 /** The leagues entering the cup (its country's), top tier first. */
-function entrantLeagues(season: Season) {
-  const ids = season.cupEntrantLeagues;
-  return ids ? season.leagues.filter((l) => ids.includes(l.competitionId)) : season.leagues;
+function entrantLeagues(season: Season, cupId: CompetitionId) {
+  const ids = seasonCup(season, cupId)?.entrantLeagues ?? [];
+  return season.leagues.filter((l) => ids.includes(l.competitionId));
 }
 
 /** Entrants: every club in the cup country's leagues. Lowest tier listed last. */
-export function cupEntrants(season: Season): ClubId[] {
-  return entrantLeagues(season).flatMap((l) => l.clubIds);
+export function cupEntrants(season: Season, cupId: CompetitionId): ClubId[] {
+  return entrantLeagues(season, cupId).flatMap((l) => l.clubIds);
 }
 
-export function cupFixtures(season: Season): Fixture[] {
-  return season.cupId ? season.fixtures.filter((f) => f.competitionId === season.cupId) : [];
+export function cupFixtures(season: Season, cupId: CompetitionId): Fixture[] {
+  return season.fixtures.filter((f) => f.competitionId === cupId);
+}
+
+/** Matchdays of the cup's longest league: its final is the Saturday after. */
+export function cupLeagueWeeks(season: Season, cupId: CompetitionId): number {
+  const leagues = new Set(seasonCup(season, cupId)?.entrantLeagues ?? []);
+  return Math.max(0, ...season.fixtures.filter((f) => leagues.has(f.competitionId)).map((f) => f.matchday));
+}
+
+/**
+ * The seed a cup's draws use. The first cup (the National Cup) uses the
+ * season seed itself, exactly as when it was the only cup, so seasons saved
+ * before the cups abroad existed draw their remaining rounds as they always
+ * would have. Other cups get their own.
+ */
+function cupSeed(season: Season, cupId: CompetitionId): number {
+  const index = season.cups.findIndex((c) => c.competitionId === cupId);
+  return index <= 0 ? season.seed : mixSeed(season.seed, 5000 + index);
 }
 
 /**
@@ -120,17 +149,18 @@ export function cupFixtures(season: Season): Fixture[] {
  * play in round 1 come from the lowest tier (seeded random pick); everyone
  * else gets a bye.
  */
-export function firstCupRound(season: Season, leagueWeeks: number): Fixture[] {
-  if (!season.cupId) return [];
-  const entrants = cupEntrants(season);
+export function firstCupRound(season: Season, cupId: CompetitionId): Fixture[] {
+  if (!seasonCup(season, cupId)) return [];
+  const entrants = cupEntrants(season, cupId);
   const total = cupRoundCount(entrants.length);
   if (total === 0) return [];
   const target = floorPow2(entrants.length);
   const needPlay = entrants.length > target ? 2 * (entrants.length - target) : entrants.length;
+  const seed = cupSeed(season, cupId);
 
-  const leagues = entrantLeagues(season);
+  const leagues = entrantLeagues(season, cupId);
   const lowestTier = leagues[leagues.length - 1].clubIds;
-  const rng = createRng(mixSeed(season.seed, 999));
+  const rng = createRng(mixSeed(seed, 999));
   const pool = [...lowestTier];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = rng.int(0, i);
@@ -141,45 +171,45 @@ export function firstCupRound(season: Season, leagueWeeks: number): Fixture[] {
   const participants = needPlay === entrants.length ? entrants : candidates.slice(0, needPlay);
 
   return drawCupRound({
-    cupId: season.cupId,
+    cupId,
     round: 1,
     participants,
-    date: cupRoundDate(season.startYear, 1, total, leagueWeeks),
+    date: cupRoundDate(season.startYear, 1, total, cupLeagueWeeks(season, cupId)),
     startYear: season.startYear,
-    seed: season.seed,
+    seed,
   });
 }
 
 /**
- * If the latest cup round is complete and more than one club remains, draw
- * the next round. Returns the new fixtures (empty if nothing to draw).
+ * If the cup's latest round is complete and more than one club remains,
+ * draw the next round. Returns the new fixtures (empty if nothing to draw).
  */
-export function nextCupRound(season: Season, leagueWeeks: number): Fixture[] {
-  const fixtures = cupFixtures(season);
-  if (!season.cupId || fixtures.length === 0) return [];
+export function nextCupRound(season: Season, cupId: CompetitionId): Fixture[] {
+  const fixtures = cupFixtures(season, cupId);
+  if (!seasonCup(season, cupId) || fixtures.length === 0) return [];
   const latest = Math.max(...fixtures.map((f) => f.matchday));
   const latestTies = fixtures.filter((f) => f.matchday === latest);
   if (latestTies.some((f) => !f.result)) return [];
 
   const losers = new Set(fixtures.map(tieLoser).filter((id): id is ClubId => id !== null));
-  const remaining = cupEntrants(season).filter((id) => !losers.has(id));
+  const remaining = cupEntrants(season, cupId).filter((id) => !losers.has(id));
   if (remaining.length < 2) return [];
 
-  const total = cupRoundCount(cupEntrants(season).length);
+  const total = cupRoundCount(cupEntrants(season, cupId).length);
   return drawCupRound({
-    cupId: season.cupId,
+    cupId,
     round: latest + 1,
     participants: remaining,
-    date: cupRoundDate(season.startYear, latest + 1, total, leagueWeeks),
+    date: cupRoundDate(season.startYear, latest + 1, total, cupLeagueWeeks(season, cupId)),
     startYear: season.startYear,
-    seed: season.seed,
+    seed: cupSeed(season, cupId),
   });
 }
 
 /** Cup winner once the final is played, else null. */
-export function cupWinner(season: Season): ClubId | null {
-  const fixtures = cupFixtures(season);
-  const total = cupRoundCount(cupEntrants(season).length);
+export function cupWinner(season: Season, cupId: CompetitionId): ClubId | null {
+  const fixtures = cupFixtures(season, cupId);
+  const total = cupRoundCount(cupEntrants(season, cupId).length);
   const final = fixtures.find((f) => f.matchday === total);
   return final ? tieWinner(final) : null;
 }

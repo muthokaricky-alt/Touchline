@@ -52,6 +52,12 @@ export const FixtureSchema = z.strictObject({
   result: FixtureResultSchema.nullable(),
 });
 
+/** A cup in this season and the leagues that enter it. */
+export const SeasonCupSchema = z.strictObject({
+  competitionId: CompetitionIdSchema,
+  entrantLeagues: z.array(CompetitionIdSchema).min(1),
+});
+
 /** Which clubs play in a league THIS season (promotion/relegation changes it). */
 export const LeagueMembershipSchema = z.strictObject({
   competitionId: CompetitionIdSchema,
@@ -82,13 +88,12 @@ export const SeasonSchema = z.strictObject({
   /** All fixture seeds and cup draws derive from this, so a season replays exactly. */
   seed: z.int().min(0),
   leagues: z.array(LeagueMembershipSchema).min(1),
-  cupId: CompetitionIdSchema.nullable(),
   /**
-   * The leagues whose clubs enter the cup (the cup's country), top tier
-   * first. Missing in seasons from before the foreign leagues: then every
-   * league in the season enters.
+   * The cups played this season (England's National Cup first, then one per
+   * country abroad), each with the leagues whose clubs enter it (its
+   * country's, top tier first). Replaced `cupId` in save v11.
    */
-  cupEntrantLeagues: z.array(CompetitionIdSchema).optional(),
+  cups: z.array(SeasonCupSchema),
   fixtures: z.array(FixtureSchema),
   playerStats: z.array(PlayerSeasonLineSchema),
 });
@@ -98,6 +103,7 @@ export type FixtureCard = z.infer<typeof FixtureCardSchema>;
 export type FixtureResult = z.infer<typeof FixtureResultSchema>;
 export type Fixture = z.infer<typeof FixtureSchema>;
 export type LeagueMembership = z.infer<typeof LeagueMembershipSchema>;
+export type SeasonCup = z.infer<typeof SeasonCupSchema>;
 export type PlayerSeasonLine = z.infer<typeof PlayerSeasonLineSchema>;
 export type Season = z.infer<typeof SeasonSchema>;
 

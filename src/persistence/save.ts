@@ -50,9 +50,10 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *   9  + scouting: assignments in progress, what's known about players' potential
  *  10  (same fields) the world gained foreign leagues and background clubs; their
  *        squads' contracts are added to older saves (see migrateSave)
+ *  11  season.cups (a list: the National Cup and the cups abroad) replaces season.cupId
  */
 
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -180,6 +181,9 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v9 → v10: the clubs abroad didn't exist: their generated contracts are
  *            added (a save stores every contract, so without them their
  *            squads would be empty). Their leagues start at the next season.
+ *   v10 → v11: the season's one cup (`cupId`, entered by `cupEntrantLeagues`,
+ *            or every league if that's missing) becomes a one-cup list; the
+ *            cups abroad start at the next season.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -211,6 +215,15 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
     const taken = new Set(contracts.flatMap((c) => [c.playerId, c.id]));
     const added = buildFictionalDatabase(save.worldSeed).contracts.filter((c) => abroad.has(c.clubId) && !taken.has(c.playerId) && !taken.has(c.id));
     save = { ...save, contracts: [...contracts, ...added] };
+  }
+  if (fromVersion < 11) {
+    const season = save.season;
+    if (typeof season !== 'object' || season === null || !('leagues' in season) || !Array.isArray(season.leagues)) return incompatible;
+    const { cupId, cupEntrantLeagues, ...rest } = season as { cupId?: unknown; cupEntrantLeagues?: unknown; cups?: unknown; leagues: { competitionId: string }[] };
+    const entrantLeagues = Array.isArray(cupEntrantLeagues) ? cupEntrantLeagues : rest.leagues.map((l) => l.competitionId);
+    // A season that already has `cups` is left as it is (safe to run on any save).
+    const cups = Array.isArray(rest.cups) ? rest.cups : typeof cupId === 'string' ? [{ competitionId: cupId, entrantLeagues }] : [];
+    save = { ...save, season: { ...rest, cups } };
   }
   return save;
 }

@@ -212,6 +212,18 @@ describe('migrateSave', () => {
     if (check.ok) expect(check.save.manager).toEqual(defaultManager);
   });
 
+  it('upgrades a version 10 save: its one cup becomes a one-cup list (the cups abroad start next season)', () => {
+    const { cups: _cups, ...season10 } = valid.season;
+    const v10 = { ...valid, season: { ...season10, cupId: 'comp_national_cup', cupEntrantLeagues: ['comp_first_division', 'comp_second_division'] } };
+    const check = checkSave(migrateSave(roundTrip(v10), 10), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save.season.cups).toEqual([{ competitionId: 'comp_national_cup', entrantLeagues: ['comp_first_division', 'comp_second_division'] }]);
+    // Before the leagues abroad there was no cupEntrantLeagues: every league entered.
+    const old = { ...valid, season: { ...season10, cupId: 'comp_national_cup' } };
+    const upgraded = migrateSave(roundTrip(old), 10) as { season: { cups: { entrantLeagues: string[] }[] } };
+    expect(upgraded.season.cups[0].entrantLeagues).toEqual(valid.season.leagues.map((l) => l.competitionId));
+  });
+
   it('upgrades a version 9 save from before the leagues abroad: their squads get their generated contracts', () => {
     const abroad = new Set(ABROAD_CLUBS.map((c) => c.id));
     const v9 = { ...valid, contracts: valid.contracts.filter((c) => !abroad.has(c.clubId)) };
