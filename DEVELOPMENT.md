@@ -1056,9 +1056,12 @@ both); installable and offline (PWA).
   by `useOfflineSupport` (`src/components/use-offline-support(.web).ts`:
   web only, production builds only, after mount so pre-rendering is
   unaffected).
-- **Hosting:** `netlify.toml` (build command, `dist`, Node 22, fallback to
-  `index.html` for unknown paths); Cloudflare Pages needs the same settings
-  in its dashboard and falls back to `index.html` by itself.
+- **Hosting:** the user deploys on Cloudflare, whose dashboard now makes a
+  **Worker** (static assets) from the repo: `wrangler.jsonc` (assets-only:
+  `dist/`, `not_found_handling: "single-page-application"`, `_headers`
+  applied; checked against Cloudflare's docs) + build command
+  `npm run build:web` in the Worker's build settings. `netlify.toml` stays
+  for Netlify.
 - Saves on the web are per browser (localStorage); export/import moves them.
 
 ### Scouting (after Milestone 10)
@@ -1550,9 +1553,17 @@ drawn, aggregates shown. Zero console errors, no overflow.
   run found that last case returned the host's 404; fixed.) Zero console
   errors. Not yet deployed: the user creates the Netlify or Cloudflare site.
 
+### Kenyan club renames (save v12)
+- The user renamed eight Kenyan clubs (Kiraka FC, Nguma Leopards, Mofa FC,
+  Imran United, Mombasa Marines, Dressrossa, Kinembe FC, Wakamba Forever);
+  each keeps its slot, strength and squad (`RENAMED_CLUBS` old → new). Ids
+  come from names, so save v12 replaces the old ids (and names in text such
+  as inbox messages) throughout older saves. Tested: an old-style save
+  migrates to exactly today's; the new-career screen lists all 18.
+
 ### Known issues / not yet verified
-- **Kenyan club names** (and the other invented names abroad) are waiting
-  for the user's review: `src/data/fictional/clubs.ts`.
+- **Club names abroad**: Kenya reviewed by the user (save v12); the European
+  and background names are still the ones I invented.
 - **Performance with the leagues abroad** hasn't been measured on a phone
   (see "Foreign leagues, step A").
 - **Not yet run on a physical Android device or emulator** (bundles compile; run

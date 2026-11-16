@@ -242,9 +242,11 @@ export const NATIONAL_CUP: Cup = {
 // --- Foreign leagues (added after Milestone 10) ------------------------------------------
 //
 // Same strength spread as the First Division (17 down to 9), at the user's
-// request. Every name is invented except the five Kenyan names the user
-// suggested (Ndom, Topan, Chapati, Ruhanga, Meensat); city-based names use
-// real towns with invented club names, avoiding real clubs.
+// request. Every name is invented; the Kenyan names Ndom, Topan, Chapati,
+// Ruhanga, Meensat, Kiraka, Nguma Leopards, Mofa, Imran United, Mombasa
+// Marines, Dressrossa, Kinembe and Wakamba Forever are the user's (the last
+// eight replaced invented ones in save v12); city-based names use real towns
+// with invented club names, avoiding real clubs.
 
 /** The First Division's reputations for an 18-club league, strongest first. */
 const FOREIGN_SPREAD = [17, 16, 15, 15, 14, 14, 13, 13, 12, 12, 11, 11, 11, 10, 10, 9, 9, 9] as const;
@@ -253,11 +255,11 @@ const withSpread = (names: readonly (readonly [string, string])[]): ClubSpec[] =
   names.map(([name, short], i) => [name, short, FOREIGN_SPREAD[i]] as const);
 
 const KENYA = withSpread([
-  ['Ndom FC', 'NDM'], ['Kisumu Lakeside', 'KSL'], ['Topan FC', 'TPN'], ['Mombasa Mariners', 'MBM'],
-  ['Nakuru Flamingos', 'NKF'], ['Chapati FC', 'CHP'], ['Eldoret Highlanders', 'ELH'], ['Ruhanga FC', 'RHG'],
+  ['Ndom FC', 'NDM'], ['Kisumu Lakeside', 'KSL'], ['Topan FC', 'TPN'], ['Mombasa Marines', 'MBM'],
+  ['Nguma Leopards', 'NGL'], ['Chapati FC', 'CHP'], ['Eldoret Highlanders', 'ELH'], ['Ruhanga FC', 'RHG'],
   ['Thika Falcons', 'THF'], ['Meensat FC', 'MNS'], ['Machakos Wanderers', 'MCW'], ['Kitale Pioneers', 'KTP'],
-  ['Malindi Dolphins', 'MLD'], ['Embu Eagles', 'EBE'], ['Meru Comets', 'MRC'], ['Naivasha Lakers', 'NVL'],
-  ['Kericho Planters', 'KCP'], ['Nyeri Mountaineers', 'NYM'],
+  ['Kinembe FC', 'KNB'], ['Kiraka FC', 'KRK'], ['Imran United', 'IMU'], ['Wakamba Forever', 'WKF'],
+  ['Mofa FC', 'MOF'], ['Dressrossa', 'DRS'],
 ]);
 const FRANCE = withSpread([
   ['Olympique Valmont', 'OVM'], ['AS Montclair', 'ASM'], ['FC Rochebrune', 'FRB'], ['Stade Lavergne', 'SLV'],
@@ -380,3 +382,18 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
 
 export const countryName = (code: string) => COUNTRY_NAMES[code] ?? code;
 
+/**
+ * Kenyan clubs renamed by the user (save v12): old name → new name. The club
+ * keeps its place, strength and squad; only the name (and so the id) changes.
+ * Saves from before are migrated with this (persistence/save.ts).
+ */
+export const RENAMED_CLUBS: readonly (readonly [string, string])[] = [
+  ['Mombasa Mariners', 'Mombasa Marines'],
+  ['Nakuru Flamingos', 'Nguma Leopards'],
+  ['Malindi Dolphins', 'Kinembe FC'],
+  ['Embu Eagles', 'Kiraka FC'],
+  ['Meru Comets', 'Imran United'],
+  ['Naivasha Lakers', 'Wakamba Forever'],
+  ['Kericho Planters', 'Mofa FC'],
+  ['Nyeri Mountaineers', 'Dressrossa'],
+];

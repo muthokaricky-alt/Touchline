@@ -102,7 +102,9 @@ export {
   FOREIGN_LEAGUES,
   HOME_COUNTRY,
   NATIONAL_CUP,
+  RENAMED_CLUBS,
   SECOND_DIVISION_LEAGUE,
+  clubIdFromName,
 } from './clubs';
 export { FOREIGN_NATIONS_BY_COUNTRY } from './names';
 export { generateYouthIntake, SQUAD_TEMPLATE } from './generate-squads';

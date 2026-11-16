@@ -1,4 +1,4 @@
-import { ABROAD_CLUBS, buildFictionalDatabase, FICTIONAL_SEED } from '@/data/fictional';
+import { ABROAD_CLUBS, buildFictionalDatabase, clubIdFromName, FICTIONAL_SEED, RENAMED_CLUBS } from '@/data/fictional';
 import { autoPickLineup } from '@/game/lineup';
 import { advanceToUserFixture, createSeason, nextFixtureFor } from '@/game/season/season-flow';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
@@ -210,6 +210,20 @@ describe('migrateSave', () => {
     const check = checkSave(migrateSave(roundTrip(v6), 6), baseFor, FICTIONAL_SEED);
     expect(check.ok).toBe(true);
     if (check.ok) expect(check.save.manager).toEqual(defaultManager);
+  });
+
+  it('upgrades a version 11 save: the renamed Kenyan clubs get their new ids and names', () => {
+    // Today's save written the old way: old club ids and names.
+    let old = JSON.stringify({ ...valid, inbox: [{ id: 'msg_1', date: '2026-08-01', category: 'transfer', from: 'Director of Football', title: 'Bid from Nakuru Flamingos', body: 'Nakuru Flamingos offer €1M.', read: false }] });
+    for (const [from, to] of RENAMED_CLUBS) old = old.split(`"${clubIdFromName(to)}"`).join(`"${clubIdFromName(from)}"`);
+    expect(old).toContain('"club_nakuru_flamingos"');
+    const check = checkSave(migrateSave(JSON.parse(old), 11), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) {
+      expect(check.save.contracts).toEqual(valid.contracts);
+      expect(check.save.inbox[0].title).toBe('Bid from Nguma Leopards');
+      expect(check.database.contracts.filter((c) => c.clubId === 'club_nguma_leopards')).toHaveLength(22);
+    }
   });
 
   it('upgrades a version 10 save: its one cup becomes a one-cup list (the cups abroad start next season)', () => {

@@ -28,17 +28,24 @@ build:web` exports the site to `dist/` and adds the offline support
    `https://<name>.netlify.app`. Rename it under **Site configuration → Site
    details → Change site name** (e.g. `touchline-game`).
 
-## Option B: Cloudflare Pages
+## Option B: Cloudflare (Workers & Pages)
 
-1. Sign up at <https://dash.cloudflare.com/sign-up>.
-2. **Workers & Pages → Create → Pages → Connect to Git**, then choose the
-   `Touchline` repository.
-3. Build settings:
-   - Framework preset: **None**
-   - Build command: `npm run build:web`
-   - Build output directory: `dist`
-   - Environment variable: `NODE_VERSION` = `22`
-4. **Save and Deploy**. The site appears at `https://<name>.pages.dev`.
+Cloudflare's dashboard now creates a **Worker** when you connect a Git
+repository. The repository's `wrangler.jsonc` tells it to serve the built
+site (`dist/`).
+
+1. **Workers & Pages → Create → connect to Git**, choose the `Touchline`
+   repository, project name `touchline`.
+2. In the project: **Settings → Build** (build configuration):
+   - **Build command:** `npm run build:web` (it was "None": then nothing
+     builds the site and the deploy fails)
+   - **Deploy command:** `npx wrangler deploy` (the default)
+   - **Build variables:** `NODE_VERSION` = `22`
+3. **Deployments → Retry** (or push to `main`). The site appears at
+   `https://touchline.<your-subdomain>.workers.dev`.
+
+(A classic Pages project works too: build command `npm run build:web`,
+output directory `dist`, `NODE_VERSION` = `22`.)
 
 ## Installing it like an app
 

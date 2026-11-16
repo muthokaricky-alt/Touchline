@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ABROAD_CLUBS, buildFictionalDatabase } from '@/data/fictional';
+import { ABROAD_CLUBS, buildFictionalDatabase, clubIdFromName, RENAMED_CLUBS } from '@/data/fictional';
 import { checkIntegrity } from '@/data/integrity';
 import {
   ATTRIBUTE_KEYS,
@@ -51,9 +51,10 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *  10  (same fields) the world gained foreign leagues and background clubs; their
  *        squads' contracts are added to older saves (see migrateSave)
  *  11  season.cups (a list: the National Cup and the cups abroad) replaces season.cupId
+ *  12  (same fields) eight Kenyan clubs renamed, so their ids changed (RENAMED_CLUBS)
  */
 
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -184,6 +185,8 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *   v10 → v11: the season's one cup (`cupId`, entered by `cupEntrantLeagues`,
  *            or every league if that's missing) becomes a one-cup list; the
  *            cups abroad start at the next season.
+ *   v11 → v12: the renamed Kenyan clubs' ids (and names, e.g. in old inbox
+ *            messages) are replaced throughout the save.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -224,6 +227,14 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
     // A season that already has `cups` is left as it is (safe to run on any save).
     const cups = Array.isArray(rest.cups) ? rest.cups : typeof cupId === 'string' ? [{ competitionId: cupId, entrantLeagues }] : [];
     save = { ...save, season: { ...rest, cups } };
+  }
+  if (fromVersion < 12) {
+    // Ids appear as whole JSON strings ("club_x"); names inside text (inbox messages).
+    let json = JSON.stringify(save);
+    for (const [from, to] of RENAMED_CLUBS) {
+      json = json.split(`"${clubIdFromName(from)}"`).join(`"${clubIdFromName(to)}"`).split(from).join(to);
+    }
+    save = JSON.parse(json) as Record<string, unknown>;
   }
   return save;
 }
