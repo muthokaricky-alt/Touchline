@@ -31,7 +31,7 @@ const files = walk(outDir)
   .sort((a, b) => a.url.localeCompare(b.url));
 
 /** Bump when the worker's caching logic changes, so it starts with a fresh cache. */
-const FORMAT = 2;
+const FORMAT = 3;
 const hash = createHash('sha256').update(`format ${FORMAT}`);
 for (const { url, path } of files) hash.update(url).update(readFileSync(path));
 const version = hash.digest('hex').slice(0, 12);
@@ -60,23 +60,40 @@ const ESSENTIAL = new Set(${JSON.stringify(essential)});
 /** Same path, each segment percent-encoded (how the files are cached). */
 const canonical = (path) => path.split('/').map((s) => encodeURIComponent(decodeURIComponent(s))).join('/');
 
-/** A copy without the "redirected" mark (Chrome refuses redirected responses for page loads). */
-async function clean(response) {
-  if (!response.redirected) return response;
-  return new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers: response.headers });
+/** Give up on one download after this long (it's retried). */
+const TIMEOUT_MS = 30000;
+
+/**
+ * Downloads a file COMPLETELY into memory (with a time limit) before it goes
+ * into the cache. Handing a still-downloading response to the cache let one
+ * stalled download hold up every other write: on the live site the cache
+ * sometimes stayed empty for minutes. The copy also has no "redirected" mark
+ * (Chrome refuses redirected responses for page loads).
+ */
+async function download(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { cache: 'reload', signal: controller.signal });
+    if (!response.ok) return null;
+    const body = await response.arrayBuffer();
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Downloads one file (two retries) into the cache; true if it worked. */
 async function store(cache, url) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(url, { cache: 'reload' });
-      if (response.ok) {
-        await cache.put(url, await clean(response));
+      const response = await download(url);
+      if (response) {
+        await cache.put(url, response);
         return true;
       }
     } catch {
-      // Network blip: try again.
+      // Network blip or timeout: try again.
     }
   }
   return false;

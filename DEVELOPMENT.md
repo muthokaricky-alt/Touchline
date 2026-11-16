@@ -1124,6 +1124,16 @@ both); installable and offline (PWA).
   encoded addresses, downloads six at a time with two retries, requires
   only the essentials (start page + JS bundles), strips the "redirected"
   mark, and looks files up under both spellings.
+- Then, on the live site, installs still failed now and then with **zero**
+  files cached after a minute (seen once at phone width, once at desktop
+  width with the same script; a quiet page load also succeeded): handing a
+  still-downloading response to `cache.put` let one stalled download hold
+  up every cache write. Format 3 downloads each file completely into
+  memory first, with a 30 s time limit (AbortController), then caches it.
+  Headless-test gotcha: Chrome's installability check
+  (`Page.getInstallabilityErrors`) plus constant polling also kept the
+  worker from installing in headless runs; the offline test now loads the
+  page and waits like a visitor.
 
 ### Scouting (after Milestone 10)
 
