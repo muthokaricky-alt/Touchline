@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built; 10b (release readiness) done. Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions (first post-roadmap feature). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -87,6 +87,8 @@ src/
                          contracts (season-end expiries, warnings), career (the
                          user's transfer business as pure state transitions)
     inbox/               inbox messages: schema, add (capped), mark read
+    discipline/          suspensions derived from season results (bans, yellow
+                         accumulation with deadlines), messages, profile view
   engine/              SIMULATION ENGINE: pure TS, seeded, no React/store imports
     simulate.ts          minute loop: possession → fouls → chance/shot → fatigue →
                          injuries → subs
@@ -336,7 +338,7 @@ call pure functions from `src/game` and save the result.
   (opponent/venue fixed), "Play a friendly instead" toggle; after a league
   match the report adds the matchday's other results and "Continue". After
   the final matchday, Continue returns to the dashboard's season summary.
-- **Dashboard** is now real apart from kick-off time and suspensions (M8a made
+- **Dashboard** is now real apart from kick-off time (suspensions came after M10; M8a made
   fitness, morale and injuries real; 7b the inbox; 9b the manager name and board).
 
 #### 6b: world size, multi-competition seasons, cup
@@ -560,7 +562,7 @@ too); training = team focus + intensity; potential shown as a range; 8a
 - **Save v4** adds `condition`; v3 → v4 starts everyone fully fit on the
   save's date. Load rejects condition records for unknown players or dated
   after the career date.
-- Suspensions still aren't modelled (dashboard shows 0).
+- Suspensions were added after M10 (see "Suspensions" below).
 
 #### 8b: potential, development, training
 
@@ -766,6 +768,50 @@ only (the user runs `eas login` and builds); an original icon.
   `expo-web-browser` config plugins). Remaining: an informational React
   Native Directory note about two transitive packages (masked-view from
   expo-router, expo-modules-core from expo), deliberately not silenced.
+
+### Suspensions (after Milestone 10)
+
+Decisions (user): realistic rules; a ban is served in the competition it was
+earned in; then, after measuring, real-league deadlines for yellow cards.
+
+- **Derived, never stored** (`src/game/discipline/suspensions.ts`). Every
+  stored fixture result already lists its cards, so bans are worked out
+  from the season's results like the table: no save change (still v7), and
+  a ban can't disagree with the match history. Cached per Season object
+  (WeakMap); seasons are immutable, and every match on a date reads the
+  same pre-date season, so it's computed about once per matchday.
+- **Rules:** second yellow → next 1 match; straight red → next 3; league
+  yellows: 5th by matchday 19 of 38 → 1 match, 10th by matchday 32 → 2
+  (deadlines scale with league length; later yellows don't lead to a ban).
+  Yellows in a match where the player was sent off don't count; cup yellows
+  never do. Bans are served in that competition, queue one after another,
+  and lapse at season end.
+- **"The next N matches"** = the next N fixtures in that competition of the
+  club he was booked for, as dates (leagues share Saturdays, so a player who
+  moves within the league misses the same dates). A cup ban waits for the
+  next round to be drawn.
+- **Balancing lesson (third time):** the first version used "every 5th
+  yellow, all season" with an estimate of 3–5 bans a club. The season test
+  measured 12.6 (8.8 from yellows): the engine's ~74 yellows a club fall
+  mostly on a few defenders. A probe compared rules on the same season;
+  with deadlines it's 6.9 a club (3.0 from yellows), close to real football.
+- **Where it applies:** AI clubs leave banned players out (`aiSetupOn` takes
+  a suspended set, like injuries). For the user, `LineupAvailability` gets
+  an optional `isSuspended` → `suspended` lineup error (kick-off blocked,
+  but **not for friendlies**: `useTeamReadiness('friendly')` ignores it);
+  `buildFixtureInput` refuses a user lineup with a banned player (rules
+  don't trust the UI); after a matchday `withoutUnavailable` (was
+  `withoutInjured`) takes out players injured at, or banned from, the next
+  fixture; auto pick and club takeovers skip them. A banned player can still
+  be picked for a later cup tie if the ban is in the league.
+- **UI:** "Suspended" tag (squad list, bench, picker, where they're sorted
+  last), pitch marker, dashboard "sus" count, profile Condition card
+  ("Suspended for the next 2 league matches (straight red card)" and league
+  bookings with the next deadline), Assistant Manager inbox messages for
+  each ban and for "one booking from a ban".
+- **Tests that played a season with one fixed user lineup** now hit the
+  guard; they use `playUserFixture` (`game/season/__fixtures__/play.ts`),
+  which swaps banned players out first, as the store does.
 
 ## 3. Commands
 
@@ -1040,6 +1086,22 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   Chrome at 412px and 1280px: new career, picker by tap **and by direct
   URL** (hydration), a match, favicon served. Zero console errors.
 
+### Suspensions ✅ (after the roadmap)
+- `src/game/discipline` (bans, accumulation with deadlines, inbox
+  messages, profile view); AI and season flow skip/refuse banned players;
+  store clean-up, auto pick, team sheet, picker, squad list, pitch,
+  dashboard and profile.
+- Tests: 704 total (15 new) incl. each rule on a hand-made season, the
+  store flow (ban → out of the XI → message → kick-off refused), and a
+  full-season calibration (no banned player ever selected; 6.9 bans per
+  club). `npm test` 666 / calibration 38.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px and 1280px: 8 matches at Greywater Town → two
+  full-backs sent off: "0 inj · 2 sus" on the dashboard, inbox messages,
+  "Suspended" in the squad list and picker, profile line; forcing one back
+  in → "is suspended" on the pitch and issues card, league kick-off
+  disabled, a friendly still allowed. Zero console errors, no overflow.
+
 ### Known issues / not yet verified
 - **Not yet run on a physical Android device or emulator** (bundles compile; run
   `npm start` and open in Expo Go to confirm).
@@ -1053,7 +1115,8 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   within the app works.
 - Squads are 22 players for 38 league games + cup. With injuries and rotation
   (M8a) it still works (AI clubs have 22+, injuries ~0.1/team/match), but
-  watch it in long careers; 24–25 may be needed once suspensions exist.
+  watch it in long careers. With suspensions (~7 bans a club a season)
+  24–25 may be needed; the season test shows AI clubs cope at 22+.
 - Web/headless testing note: killing Chrome right after a save can lose
   localStorage writes Chrome hasn't flushed; reload inside the session to
   test persistence.
@@ -1073,7 +1136,7 @@ All ten roadmap milestones are built. What's left before a release:
    eas-cli`, `eas login`, then `eas build --platform android --profile
    preview` for an installable APK (eas.json is already set up).
 3. Then choose: store submission (production profile, store listings,
-   privacy policy) or more gameplay. Parked ideas: suspensions, in-match
+   privacy policy) or more gameplay. Parked ideas: in-match
    substitutions, scouting (narrow potential ranges), foreign leagues,
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

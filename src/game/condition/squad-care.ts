@@ -12,11 +12,21 @@ import { isInjured, type ConditionState, type NewInjury } from './condition';
  * reports each new injury.
  */
 
-/** Injury-aware lineup: every injured player is taken out and replaced from the fit players. */
-export function withoutInjured(db: GameDatabase, clubId: ClubId, lineup: Lineup, condition: ConditionState): Lineup {
-  const fit = selectSquadCandidates(db, clubId).filter((c) => !isInjured(condition, c.player.id));
+/**
+ * Availability-aware lineup: every injured (or, given `suspended`, banned) player is taken out and
+ * replaced from the players who can play.
+ */
+export function withoutUnavailable(
+  db: GameDatabase,
+  clubId: ClubId,
+  lineup: Lineup,
+  condition: ConditionState,
+  suspended: ReadonlySet<PlayerId> = new Set(),
+): Lineup {
+  const out = (id: PlayerId) => isInjured(condition, id) || suspended.has(id);
+  const available = selectSquadCandidates(db, clubId).filter((c) => !out(c.player.id));
   const selected = [...starterIds(lineup), ...lineup.substitutes];
-  return selected.filter((id) => isInjured(condition, id)).reduce((next, id) => removeAndRefill(next, id, fit), lineup);
+  return selected.filter(out).reduce((next, id) => removeAndRefill(next, id, available), lineup);
 }
 
 /** About how long, in words a manager would use. */

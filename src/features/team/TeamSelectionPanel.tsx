@@ -73,7 +73,7 @@ export function TeamSelectionPanel({
                   leading={<PositionBadge position={sub.primaryPosition} />}
                   trailing={
                     <View style={styles.inline}>
-                      <ConditionTag fitness={sub.fitness} injured={sub.injured} />
+                      <ConditionTag fitness={sub.fitness} injured={sub.injured} suspended={sub.suspended} />
                       <RatingBadge value={sub.rating} label="Rating" />
                       <IconButton
                         icon="remove"

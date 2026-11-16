@@ -4,8 +4,9 @@ import { simulateMatch } from '@/engine/simulate';
 import type { MatchInput, MatchResult, Side } from '@/engine/types';
 
 import { aiSetup, buildAiTeam } from '../ai/opponent';
+import { suspendedFor } from '../discipline/suspensions';
 import { applyMatch, conditionOn, emptyConditions, squadIds, type ConditionState, type NewInjury } from '../condition/condition';
-import type { Lineup } from '../lineup';
+import { starterIds, type Lineup } from '../lineup';
 import { buildMatchTeam, lineupStrength } from '../match/build-match-team';
 import { flattenAttributes } from '../ratings';
 import { selectSquadCandidates } from '../squad/squad-selectors';
@@ -142,15 +143,27 @@ export function fixtureSeed(season: Season, fixture: Fixture): number {
   return h % 2_147_483_647;
 }
 
-/** Engine input. The user's side uses their lineup/tactics; AI sides set up against their opponent's strength. */
+/**
+ * Engine input. The user's side uses their lineup/tactics; AI sides set up against their opponent's
+ * strength, without their suspended players. A user lineup with a suspended player is refused
+ * (the UI blocks it too, but the game rules don't trust the UI).
+ */
 export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam, condition?: ConditionState): MatchInput {
   const isUser = (clubId: ClubId) => user !== undefined && clubId === user.clubId;
+  const suspended = suspendedFor(season, fixture);
+  if (user && (isUser(fixture.homeId) || isUser(fixture.awayId))) {
+    const banned = [...starterIds(user.lineup), ...user.lineup.substitutes].find((id) => suspended.has(id));
+    if (banned) {
+      const p = db.players.find((x) => x.id === banned);
+      throw new RangeError(`${p ? `${p.firstName} ${p.lastName}` : banned} is suspended for this match`);
+    }
+  }
   const strengthOf = (clubId: ClubId) =>
     isUser(clubId) ? lineupStrength(user!.lineup, selectSquadCandidates(db, clubId)) : aiSetup(db, clubId).strength;
   const teamFor = (clubId: ClubId, opponentId: ClubId) =>
     isUser(clubId)
       ? buildMatchTeam(db, clubId, user!.lineup, user!.tactics, condition)
-      : buildAiTeam(db, clubId, strengthOf(opponentId), condition);
+      : buildAiTeam(db, clubId, strengthOf(opponentId), condition, suspended);
   return { home: teamFor(fixture.homeId, fixture.awayId), away: teamFor(fixture.awayId, fixture.homeId), seed: fixtureSeed(season, fixture) };
 }
 

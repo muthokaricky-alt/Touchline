@@ -1,6 +1,7 @@
 import { buildFictionalDatabase } from '@/data/fictional';
 import { autoPickLineup } from '@/game/lineup';
-import { advanceToUserFixture, createSeason, isSeasonComplete, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
+import { createSeason, isSeasonComplete, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
+import { playUserFixture } from '@/game/season/__fixtures__/play';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
@@ -76,7 +77,7 @@ describe('buildDashboardSummary: pre-season', () => {
 });
 
 describe('buildDashboardSummary: during and after the season', () => {
-  const afterOne = advanceToUserFixture(db, fresh, user).season;
+  const afterOne = playUserFixture(db, fresh, user).season;
 
   it('reflects played matches', () => {
     const summary = buildDashboardSummary(db, CLUB, afterOne, '2026-08-08', [], previewDashboard);
@@ -87,7 +88,7 @@ describe('buildDashboardSummary: during and after the season', () => {
 
   it('labels a cup tie with the round', () => {
     let season = afterOne;
-    while (nextFixtureFor(season, CLUB)?.competitionId !== 'comp_national_cup') season = advanceToUserFixture(db, season, user).season;
+    while (nextFixtureFor(season, CLUB)?.competitionId !== 'comp_national_cup') season = playUserFixture(db, season, user).season;
     const summary = buildDashboardSummary(db, CLUB, season, '2026-08-08', [], previewDashboard);
     expect(summary.nextMatch!.competition).toBe('National Cup · Round of 32');
     expect(summary.nextMatch!.kickOff).toBe('19:45');
@@ -95,7 +96,7 @@ describe('buildDashboardSummary: during and after the season', () => {
 
   it('asks to play out the season once the user is done, then summarises it', () => {
     let season = afterOne;
-    while (nextFixtureFor(season, CLUB)) season = advanceToUserFixture(db, season, user).season;
+    while (nextFixtureFor(season, CLUB)) season = playUserFixture(db, season, user).season;
     if (!isSeasonComplete(season)) {
       const waiting = buildDashboardSummary(db, CLUB, season, '2027-04-24', [], previewDashboard);
       expect(waiting.nextMatch).toBeNull();

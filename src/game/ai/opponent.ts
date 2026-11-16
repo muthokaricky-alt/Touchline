@@ -1,4 +1,4 @@
-import type { ClubId, GameDatabase } from '@/data/schemas';
+import type { ClubId, GameDatabase, PlayerId } from '@/data/schemas';
 import type { MatchTeamInput } from '@/engine/types';
 
 import { conditionOf, isInjured, ROTATION_FITNESS, type ConditionState } from '../condition/condition';
@@ -97,28 +97,34 @@ export function aiSetup(db: GameDatabase, clubId: ClubId): AiSetup {
 const hasAnXi = (pool: readonly LineupCandidate[]) => pool.length >= 11 && pool.some((c) => c.player.primaryPosition === 'GK');
 
 /**
- * The AI's team for a particular day: its best setup, unless someone in it
- * is injured or a starter is tired (below ROTATION_FITNESS). Then it re-picks
- * in the same formation from the fit players, falling back to tired ones
- * only if it's short. Untouched clubs reuse the cached setup.
+ * The AI's team for a particular match: its best setup, unless someone in it
+ * is injured or suspended, or a starter is tired (below ROTATION_FITNESS).
+ * Then it re-picks in the same formation from the available players, falling
+ * back to tired ones only if it's short. Untouched clubs reuse the cached setup.
  */
-export function aiSetupOn(db: GameDatabase, clubId: ClubId, condition?: ConditionState): AiSetup {
+export function aiSetupOn(db: GameDatabase, clubId: ClubId, condition?: ConditionState, suspended?: ReadonlySet<PlayerId>): AiSetup {
   const setup = aiSetup(db, clubId);
-  if (!condition) return setup;
+  if (!condition && !suspended?.size) return setup;
   const starters = new Set(starterIds(setup.lineup));
-  const injured = (id: string) => isInjured(condition, id);
-  const tired = (id: string) => conditionOf(condition, id).fitness < ROTATION_FITNESS;
-  const affected = [...starters].some((id) => injured(id) || tired(id)) || setup.lineup.substitutes.some(injured);
+  const unavailable = (id: string) => (condition ? isInjured(condition, id) : false) || (suspended?.has(id) ?? false);
+  const tired = (id: string) => (condition ? conditionOf(condition, id).fitness < ROTATION_FITNESS : false);
+  const affected = [...starters].some((id) => unavailable(id) || tired(id)) || setup.lineup.substitutes.some(unavailable);
   if (!affected) return setup;
 
-  const available = setup.squad.filter((c) => !injured(c.player.id));
+  const available = setup.squad.filter((c) => !unavailable(c.player.id));
   const rested = available.filter((c) => !tired(c.player.id));
   const lineup = autoPickLineup(hasAnXi(rested) ? rested : available, setup.lineup.formationId);
   return { squad: setup.squad, lineup, strength: lineupStrength(lineup, setup.squad) };
 }
 
-/** Full engine input for an AI club facing an opponent of the given strength (and its players' condition, if known). */
-export function buildAiTeam(db: GameDatabase, clubId: ClubId, opponentStrength: number, condition?: ConditionState): MatchTeamInput {
-  const { squad, lineup } = aiSetupOn(db, clubId, condition);
+/** Full engine input for an AI club facing an opponent of the given strength (and its players' condition and bans, if known). */
+export function buildAiTeam(
+  db: GameDatabase,
+  clubId: ClubId,
+  opponentStrength: number,
+  condition?: ConditionState,
+  suspended?: ReadonlySet<PlayerId>,
+): MatchTeamInput {
+  const { squad, lineup } = aiSetupOn(db, clubId, condition, suspended);
   return buildMatchTeam(db, clubId, lineup, chooseAiTactics(squad, lineup, opponentStrength), condition);
 }

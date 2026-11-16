@@ -15,7 +15,8 @@ import {
 } from '@/game/lineup';
 import { simulateMatch } from '@/engine/simulate';
 import { adjustMorale, conditionOn, emptyConditions, isInjured, type ConditionState } from '@/game/condition/condition';
-import { injuryMessages, withoutInjured } from '@/game/condition/squad-care';
+import { injuryMessages, withoutUnavailable } from '@/game/condition/squad-care';
+import { disciplineMessages, suspendedFor } from '@/game/discipline/suspensions';
 import { DEFAULT_TRAINING, type Training } from '@/game/development/development';
 import { developmentReport, developThrough } from '@/game/development/monthly';
 import { assignPotential } from '@/game/development/potential';
@@ -125,6 +126,18 @@ const VACANT_CLUB = 'club_vacant';
 export function conditionAtKickOff(s: Pick<GameState, 'condition' | 'currentDate' | 'season' | 'userClubId'>): ConditionState {
   const next = nextFixtureFor(s.season, s.userClubId);
   return conditionOn(s.condition, next && next.date > s.currentDate ? next.date : s.currentDate);
+}
+
+/** Players banned from the user's next fixture (nobody when there's none left). */
+export function suspendedAtKickOff(s: Pick<GameState, 'season' | 'userClubId'>): ReadonlySet<PlayerId> {
+  return suspendedFor(s.season, nextFixtureFor(s.season, s.userClubId));
+}
+
+/** The user's players who can play the next fixture: not injured then, not suspended for it. */
+function availableAtKickOff(s: Pick<GameState, 'database' | 'condition' | 'currentDate' | 'season' | 'userClubId'>) {
+  const atKickOff = conditionAtKickOff(s);
+  const suspended = suspendedAtKickOff(s);
+  return selectSquadCandidates(s.database, s.userClubId).filter((c) => !isInjured(atKickOff, c.player.id) && !suspended.has(c.player.id));
 }
 
 /** Morale effects of the user's decisions. */
@@ -301,11 +314,9 @@ function toSave(state: GameState): GameSave {
  * and nothing left over from the old club's transfer business.
  */
 function switchClub(s: Pick<GameState, 'database' | 'condition' | 'currentDate' | 'season'>, clubId: ClubId): Partial<GameState> {
-  const atKickOff = conditionAtKickOff({ ...s, userClubId: clubId });
-  const fit = selectSquadCandidates(s.database, clubId).filter((c) => !isInjured(atKickOff, c.player.id));
   return {
     userClubId: clubId,
-    lineup: autoPickLineup(fit, DEFAULT_FORMATION_ID),
+    lineup: autoPickLineup(availableAtKickOff({ ...s, userClubId: clubId }), DEFAULT_FORMATION_ID),
     tactics: DEFAULT_TACTICS,
     training: DEFAULT_TRAINING,
     transferListed: [],
@@ -348,12 +359,7 @@ export const useGameStore = create<Store>()(
       clearSlot: (slotId) => set((s) => ({ lineup: clearSlot(s.lineup, slotId) })),
       addSubstitute: (playerId) => set((s) => ({ lineup: addSubstitute(s.lineup, playerId) })),
       removeFromLineup: (playerId) => set((s) => ({ lineup: removeFromLineup(s.lineup, playerId) })),
-      autoPick: () =>
-        set((s) => {
-          const atKickOff = conditionAtKickOff(s);
-          const fit = selectSquadCandidates(s.database, s.userClubId).filter((c) => !isInjured(atKickOff, c.player.id));
-          return { lineup: autoPickLineup(fit, s.lineup.formationId) };
-        }),
+      autoPick: () => set((s) => ({ lineup: autoPickLineup(availableAtKickOff(s), s.lineup.formationId) })),
       setInstruction: (key, value) => set((s) => ({ tactics: setInstruction(s.tactics, key, value) })),
       applyPlayingStyle: (styleId) => set({ tactics: PLAYING_STYLES[styleId].tactics }),
       playFriendly: (opponentId, venue, seed = newMatchSeed()) => {
@@ -376,18 +382,22 @@ export const useGameStore = create<Store>()(
         const career = afterCalendarMove({ ...transferCareer(state), db: monthly.database, date }, state.currentDate, season.seed);
         // The board reacts to the league results (warning, or the sack with job offers).
         const board = state.manager ? afterUserMatchday(career.db, season, played.season, userClubId, state.manager, date) : null;
+        const playedFixture = played.season.fixtures.find((f) => f.id === played.fixture.id) ?? played.fixture;
         set({
           ...fromCareer(career),
           manager: board?.manager ?? state.manager,
-          // Players still injured at the next kick-off leave the lineup; the Head of Medical reports every injury.
-          lineup: withoutInjured(
+          // Players still injured at the next kick-off, or banned from it, leave the lineup;
+          // the Head of Medical reports every injury, the assistant every ban.
+          lineup: withoutUnavailable(
             career.db,
             userClubId,
             career.lineup,
             conditionAtKickOff({ condition: monthly.condition, currentDate: date, season: played.season, userClubId }),
+            suspendedAtKickOff({ season: played.season, userClubId }),
           ),
           inbox: addMessages(career.inbox, [
             ...injuryMessages(career.db, userClubId, played.injuries, date),
+            ...disciplineMessages(career.db, played.season, playedFixture, userClubId, date),
             ...monthly.messages,
             ...(board?.messages ?? []),
           ]),
@@ -452,7 +462,8 @@ export const useGameStore = create<Store>()(
           ...(moving
             ? switchClub(after, closed!.clubId)
             : {
-                lineup: withoutInjured(
+                // A new season: bans have lapsed.
+                lineup: withoutUnavailable(
                   career.db,
                   state.userClubId,
                   career.lineup,

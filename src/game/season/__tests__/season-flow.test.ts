@@ -5,6 +5,7 @@ import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
 import { cupFixtures, cupWinner, tieWinner } from '../cup';
 import { seasonPlayerStats } from '../player-stats';
+import { playUserFixture } from '../__fixtures__/play';
 import { mixSeed, SeasonSchema, type Season } from '../season';
 import {
   advanceToUserFixture,
@@ -32,7 +33,7 @@ const user: UserTeam = { clubId: USER, lineup: autoPickLineup(selectSquadCandida
 /** Plays the user's fixtures until none are left, then everything else. */
 function playFullSeason(start: Season): Season {
   let season = start;
-  while (nextFixtureFor(season, USER)) season = advanceToUserFixture(db, season, user).season;
+  while (nextFixtureFor(season, USER)) season = playUserFixture(db, season, user).season;
   return playRemaining(db, season).season;
 }
 

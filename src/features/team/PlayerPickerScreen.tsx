@@ -70,7 +70,11 @@ export function PlayerPickerScreen({ picker, onSelect, onClear, onClose }: Playe
 }
 
 function OptionRow({ option, divider, onPress }: { option: PlayerOptionView; divider: boolean; onPress: () => void }) {
-  const status = option.injured ? `Injured · ${describeStatus(option.status)}` : describeStatus(option.status);
+  const status = option.injured
+    ? `Injured · ${describeStatus(option.status)}`
+    : option.suspended
+      ? `Suspended · ${describeStatus(option.status)}`
+      : describeStatus(option.status);
   return (
     <ListRow
       title={option.fullName}
@@ -88,7 +92,7 @@ function OptionRow({ option, divider, onPress }: { option: PlayerOptionView; div
       }
       trailing={
         <View style={styles.trailing}>
-          <ConditionTag fitness={option.fitness} injured={option.injured} />
+          <ConditionTag fitness={option.fitness} injured={option.injured} suspended={option.suspended} />
           {option.fit ? <FitPill fit={option.fit} /> : null}
           <RatingBadge value={option.rating} label="Rating" />
         </View>

@@ -77,13 +77,18 @@ export default function MatchRoute() {
   );
 }
 
-/** Formation · style · rating line and lineup errors, shared by both setups. */
-function useTeamReadiness() {
+/**
+ * Formation · style · rating line and lineup errors, shared by both setups.
+ * Suspensions only apply to competitive fixtures, so they don't block a friendly.
+ */
+function useTeamReadiness(kind: 'fixture' | 'friendly') {
   const sheet = useTeamSheet();
   const { style } = useTacticsView();
   return {
     teamSummary: [sheet.formationId, style?.name ?? 'Custom', `avg rating ${sheet.averageRating ?? '–'}`].join(' · '),
-    blockingIssues: sheet.issues.filter((i) => i.severity === 'error').map((i) => i.message),
+    blockingIssues: sheet.issues
+      .filter((i) => i.severity === 'error' && !(kind === 'friendly' && i.code === 'suspended'))
+      .map((i) => i.message),
   };
 }
 
@@ -91,7 +96,7 @@ function LeagueSetup({ onPlayFriendly, onEditTeam, onBack }: { onPlayFriendly: (
   const fixture = useNextFixture();
   const playNextFixture = useGameStore((s) => s.playNextFixture);
   const opponentPreview = useOpponentPreview(fixture?.opponentId ?? null);
-  const { teamSummary, blockingIssues } = useTeamReadiness();
+  const { teamSummary, blockingIssues } = useTeamReadiness('fixture');
   if (!fixture) return null;
 
   return (
@@ -132,7 +137,7 @@ function FriendlySetup({ chosenOpponent, onOpponentChange, venue, onVenueChange,
   // Default: the next league opponent, else the strongest club.
   const opponentId = chosenOpponent ?? nextFixture?.opponentId ?? opponents[0]?.id ?? null;
   const opponentPreview = useOpponentPreview(opponentId);
-  const { teamSummary, blockingIssues } = useTeamReadiness();
+  const { teamSummary, blockingIssues } = useTeamReadiness('friendly');
 
   return (
     <MatchSetupScreen

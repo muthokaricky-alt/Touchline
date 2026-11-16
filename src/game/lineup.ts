@@ -189,13 +189,22 @@ export type LineupIssueCode =
   | 'no-goalkeeper'
   | 'out-of-position'
   | 'injured'
+  | 'suspended'
   | 'low-fitness';
 
 /** Fitness (0–100) below which a starter gets a warning. */
 export const LOW_FITNESS = 75;
 
-/** Who can play today (Milestone 8). Plain functions, so this module doesn't depend on how condition is stored. */
-export type LineupAvailability = { isInjured: (id: PlayerId) => boolean; fitnessOf: (id: PlayerId) => number };
+/**
+ * Who can play the next match (Milestone 8; suspensions later). Plain functions, so this module
+ * doesn't depend on how condition or discipline is stored. No `isSuspended` = nobody is banned
+ * (friendlies, tests).
+ */
+export type LineupAvailability = {
+  isInjured: (id: PlayerId) => boolean;
+  fitnessOf: (id: PlayerId) => number;
+  isSuspended?: (id: PlayerId) => boolean;
+};
 
 /** Errors make a lineup unplayable; warnings are allowed but worth showing. */
 export type LineupIssue = {
@@ -233,6 +242,10 @@ export function validateLineup(lineup: Lineup, candidates: readonly LineupCandid
       issues.push({ severity: 'error', code: 'injured', slotId: slot.id, playerId, message: `${nameOf(candidate)} is injured` });
       continue;
     }
+    if (availability?.isSuspended?.(playerId)) {
+      issues.push({ severity: 'error', code: 'suspended', slotId: slot.id, playerId, message: `${nameOf(candidate)} is suspended` });
+      continue;
+    }
     const fitness = availability?.fitnessOf(playerId) ?? 100;
     if (fitness < LOW_FITNESS) {
       issues.push({ severity: 'warning', code: 'low-fitness', slotId: slot.id, playerId, message: `${nameOf(candidate)} is only ${fitness}% fit` });
@@ -251,6 +264,8 @@ export function validateLineup(lineup: Lineup, candidates: readonly LineupCandid
       issues.push({ severity: 'error', code: 'unknown-player', playerId, message: `${playerId} isn't in your squad` });
     } else if (availability?.isInjured(playerId)) {
       issues.push({ severity: 'error', code: 'injured', playerId, message: `${nameOf(candidate)} is injured` });
+    } else if (availability?.isSuspended?.(playerId)) {
+      issues.push({ severity: 'error', code: 'suspended', playerId, message: `${nameOf(candidate)} is suspended` });
     }
   }
 

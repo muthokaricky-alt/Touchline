@@ -1,5 +1,6 @@
 import type { ClubId, GameDatabase } from '@/data/schemas';
 import { conditionOf, type ConditionState } from '@/game/condition/condition';
+import { suspendedFor } from '@/game/discipline/suspensions';
 import { unreadCount, type InboxMessage as GameMessage } from '@/game/inbox/inbox';
 import { cupWinner } from '@/game/season/cup';
 import type { Season } from '@/game/season/season';
@@ -25,9 +26,9 @@ export const INBOX_PREVIEW = 4;
  *
  * Real: club, season, date, matchday, next fixture (league or cup), form,
  *       league table, squad size, finances, end-of-season summary, inbox,
- *       fitness, morale, injuries (when `condition` is given).
- * Preview (until later milestones): manager name, kick-off time; suspensions
- *       aren't modelled yet (always 0).
+ *       fitness, morale, injuries (when `condition` is given), suspensions
+ *       for the next fixture.
+ * Preview: kick-off time.
  */
 export function buildDashboardSummary(
   db: GameDatabase,
@@ -113,7 +114,10 @@ export function buildDashboardSummary(
         averageFitness: average((c) => c.fitness),
         averageMorale: average((c) => c.morale),
         injuredCount: conditions.filter((c) => c.injury !== null).length,
-        suspendedCount: 0,
+        suspendedCount: (() => {
+          const banned = suspendedFor(season, fixture);
+          return contracts.filter((c) => banned.has(c.playerId)).length;
+        })(),
       };
     })(),
     inbox: inbox.slice(0, INBOX_PREVIEW).map((m) => ({ id: m.id, from: m.from, subject: m.title, date: formatDate(m.date), unread: !m.read })),

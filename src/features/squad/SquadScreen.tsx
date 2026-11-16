@@ -52,7 +52,7 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
       subtitle={`${player.age} yrs · ${player.nationality}${also}`}
       divider={divider}
       onPress={onPress}
-      accessibilityLabel={`${player.fullName}, number ${player.squadNumber ?? 'none'}, ${player.primaryPosition}, age ${player.age}, rating ${player.rating}${player.condition.injury ? ', injured' : `, ${player.condition.fitness}% fit`}`}
+      accessibilityLabel={`${player.fullName}, number ${player.squadNumber ?? 'none'}, ${player.primaryPosition}, age ${player.age}, rating ${player.rating}${player.condition.injury ? ', injured' : player.suspended ? ', suspended' : `, ${player.condition.fitness}% fit`}`}
       accessibilityHint="Opens the player profile"
       leading={
         <View style={styles.leading}>
@@ -64,7 +64,7 @@ function SquadRow({ player, divider, onPress }: { player: SquadPlayerView; divid
       }
       trailing={
         <View style={styles.trailing}>
-          <ConditionTag fitness={player.condition.fitness} injured={player.condition.injury !== null} />
+          <ConditionTag fitness={player.condition.fitness} injured={player.condition.injury !== null} suspended={player.suspended} />
           <RatingBadge value={player.rating} label="Rating" />
           <Icon name="chevronRight" size={16} color="textMuted" />
         </View>

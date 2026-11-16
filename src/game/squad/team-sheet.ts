@@ -19,6 +19,8 @@ export type LineupPlayerView = {
   /** 0–100 */
   fitness: number;
   injured: boolean;
+  /** Banned from the next fixture. */
+  suspended: boolean;
 };
 
 export type TeamSheetSlotView = {
@@ -62,6 +64,7 @@ export function selectTeamSheet(db: GameDatabase, clubId: ClubId, lineup: Lineup
       fit: positionFit(player, position),
       fitness: availability.fitnessOf(player.id),
       injured: availability.isInjured(player.id),
+      suspended: availability.isSuspended?.(player.id) ?? false,
     };
   };
 
@@ -115,6 +118,8 @@ export type PlayerOptionView = {
   /** 0–100 */
   fitness: number;
   injured: boolean;
+  /** Banned from the next fixture. */
+  suspended: boolean;
 };
 
 export type PlayerPickerView = {
@@ -174,10 +179,11 @@ export function selectPlayerPicker(
         status: statusOf(player.id),
         fitness: availability.fitnessOf(player.id),
         injured: availability.isInjured(player.id),
+        suspended: availability.isSuspended?.(player.id) ?? false,
       };
     })
-    // Injured players last: they can't be picked anyway.
-    .sort((a, b) => Number(a.injured) - Number(b.injured) || b.rating - a.rating || (a.squadNumber ?? 99) - (b.squadNumber ?? 99));
+    // Injured and suspended players last: they can't be picked anyway.
+    .sort((a, b) => Number(a.injured || a.suspended) - Number(b.injured || b.suspended) || b.rating - a.rating || (a.squadNumber ?? 99) - (b.squadNumber ?? 99));
 
   return {
     target,

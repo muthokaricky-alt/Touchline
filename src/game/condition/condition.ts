@@ -121,10 +121,19 @@ export function adjustMorale(state: ConditionState, playerId: PlayerId, delta: n
 }
 
 /** Lookups for code that shouldn't depend on the condition record's shape (lineup validation, views). */
-export type Availability = { isInjured: (id: PlayerId) => boolean; fitnessOf: (id: PlayerId) => number };
+export type Availability = {
+  isInjured: (id: PlayerId) => boolean;
+  fitnessOf: (id: PlayerId) => number;
+  isSuspended: (id: PlayerId) => boolean;
+};
 
-export function availabilityFrom(state: ConditionState): Availability {
-  return { isInjured: (id) => isInjured(state, id), fitnessOf: (id) => conditionOf(state, id).fitness };
+/** Condition plus (optionally) the players banned from the match in question. */
+export function availabilityFrom(state: ConditionState, suspended: ReadonlySet<PlayerId> = new Set()): Availability {
+  return {
+    isInjured: (id) => isInjured(state, id),
+    fitnessOf: (id) => conditionOf(state, id).fitness,
+    isSuspended: (id) => suspended.has(id),
+  };
 }
 
 // --- After a match ------------------------------------------------------------------

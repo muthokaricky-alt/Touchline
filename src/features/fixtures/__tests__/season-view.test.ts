@@ -1,6 +1,7 @@
 import { buildFictionalDatabase } from '@/data/fictional';
 import { autoPickLineup } from '@/game/lineup';
-import { advanceToUserFixture, createSeason, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
+import { createSeason, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
+import { playUserFixture } from '@/game/season/__fixtures__/play';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
@@ -11,7 +12,7 @@ const USER = 'club_greywater_town';
 const FIRST = 'comp_first_division';
 const user = { clubId: USER, lineup: autoPickLineup(selectSquadCandidates(db, USER), '4-4-2'), tactics: DEFAULT_TACTICS };
 let season = createSeason(db, 2026, 8);
-for (let i = 0; i < 3; i++) season = advanceToUserFixture(db, season, user).season;
+for (let i = 0; i < 3; i++) season = playUserFixture(db, season, user).season;
 
 describe('competitionOptions', () => {
   it("lists the user's league first, then the other league, then the cup", () => {
@@ -58,7 +59,7 @@ describe('buildCupView', () => {
 
   it('shows every round, a winner and the user’s fate after a full season', () => {
     let full = season;
-    while (nextFixtureFor(full, USER)) full = advanceToUserFixture(db, full, user).season;
+    while (nextFixtureFor(full, USER)) full = playUserFixture(db, full, user).season;
     full = playRemaining(db, full).season;
     const view = buildCupView(db, full, USER)!;
     expect(view.rounds.map((r) => r.name)).toEqual(['First round', 'Round of 32', 'Round of 16', 'Quarter-finals', 'Semi-finals', 'Final']);

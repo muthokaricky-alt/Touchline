@@ -25,7 +25,7 @@ import {
   squadIds,
   type ConditionState,
 } from '../condition';
-import { durationLabel, injuryMessages, withoutInjured } from '../squad-care';
+import { durationLabel, injuryMessages, withoutUnavailable } from '../squad-care';
 
 const db = buildFictionalDatabase();
 const USER = 'club_greywater_town';
@@ -163,7 +163,7 @@ describe('AI rotation', () => {
 describe('the user after a matchday', () => {
   it('injured players leave the lineup and are replaced by fit ones', () => {
     const s = stateWith({ [someone]: { injury: { name: 'calf strain', returns: '2026-09-01' } } });
-    const next = withoutInjured(db, USER, lineup, s);
+    const next = withoutUnavailable(db, USER, lineup, s);
     expect(starterIds(next)).not.toContain(someone);
     expect(starterIds(next).filter(Boolean)).toHaveLength(11);
     expect(next.substitutes).toHaveLength(lineup.substitutes.length);

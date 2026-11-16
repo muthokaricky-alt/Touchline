@@ -4,7 +4,7 @@ import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { PLAYING_STYLES } from '@/game/tactics/presets';
 import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 
-import { conditionAtKickOff, createInitialGameState, DEFAULT_USER_CLUB_ID, flushSave, useGameStore } from '../game-store';
+import { conditionAtKickOff, createInitialGameState, DEFAULT_USER_CLUB_ID, flushSave, suspendedAtKickOff, useGameStore } from '../game-store';
 
 // The autosave's real storage can't run in Jest; use memory (see autosave.test.ts).
 jest.mock('@/persistence/storage', () => {
@@ -163,6 +163,28 @@ describe('game store', () => {
     const before = state().lineup;
     state().clearSlot('LM');
     expect(state().lineup).not.toBe(before);
+  });
+});
+
+describe('suspensions in the store', () => {
+  it('a ban takes the player out of the lineup, is reported, and blocks picking him for that fixture', () => {
+    // Play until someone in the squad is banned from the next fixture (deterministic for the fictional world).
+    let bannedId: string | undefined;
+    for (let i = 0; i < 38 && !bannedId; i++) {
+      state().playNextFixture();
+      bannedId = candidates().find((c) => suspendedAtKickOff(state()).has(c.player.id))?.player.id;
+    }
+    expect(bannedId).toBeDefined();
+    const selected = () => [...starterIds(state().lineup), ...state().lineup.substitutes];
+    expect(selected()).not.toContain(bannedId);
+    expect(state().inbox.some((m) => m.title.endsWith('suspended'))).toBe(true);
+
+    state().autoPick();
+    expect(selected()).not.toContain(bannedId);
+
+    // Forcing him back in: the store refuses to play the fixture.
+    state().assignToSlot(Object.keys(state().lineup.starters)[0], bannedId!);
+    expect(() => state().playNextFixture()).toThrow(/suspended/);
   });
 });
 

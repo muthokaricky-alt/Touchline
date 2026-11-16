@@ -5,7 +5,7 @@ import { PlayerProfileScreen } from '@/features/player/PlayerProfileScreen';
 import { useGameStore } from '@/store/game-store';
 import { ContractCard } from '@/features/transfers/ContractCard';
 import { TransferCard } from '@/features/transfers/TransferCard';
-import { useOwnPlayerContract, usePlayerProfile, useTransferTarget } from '@/store/hooks';
+import { useOwnPlayerContract, usePlayerDiscipline, usePlayerProfile, useTransferTarget } from '@/store/hooks';
 
 /**
  * Web static export pre-renders an HTML page per player listed here. The
@@ -25,6 +25,7 @@ export default function PlayerRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const profile = usePlayerProfile(id);
+  const discipline = usePlayerDiscipline(id);
   const target = useTransferTarget(id);
   const own = useOwnPlayerContract(id);
   const actions = useGameStore.getState; // actions never change; read them when called
@@ -90,5 +91,5 @@ export default function PlayerRoute() {
     />
   ) : null;
 
-  return <PlayerProfileScreen profile={profile} onBack={goBack} extra={card} />;
+  return <PlayerProfileScreen profile={profile} discipline={discipline} onBack={goBack} extra={card} />;
 }

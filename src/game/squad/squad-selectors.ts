@@ -80,6 +80,8 @@ export type SquadPlayerView = {
   /** Rounded 1–20 rating in their primary position. */
   rating: number;
   condition: PlayerCondition;
+  /** Banned from the next fixture. */
+  suspended: boolean;
 };
 
 export type SquadGroupView = {
@@ -88,7 +90,13 @@ export type SquadGroupView = {
   players: SquadPlayerView[];
 };
 
-export function selectSquad(db: GameDatabase, clubId: ClubId, onDate: string, condition?: ConditionState): SquadPlayerView[] {
+export function selectSquad(
+  db: GameDatabase,
+  clubId: ClubId,
+  onDate: string,
+  condition?: ConditionState,
+  suspended: ReadonlySet<PlayerId> = new Set(),
+): SquadPlayerView[] {
   const numbers = squadNumbers(db);
   return selectSquadCandidates(db, clubId).map(({ player, attributes }) => ({
     id: player.id,
@@ -102,6 +110,7 @@ export function selectSquad(db: GameDatabase, clubId: ClubId, onDate: string, co
     group: POSITION_GROUP[player.primaryPosition],
     rating: Math.round(effectiveRating(player, attributes, player.primaryPosition)),
     condition: condition ? conditionOf(condition, player.id) : FULLY_FIT,
+    suspended: suspended.has(player.id),
   }));
 }
 

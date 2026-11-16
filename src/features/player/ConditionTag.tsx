@@ -6,11 +6,13 @@ const SHOW_BELOW = 90;
 const LOW = 75;
 
 /**
- * Compact condition marker for player rows: "Injured", or fitness when it's
- * notably below full. Renders nothing for a fit, fresh player.
+ * Compact condition marker for player rows: "Injured", "Suspended", or
+ * fitness when it's notably below full. Renders nothing for a fit, fresh,
+ * available player.
  */
-export function ConditionTag({ fitness, injured }: { fitness: number; injured: boolean }) {
+export function ConditionTag({ fitness, injured, suspended = false }: { fitness: number; injured: boolean; suspended?: boolean }) {
   if (injured) return <Pill label="Injured" tone="danger" />;
+  if (suspended) return <Pill label="Suspended" tone="danger" />;
   if (fitness < SHOW_BELOW) return <Pill label={`${fitness}%`} tone={fitness < LOW ? 'warning' : 'neutral'} />;
   return null;
 }

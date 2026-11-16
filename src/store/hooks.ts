@@ -24,7 +24,8 @@ import { selectPlayerPicker, selectTeamSheet, type PickerTarget } from '@/game/s
 import { analyseTactics } from '@/game/tactics/analysis';
 import { matchPlayingStyle } from '@/game/tactics/presets';
 
-import { conditionAtKickOff, useGameStore } from './game-store';
+import { selectDiscipline } from '@/game/discipline/suspensions';
+import { conditionAtKickOff, suspendedAtKickOff, useGameStore } from './game-store';
 
 /**
  * React hooks that turn store state into view models.
@@ -57,12 +58,28 @@ export function useConditionAtKickOff() {
   return useMemo(() => conditionAtKickOff({ condition, currentDate, season, userClubId }), [condition, currentDate, season, userClubId]);
 }
 
+/** Who can play the user's next fixture: condition at kick-off plus that fixture's suspensions. */
+export function useAvailabilityAtKickOff() {
+  const atKickOff = useConditionAtKickOff();
+  const season = useGameStore((s) => s.season);
+  const userClubId = useGameStore((s) => s.userClubId);
+  return useMemo(() => availabilityFrom(atKickOff, suspendedAtKickOff({ season, userClubId })), [atKickOff, season, userClubId]);
+}
+
+/** Players banned from the user's next fixture. */
+export function useSuspendedAtKickOff() {
+  const season = useGameStore((s) => s.season);
+  const userClubId = useGameStore((s) => s.userClubId);
+  return useMemo(() => suspendedAtKickOff({ season, userClubId }), [season, userClubId]);
+}
+
 export function useSquadGroups() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
   const date = useGameStore((s) => s.currentDate);
   const today = useConditionToday();
-  return useMemo(() => groupSquad(selectSquad(database, clubId, date, today)), [database, clubId, date, today]);
+  const suspended = useSuspendedAtKickOff();
+  return useMemo(() => groupSquad(selectSquad(database, clubId, date, today, suspended)), [database, clubId, date, today, suspended]);
 }
 
 export function usePlayerProfile(playerId: PlayerId) {
@@ -71,6 +88,13 @@ export function usePlayerProfile(playerId: PlayerId) {
   const clubId = useGameStore((s) => s.userClubId);
   const today = useConditionToday();
   return useMemo(() => selectPlayerProfile(database, playerId, date, today, clubId), [database, playerId, date, today, clubId]);
+}
+
+/** A player's suspensions and bookings this season, for the profile. */
+export function usePlayerDiscipline(playerId: PlayerId) {
+  const database = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+  return useMemo(() => selectDiscipline(database, season, playerId), [database, season, playerId]);
 }
 
 /** The board's view of the manager (null before a career has started). */
@@ -106,8 +130,8 @@ export function useTeamSheet() {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
   const lineup = useGameStore((s) => s.lineup);
-  const atKickOff = useConditionAtKickOff();
-  return useMemo(() => selectTeamSheet(database, clubId, lineup, availabilityFrom(atKickOff)), [database, clubId, lineup, atKickOff]);
+  const availability = useAvailabilityAtKickOff();
+  return useMemo(() => selectTeamSheet(database, clubId, lineup, availability), [database, clubId, lineup, availability]);
 }
 
 /** Other clubs in the user's league this season, strongest first: friendly opponents. */
@@ -296,9 +320,9 @@ export function usePlayerPicker(target: PickerTarget | null) {
   const database = useGameStore((s) => s.database);
   const clubId = useGameStore((s) => s.userClubId);
   const lineup = useGameStore((s) => s.lineup);
-  const atKickOff = useConditionAtKickOff();
+  const availability = useAvailabilityAtKickOff();
   return useMemo(
-    () => (target ? selectPlayerPicker(database, clubId, lineup, target, availabilityFrom(atKickOff)) : null),
-    [database, clubId, lineup, target, atKickOff],
+    () => (target ? selectPlayerPicker(database, clubId, lineup, target, availability) : null),
+    [database, clubId, lineup, target, availability],
   );
 }
