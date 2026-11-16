@@ -971,6 +971,30 @@ thirds; pots + country protection; single-leg knockouts, winners and the
 - Old saves whose Continental Cup is the plain knockout keep it until the
   season ends (no `groups` → the knockout code path).
 
+**Two-legged knockouts** (user: Round of 16, quarter-finals and
+semi-finals home and away, one-match final; level on aggregate →
+penalties, no away goals):
+
+- `SeasonCup.twoLegged`. Rounds after the groups: 7–8 R16 (1st, 2nd leg),
+  9–10 QF, 11–12 SF, 13 final. Each leg is an ordinary fixture (engine,
+  match day and replay unchanged); the legs of a tie are paired by round
+  and swapped clubs (`otherLeg`).
+- Both legs are drawn together; the seeded club (group winner / best
+  runner-up) hosts the second leg. Later stages come from aggregate
+  winners (`twoLegWinner`: aggregate, then the second leg's shootout).
+- `needsPenalties(season, fixture, score)` replaces "level cup tie →
+  penalties": never in group matches or first legs; after a second leg
+  only if the aggregate is level. `decidedTieWinner` tells views who went
+  through after a deciding match.
+- Calendar: legs on Tuesdays in weeks 21, 23, 24, 26, 29, 31 (still clear
+  of every national-cup week; the full-world season test checks no club
+  plays twice within two days).
+- Fixtures tab: "Round of 16 · 1st leg" etc., "agg 1–2" under second-leg
+  scores, statuses by stage ("In the Round of 16" across both legs).
+- Fixed on the way: the cup view showed any cup match the user didn't
+  win as "L", so a drawn group match looked like a defeat; only matches
+  that decide a tie use W/L now, the rest W/D/L.
+
 #### Faster tests with the bigger world
 
 - `npm test` had gone from ~36 s to ~85 s: about eight tests play whole
@@ -1457,6 +1481,15 @@ tests). Headless Chrome at 412px and 1280px: a career at Ravensmoor United
 → six group tables, "Group B: first match Tue 1 Sep" → matchday 1 after
 four league games → "3rd after 1 game" → matchday 2 → "1st after 2 games".
 Zero console errors, no overflow.
+
+**Two-legged knockouts** ✅: 951 tests (3 new: penalties only on a level
+aggregate, aggregate then shootout decides, a drawn group match shows as a
+draw; the whole-cup test and full-world season now two-legged: 101
+Continental Cup matches). Headless Chrome at 412px and 1280px: Ravensmoor
+United won Group B (Kisumu Lakeside, CD Villarrosa, US Pietrabianca: four
+countries) → R16 legs drawn at once (Tue 29 Dec away, Tue 12 Jan at home as
+a group winner) → 1–1, 0–1 → "Knocked out in the Round of 16", QF legs
+drawn, aggregates shown. Zero console errors, no overflow.
 
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting

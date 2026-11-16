@@ -13,7 +13,7 @@ import { flattenAttributes } from '../ratings';
 import { selectSquadCandidates } from '../squad/squad-selectors';
 import type { Tactics } from '../tactics/tactics';
 import { drawGroups } from './continental';
-import { cupRoundLabel, cupWinner, firstCupRound, isCupFixture, isKnockoutFixture, nextCupRound } from './cup';
+import { cupRoundLabel, cupWinner, firstCupRound, isCupFixture, needsPenalties, nextCupRound } from './cup';
 import { scheduleLeague, seasonStartDate } from './fixtures';
 import { addMatchesToStats } from './player-stats';
 import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season, type SeasonCup } from './season';
@@ -84,12 +84,12 @@ function seasonLeagueOrder(db: GameDatabase): League[] {
 export const CONTINENTAL_PLACES = 4;
 /**
  * Weeks (counted from the season's first Saturday) of the Continental Cup's
- * Tuesday rounds: six group matchdays, then the Round of 16, quarter-finals
- * and semi-finals. None is a week with a national-cup round (those are
+ * Tuesday rounds: six group matchdays, then both legs of the Round of 16,
+ * quarter-finals and semi-finals. None is a week with a national-cup round (those are
  * Wednesdays in weeks 3, 10, 11, 18, 20, 25, 28 and 32), so no club plays
  * two cup ties in a week. The final is the Saturday after the National Cup final.
  */
-const CONTINENTAL_WEEKS = [4, 6, 8, 13, 15, 17, 22, 26, 30];
+const CONTINENTAL_WEEKS = [4, 6, 8, 13, 15, 17, 21, 23, 24, 26, 29, 31];
 /** Groups of four: 24 entrants → 6 groups. */
 const CONTINENTAL_GROUP_SIZE = 4;
 
@@ -130,6 +130,7 @@ function continentalCup(db: GameDatabase, leagues: readonly League[], startYear:
     entrants,
     roundDates: [...tuesdays, final],
     groups: drawGroups(entrants, countryOf, groupCount, seed),
+    twoLegged: true,
   };
 }
 
@@ -256,7 +257,7 @@ export function buildFixtureInput(db: GameDatabase, season: Season, fixture: Fix
 export function simulateFixture(db: GameDatabase, season: Season, fixture: Fixture, user?: UserTeam, condition?: ConditionState): MatchResult {
   const input = buildFixtureInput(db, season, fixture, user, condition);
   const result = simulateMatch(input);
-  if (!isKnockoutFixture(season, fixture) || result.score.home !== result.score.away) return result;
+  if (!needsPenalties(season, fixture, result.score)) return result;
 
   const finishers = (side: Side) => {
     const squad = new Map(input[side].squad.map((c) => [c.player.id, c]));

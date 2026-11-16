@@ -11,6 +11,12 @@ import {
   groupStageComplete,
   groupStageFixtures,
   groupTables,
+  otherLeg,
+  aggregateScore,
+  TWO_LEG_ROUNDS,
+  twoLegRoundName,
+  twoLegStage,
+  twoLegWinner,
 } from './continental';
 import { seasonStartDate } from './fixtures';
 import { mixSeed, type Fixture, type Season } from './season';
@@ -131,13 +137,45 @@ export function isKnockoutFixture(season: Season, fixture: Pick<Fixture, 'compet
   return !cupGroups(season, fixture.competitionId) || fixture.matchday > GROUP_MATCHDAYS;
 }
 
+const isTwoLegged = (season: Season, cupId: CompetitionId) => Boolean(seasonCup(season, cupId)?.twoLegged && cupGroups(season, cupId));
+
+/**
+ * Does this match, ending `score`, go to penalties? Only a deciding knockout
+ * match that's level: a single-leg tie level after 90 minutes, or a second
+ * leg that leaves the aggregate level. Group matches and first legs can end
+ * level.
+ */
+export function needsPenalties(season: Season, fixture: Fixture, score: { home: number; away: number }): boolean {
+  if (!isKnockoutFixture(season, fixture)) return false;
+  if (!isTwoLegged(season, fixture.competitionId)) return score.home === score.away;
+  const stage = twoLegStage(fixture.matchday);
+  if (stage?.leg === 1) return false;
+  if (stage?.leg === null) return score.home === score.away; // the one-match final
+  const agg = aggregateScore(otherLeg(season.fixtures, fixture), score);
+  return agg !== null && agg.home === agg.away;
+}
+
+/**
+ * The club that went through after this match, or null if it doesn't decide
+ * a tie (a group match, a first leg) or isn't played yet.
+ */
+export function decidedTieWinner(season: Season, fixture: Fixture): ClubId | null {
+  if (!isKnockoutFixture(season, fixture)) return null;
+  if (!isTwoLegged(season, fixture.competitionId)) return tieWinner(fixture);
+  const stage = twoLegStage(fixture.matchday);
+  if (stage?.leg === 1) return null;
+  return stage?.leg === 2 ? twoLegWinner(season.fixtures, fixture) : tieWinner(fixture);
+}
+
 /** Number of rounds, final included. */
 export function cupTotalRounds(season: Season, cupId: CompetitionId): number {
+  if (isTwoLegged(season, cupId)) return TWO_LEG_ROUNDS;
   return cupGroups(season, cupId) ? GROUP_STAGE_ROUNDS : cupRoundCount(cupEntrants(season, cupId).length);
 }
 
-/** "Quarter-finals", "First round", "Group stage · Matchday 2"… */
+/** "Quarter-finals", "First round", "Group stage · Matchday 2", "Round of 16 · 2nd leg"… */
 export function cupRoundLabel(season: Season, cupId: CompetitionId, round: number): string {
+  if (isTwoLegged(season, cupId)) return twoLegRoundName(round);
   if (cupGroups(season, cupId)) return groupCupRoundName(round);
   const entrants = cupEntrants(season, cupId).length;
   return cupRoundName(round, cupRoundCount(entrants), entrants);
@@ -261,6 +299,7 @@ export function nextCupRound(season: Season, cupId: CompetitionId): Fixture[] {
  */
 function nextGroupCupRound(season: Season, cupId: CompetitionId, groups: readonly ClubId[][], fixtures: readonly Fixture[]): Fixture[] {
   if (!groupStageComplete(season, cupId)) return [];
+  if (isTwoLegged(season, cupId)) return nextTwoLegRound(season, cupId, groups, fixtures);
   const knockouts = fixtures.filter((f) => f.matchday > GROUP_MATCHDAYS);
   const seed = cupSeed(season, cupId);
   const dateOf = (round: number) => roundDate(season, cupId, round, GROUP_STAGE_ROUNDS);
@@ -282,6 +321,41 @@ function nextGroupCupRound(season: Season, cupId: CompetitionId, groups: readonl
   if (latest >= GROUP_STAGE_ROUNDS || latestTies.some((f) => !f.result)) return [];
   const winners = latestTies.map(tieWinner).filter((id): id is ClubId => id !== null);
   return drawCupRound({ cupId, round: latest + 1, participants: winners, date: dateOf(latest + 1), startYear: season.startYear, seed });
+}
+
+/**
+ * Two-legged knockouts: each stage is drawn with both legs at once (the
+ * second leg the other way round), from the group outcome for the Round of
+ * 16 (the seeded club at home in the second leg), then from the previous
+ * stage's aggregate winners; the final is one match.
+ */
+function nextTwoLegRound(season: Season, cupId: CompetitionId, groups: readonly ClubId[][], fixtures: readonly Fixture[]): Fixture[] {
+  const knockouts = fixtures.filter((f) => f.matchday > GROUP_MATCHDAYS);
+  const seed = cupSeed(season, cupId);
+  const dateOf = (round: number) => roundDate(season, cupId, round, TWO_LEG_ROUNDS);
+  const base = `fx_${cupId.replace(/^comp_/, '')}_${String(season.startYear % 100).padStart(2, '0')}`;
+  const legs = (firstRound: number, pairs: readonly (readonly [ClubId, ClubId])[]): Fixture[] =>
+    pairs.flatMap(([firstHome, firstAway], i) => [
+      { id: `${base}_r${firstRound}_${i + 1}`, competitionId: cupId, matchday: firstRound, date: dateOf(firstRound), homeId: firstHome, awayId: firstAway, result: null },
+      { id: `${base}_r${firstRound + 1}_${i + 1}`, competitionId: cupId, matchday: firstRound + 1, date: dateOf(firstRound + 1), homeId: firstAway, awayId: firstHome, result: null },
+    ]);
+
+  if (knockouts.length === 0) {
+    // drawRoundOf16 pairs are [seeded, unseeded]: the unseeded club hosts the first leg.
+    const pairs = drawRoundOf16(groupOutcome(groupTables(season, cupId, groups)), seed).map(([seeded, other]) => [other, seeded] as const);
+    return legs(GROUP_MATCHDAYS + 1, pairs);
+  }
+  const latest = Math.max(...knockouts.map((f) => f.matchday));
+  const stage = twoLegStage(latest);
+  const latestTies = knockouts.filter((f) => f.matchday === latest);
+  if (!stage || stage.leg !== 2 || latestTies.some((f) => !f.result)) return [];
+  const winners = latestTies.map((f) => twoLegWinner(season.fixtures, f)).filter((id): id is ClubId => id !== null);
+  const nextRound = latest + 1;
+  if (nextRound === TWO_LEG_ROUNDS) {
+    return drawCupRound({ cupId, round: nextRound, participants: winners, date: dateOf(nextRound), startYear: season.startYear, seed });
+  }
+  const drawn = drawCupRound({ cupId, round: nextRound, participants: winners, date: dateOf(nextRound), startYear: season.startYear, seed });
+  return legs(nextRound, drawn.map((f) => [f.homeId, f.awayId] as const));
 }
 
 /** Cup winner once the final is played, else null. */

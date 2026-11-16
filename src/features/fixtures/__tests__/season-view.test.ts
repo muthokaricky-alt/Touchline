@@ -105,3 +105,19 @@ describe('competitionOptions for a manager abroad', () => {
     ]);
   });
 });
+
+describe('buildCupView for the Continental Cup', () => {
+  it('shows a drawn group match as a draw, not a defeat', () => {
+    const season = createSeason(world, 2026, 1234);
+    const cupId = 'comp_continental_cup';
+    const match = season.fixtures.find((f) => f.competitionId === cupId && f.matchday === 1)!;
+    const drawn = {
+      ...season,
+      fixtures: season.fixtures.map((f) => (f.id === match.id ? { ...f, result: { score: { home: 1, away: 1 }, goals: [], cards: [], playerOfTheMatch: null } } : f)),
+    };
+    const view = buildCupView(world, drawn, cupId, match.homeId)!;
+    const row = view.rounds.flatMap((r) => r.ties).find((t) => t.id === match.id)!;
+    expect(row.userOutcome).toBe('D');
+    expect(view.groups).toHaveLength(6);
+  });
+});

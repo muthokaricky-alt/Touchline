@@ -45,8 +45,9 @@ export function MatchdayPager({ day, total, onPrevious, onNext }: MatchdayPagerP
 
 export function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
   const penalties = fixture.penalties ? `, ${fixture.penalties.home}–${fixture.penalties.away} on penalties` : '';
+  const aggregate = fixture.aggregate ? `, ${fixture.aggregate.home}–${fixture.aggregate.away} on aggregate` : '';
   const label = fixture.score
-    ? `${fixture.homeName} ${fixture.score.home}, ${fixture.awayName} ${fixture.score.away}${penalties}`
+    ? `${fixture.homeName} ${fixture.score.home}, ${fixture.awayName} ${fixture.score.away}${aggregate}${penalties}`
     : `${fixture.homeName} versus ${fixture.awayName}, not played yet`;
   return (
     <View style={[styles.row, fixture.involvesUser && styles.userRow]} accessible accessibilityLabel={label}>
@@ -57,6 +58,11 @@ export function FixtureRow({ fixture }: { fixture: FixtureRowView }) {
         <AppText variant="bodyStrong" color={fixture.score ? 'textPrimary' : 'textMuted'}>
           {fixture.score ? `${fixture.score.home} – ${fixture.score.away}` : 'v'}
         </AppText>
+        {fixture.aggregate ? (
+          <AppText variant="caption" color="textSecondary">
+            agg {fixture.aggregate.home}–{fixture.aggregate.away}
+          </AppText>
+        ) : null}
         {fixture.penalties ? (
           <AppText variant="caption" color="textSecondary">
             {fixture.penalties.home}–{fixture.penalties.away} pens

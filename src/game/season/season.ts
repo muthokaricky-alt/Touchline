@@ -69,6 +69,8 @@ export const SeasonCupSchema = z.strictObject({
    * are then the group matchdays and the knockouts follow (see continental.ts).
    */
   groups: z.array(z.array(ClubIdSchema).min(2)).min(2).optional(),
+  /** After the groups: two-legged Round of 16, quarter-finals and semi-finals (see continental.ts). */
+  twoLegged: z.boolean().optional(),
 });
 
 /** Which clubs play in a league THIS season (promotion/relegation changes it). */

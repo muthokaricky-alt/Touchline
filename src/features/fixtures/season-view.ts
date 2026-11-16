@@ -1,6 +1,15 @@
 import type { ClubId, CompetitionId, GameDatabase } from '@/data/schemas';
 import { formatMatchDate } from '@/utils/format';
-import { GROUP_MATCHDAYS, groupName, groupStageComplete, groupTables } from '@/game/season/continental';
+import {
+  aggregateScore,
+  GROUP_MATCHDAYS,
+  groupName,
+  groupStageComplete,
+  groupTables,
+  otherLeg,
+  stageName,
+  twoLegStage,
+} from '@/game/season/continental';
 import {
   cupEntrants,
   cupFixtures,
@@ -9,9 +18,8 @@ import {
   cupRoundLabel,
   cupRoundName,
   cupWinner,
+  decidedTieWinner,
   seasonCup,
-  tieLoser,
-  tieWinner,
 } from '@/game/season/cup';
 import { seasonPlayerStats, topAssists, topScorers, type PlayerSeasonStats } from '@/game/season/player-stats';
 import type { Fixture, Season } from '@/game/season/season';
@@ -29,6 +37,8 @@ export type FixtureRowView = {
   awayName: string;
   score: { home: number; away: number } | null;
   penalties: { home: number; away: number } | null;
+  /** Second legs: the score over both legs (this fixture's home side first). */
+  aggregate?: { home: number; away: number } | null;
   involvesUser: boolean;
   /** From the user's point of view, when played (cup ties: penalties decide). */
   userOutcome: 'W' | 'D' | 'L' | null;
@@ -96,12 +106,17 @@ export function competitionOptions(db: GameDatabase, season: Season, userClubId:
   });
 }
 
-function rowView(db: GameDatabase, f: Fixture, userClubId: ClubId, isCup: boolean): FixtureRowView {
+/**
+ * `decided`: for a match that decides a cup tie, who went through (the
+ * user's outcome is then W or L, penalties and aggregates included). Other
+ * matches (league, cup group matches, first legs) show W, D or L by score.
+ */
+function rowView(db: GameDatabase, f: Fixture, userClubId: ClubId, decided: ClubId | null = null): FixtureRowView {
   const nameOf = (id: ClubId) => db.clubs.find((c) => c.id === id)?.name ?? id;
   const involvesUser = f.homeId === userClubId || f.awayId === userClubId;
   let userOutcome: FixtureRowView['userOutcome'] = null;
   if (f.result && involvesUser) {
-    if (isCup) userOutcome = tieWinner(f) === userClubId ? 'W' : 'L';
+    if (decided) userOutcome = decided === userClubId ? 'W' : 'L';
     else {
       const { home, away } = f.result.score;
       const [mine, theirs] = f.homeId === userClubId ? [home, away] : [away, home];
@@ -140,7 +155,7 @@ export function buildLeagueView(db: GameDatabase, season: Season, competitionId:
   const byMatchday = new Map<number, MatchdayView>();
   for (const f of season.fixtures.filter((x) => x.competitionId === competitionId).sort((a, b) => a.matchday - b.matchday)) {
     const day = byMatchday.get(f.matchday) ?? { matchday: f.matchday, date: f.date, isCurrent: f.matchday === current, fixtures: [] };
-    day.fixtures.push(rowView(db, f, userClubId, false));
+    day.fixtures.push(rowView(db, f, userClubId));
     byMatchday.set(f.matchday, day);
   }
   const stats = seasonPlayerStats(season, competitionId);
@@ -181,7 +196,10 @@ export function buildCupView(db: GameDatabase, season: Season, cupId: Competitio
       round = { round: f.matchday, name: label(f.matchday), date: f.date, ties: [] };
       rounds.push(round);
     }
-    round.ties.push(rowView(db, f, userClubId, true));
+    const row = rowView(db, f, userClubId, decidedTieWinner(season, f));
+    const leg = groups && seasonCup(season, cupId)?.twoLegged ? twoLegStage(f.matchday) : null;
+    if (leg?.leg === 2 && f.result) row.aggregate = aggregateScore(otherLeg(fixtures, f), f.result.score);
+    round.ties.push(row);
   }
 
   const tables = groups ? groupTables(season, cupId, groups) : null;
@@ -203,12 +221,17 @@ export function buildCupView(db: GameDatabase, season: Season, cupId: Competitio
   const userTies = knockoutTies.filter((f) => f.homeId === userClubId || f.awayId === userClubId).sort((a, b) => a.matchday - b.matchday);
   const lastTie = userTies.at(-1);
   const firstKnockout = groups ? GROUP_MATCHDAYS + 1 : 1;
+  const twoLegged = Boolean(groups && seasonCup(season, cupId)?.twoLegged);
+  // Two-legged: statuses name the stage ("Round of 16"), not the leg.
+  const tieName = (round: number) => (twoLegged ? stageName(twoLegStage(round)?.stage ?? 0) : label(round));
+  const lastDecided = lastTie ? decidedTieWinner(season, lastTie) : null;
   let userStatus: string;
   if (winner === userClubId) userStatus = 'Winners!';
   else if (!entrants.includes(userClubId)) userStatus = 'Not entered';
-  else if (lastTie && !lastTie.result) userStatus = `In the ${label(lastTie.matchday)}`;
-  else if (lastTie && tieLoser(lastTie) === userClubId) userStatus = `Knocked out in the ${label(lastTie.matchday)}`;
-  else if (lastTie) userStatus = `Through to the ${label(lastTie.matchday + 1)}`;
+  else if (lastTie && (!lastTie.result || (twoLegged && twoLegStage(lastTie.matchday)?.leg === 1)))
+    userStatus = `In the ${tieName(lastTie.matchday)}`;
+  else if (lastTie && lastDecided !== userClubId) userStatus = `Knocked out in the ${tieName(lastTie.matchday)}`;
+  else if (lastTie) userStatus = `Through to the ${tieName(lastTie.matchday + 1)}`;
   else if (tables) {
     const g = tables.findIndex((rows) => rows.some((r) => r.clubId === userClubId));
     const row = tables[g].find((r) => r.clubId === userClubId)!;

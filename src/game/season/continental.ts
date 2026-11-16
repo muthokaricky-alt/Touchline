@@ -180,3 +180,59 @@ export function groupCupRoundName(round: number): string {
   if (round <= GROUP_MATCHDAYS) return `Group stage · Matchday ${round}`;
   return ['Round of 16', 'Quarter-finals', 'Semi-finals', 'Final'][round - GROUP_MATCHDAYS - 1] ?? `Round ${round}`;
 }
+
+// --- Two-legged knockouts (Round of 16, quarter-finals, semi-finals) -------------------
+//
+// With `twoLegged`, rounds after the groups are: 7–8 Round of 16 (1st, 2nd
+// leg), 9–10 quarter-finals, 11–12 semi-finals, 13 the final (one match).
+// The seeded club is at home in the second leg. Level on aggregate after the
+// second leg → penalties (no away goals, no extra time).
+
+export const TWO_LEG_STAGES = 3;
+export const TWO_LEG_ROUNDS = GROUP_MATCHDAYS + 2 * TWO_LEG_STAGES + 1;
+const STAGE_NAMES = ['Round of 16', 'Quarter-finals', 'Semi-finals', 'Final'] as const;
+
+/** Which knockout stage a round is (0 = Round of 16 … 3 = final) and which leg; null in the group stage. */
+export function twoLegStage(round: number): { stage: number; leg: 1 | 2 | null } | null {
+  if (round <= GROUP_MATCHDAYS) return null;
+  const k = round - GROUP_MATCHDAYS - 1;
+  if (k >= 2 * TWO_LEG_STAGES) return { stage: TWO_LEG_STAGES, leg: null };
+  return { stage: Math.floor(k / 2), leg: k % 2 === 0 ? 1 : 2 };
+}
+
+export const stageName = (stage: number) => STAGE_NAMES[stage] ?? `Round ${stage + 1}`;
+
+/** "Round of 16 · 1st leg", "Final", "Group stage · Matchday 4". */
+export function twoLegRoundName(round: number): string {
+  const s = twoLegStage(round);
+  if (!s) return `Group stage · Matchday ${round}`;
+  return s.leg === null ? stageName(s.stage) : `${stageName(s.stage)} · ${s.leg === 1 ? '1st' : '2nd'} leg`;
+}
+
+/** The other leg of a tie: same cup, the neighbouring round, the clubs swapped. */
+export function otherLeg(fixtures: readonly Fixture[], leg: Fixture): Fixture | undefined {
+  const s = twoLegStage(leg.matchday);
+  if (!s || s.leg === null) return undefined;
+  const round = s.leg === 1 ? leg.matchday + 1 : leg.matchday - 1;
+  return fixtures.find((f) => f.competitionId === leg.competitionId && f.matchday === round && f.homeId === leg.awayId && f.awayId === leg.homeId);
+}
+
+/**
+ * Aggregate over both legs from the SECOND leg's home side's point of view
+ * (`second` may be an unrecorded result being decided). Null until the first
+ * leg has a result.
+ */
+export function aggregateScore(first: Fixture | undefined, second: { home: number; away: number }): { home: number; away: number } | null {
+  if (!first?.result) return null;
+  return { home: second.home + first.result.score.away, away: second.away + first.result.score.home };
+}
+
+/** Winner of a two-legged tie, given its second leg (aggregate, then the second leg's shootout); null until decided. */
+export function twoLegWinner(fixtures: readonly Fixture[], second: Fixture): ClubId | null {
+  if (!second.result) return null;
+  const agg = aggregateScore(otherLeg(fixtures, second), second.result.score);
+  if (!agg) return null;
+  const { home, away } = agg.home === agg.away && second.result.penalties ? second.result.penalties : agg;
+  if (home === away) return null;
+  return home > away ? second.homeId : second.awayId;
+}
