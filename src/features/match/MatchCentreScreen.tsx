@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,7 +12,7 @@ import { RatingsList } from './components/RatingsList';
 import { Scoreboard } from './components/Scoreboard';
 import { StatsPanel } from './components/StatsPanel';
 import { phaseLabel, type RatingRow, type StatRow, type TimelineItem } from './timeline';
-import { BUILD_UP_STEP_MS, type PitchFrame } from './pitch2d';
+import { BUILD_UP_STEP_MS, PASS_STEP_MS, type PitchFrame } from './pitch2d';
 import { useMatchView, type MatchViewMode } from './use-match-view';
 import { useReplay } from './use-replay';
 
@@ -21,9 +21,13 @@ const VIEW_SEGMENTS = [
   { value: 'commentary', label: 'Commentary' },
 ] as const satisfies readonly { value: MatchViewMode; label: string }[];
 
-/** What the 2D view needs, aligned with the timeline: a frame per item and the build-up before chances and goals. */
+/**
+ * What the 2D view needs, aligned with the timeline: a frame per item, the
+ * passing play before it, and the build-up before chances and goals.
+ */
 export type MatchPitch = {
   frames: readonly (PitchFrame | undefined)[];
+  passing: readonly (readonly PitchFrame[] | undefined)[];
   buildUps: readonly (readonly PitchFrame[] | undefined)[];
   kits: Record<Side, Kit>;
   numberOf: (playerId: string) => string;
@@ -36,20 +40,34 @@ const HOLD_MS = 700;
 const GOAL_HOLD_MS = 2500;
 /** After a build-up, a short pause before the line appears (the shot). */
 const AFTER_BUILD_UP_MS = 300;
+/** After passing play with no chance, the line appears straight after the last pass. */
+const AFTER_PLAY_MS = 100;
+
+/** What plays on the pitch before an item's line: passing play, then the build-up (each frame with its own time). */
+type LeadIn = { frames: readonly PitchFrame[]; durations: readonly number[]; chance: boolean };
+
+function leadInOf(passing: readonly PitchFrame[] = [], buildUp: readonly PitchFrame[] = []): LeadIn | undefined {
+  if (!passing.length && !buildUp.length) return undefined;
+  return {
+    frames: [...passing, ...buildUp],
+    durations: [...passing.map(() => PASS_STEP_MS), ...buildUp.map(() => BUILD_UP_STEP_MS)],
+    chance: buildUp.length > 0,
+  };
+}
 
 /**
- * The build-up keyframe to show while the next item is pending: -1 (keep
- * showing the last moment) for HOLD_MS, then one keyframe every
- * BUILD_UP_STEP_MS. Restarts for each new item; stops while paused.
+ * The lead-in frame to show while the next item is pending: -1 (keep
+ * showing the last moment) for `holdMs`, then each frame for its duration.
+ * Restarts for each new item; stops while paused.
  */
-function useBuildUpStep(buildUp: readonly PitchFrame[] | undefined, playing: boolean, itemIndex: number, holdMs: number): number {
+function useLeadInStep(leadIn: LeadIn | undefined, playing: boolean, itemIndex: number, holdMs: number): number {
   const [step, setStep] = useState({ itemIndex, value: -1 });
   const current = step.itemIndex === itemIndex ? step.value : -1;
   useEffect(() => {
-    if (!buildUp || !playing || current >= buildUp.length - 1) return;
-    const timer = setTimeout(() => setStep({ itemIndex, value: current + 1 }), current < 0 ? holdMs : BUILD_UP_STEP_MS);
+    if (!leadIn || !playing || current >= leadIn.frames.length - 1) return;
+    const timer = setTimeout(() => setStep({ itemIndex, value: current + 1 }), current < 0 ? holdMs : leadIn.durations[current]);
     return () => clearTimeout(timer);
-  }, [buildUp, playing, current, itemIndex, holdMs]);
+  }, [leadIn, playing, current, itemIndex, holdMs]);
   return current;
 }
 
@@ -135,13 +153,17 @@ export function MatchCentreScreen({
   const pitchOn = pitch !== undefined && matchView.mode === '2d';
   // With the pitch on, a goal stays up a while, and a chance or goal waits for its build-up before its line appears.
   const holdAfter = useCallback((index: number) => (pitchOn && pitch?.frames[index]?.goal ? GOAL_HOLD_MS : HOLD_MS), [pitchOn, pitch]);
+  // Built once per match (the same objects every render, so the step timer isn't restarted).
+  const leadIns = useMemo(() => (pitch ? pitch.frames.map((_, i) => leadInOf(pitch.passing[i], pitch.buildUps[i])) : []), [pitch]);
   const stepFor = useCallback(
     (next: number) => {
-      const buildUp = pitchOn ? pitch?.buildUps[next] : undefined;
-      if (buildUp?.length) return holdAfter(next - 1) + buildUp.length * BUILD_UP_STEP_MS + AFTER_BUILD_UP_MS;
-      return pitchOn ? holdAfter(next - 1) : 700;
+      if (!pitchOn) return 700;
+      const leadIn = leadIns[next];
+      if (!leadIn) return holdAfter(next - 1);
+      const playing = leadIn.durations.reduce((sum, ms) => sum + ms, 0);
+      return holdAfter(next - 1) + playing + (leadIn.chance ? AFTER_BUILD_UP_MS : AFTER_PLAY_MS);
     },
-    [pitchOn, pitch, holdAfter],
+    [pitchOn, leadIns, holdAfter],
   );
   const replay = useReplay(timeline.length, stepFor, initialRevealed);
   const [view, setView] = useState<ReportView>('timeline');
@@ -151,9 +173,9 @@ export function MatchCentreScreen({
   const shown = timeline.slice(0, replay.revealed);
   const current = shown.at(-1) ?? timeline[0];
   const live = renderManagement !== undefined;
-  const pendingBuildUp = pitchOn && !replay.finished ? pitch?.buildUps[replay.revealed] : undefined;
-  const buildUpStep = useBuildUpStep(pendingBuildUp, replay.playing && !managing, replay.revealed, holdAfter(replay.revealed - 1));
-  const frame = pendingBuildUp && buildUpStep >= 0 ? pendingBuildUp[buildUpStep] : pitch?.frames[Math.max(0, replay.revealed - 1)];
+  const pendingLeadIn = pitchOn && !replay.finished ? leadIns[replay.revealed] : undefined;
+  const leadInStep = useLeadInStep(pendingLeadIn, replay.playing && !managing, replay.revealed, holdAfter(replay.revealed - 1));
+  const frame = pendingLeadIn && leadInStep >= 0 ? pendingLeadIn.frames[leadInStep] : pitch?.frames[Math.max(0, replay.revealed - 1)];
   const showPitch = pitchOn && frame !== undefined;
   const goalBanner = frame?.goal
     ? {

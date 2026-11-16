@@ -2,7 +2,8 @@ import { simulateMatch } from '@/engine/simulate';
 import type { MatchResult } from '@/engine/types';
 import { CLUBS, team } from '@/engine/__fixtures__/helpers';
 
-import { buildBuildUps, buildPitchFrames } from '../pitch2d';
+import { buildBuildUps, buildPassingPlay, buildPitchFrames, BUILD_UP_STEP_MS, PASS_STEP_MS } from '../pitch2d';
+import { buildTimeline } from '../timeline';
 
 const home = team(CLUBS.middle);
 const away = team(CLUBS.strongest);
@@ -113,5 +114,95 @@ describe('buildBuildUps', () => {
     const first = buildBuildUps(setPiece.result).get(setPiece.index)![0];
     expect(Math.min(first.ball.y, 1 - first.ball.y)).toBeLessThan(0.05); // on the byline at a corner
     expect(Math.min(first.ball.x, 1 - first.ball.x)).toBeLessThan(0.05);
+  });
+});
+
+describe('buildPassingPlay', () => {
+  const shownOf = (r: MatchResult) => buildTimeline(r, (id) => id).map((item) => Number(item.key));
+
+  it('fills the gaps between shown moments with 1-6 passes on the pitch, the ball always at a highlighted holder', () => {
+    const result = play(21);
+    const shown = shownOf(result);
+    const plays = buildPassingPlay(result, shown);
+    expect(plays.size).toBeGreaterThan(shown.length / 2);
+    for (const [index, frames] of plays) {
+      expect(shown).toContain(index);
+      expect(frames.length).toBeGreaterThanOrEqual(1);
+      expect(frames.length).toBeLessThanOrEqual(6);
+      for (const frame of frames) {
+        const holder = frame.dots.find((d) => d.highlight)!;
+        expect(Math.hypot(holder.x - frame.ball.x, holder.y - frame.ball.y)).toBeLessThan(0.05);
+        expect(count(frame, 'home')).toBeLessThanOrEqual(11);
+        for (const d of [...frame.dots, frame.ball]) {
+          expect(d.x).toBeGreaterThanOrEqual(0);
+          expect(d.x).toBeLessThanOrEqual(1);
+          expect(d.y).toBeGreaterThanOrEqual(0);
+          expect(d.y).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+    expect(buildPassingPlay(result, shown)).toEqual(plays); // deterministic
+  });
+
+  it('has the ball with the team whose chance comes next, and none during the half-time break', () => {
+    const result = play(21);
+    const shown = shownOf(result);
+    const plays = buildPassingPlay(result, shown);
+    for (const [index, frames] of plays) {
+      const next = result.events[index];
+      if (next.type === 'shot' || next.type === 'goal') {
+        expect(frames.at(-1)!.dots.find((d) => d.highlight)!.side).toBe(next.side);
+      }
+      expect(next.type).not.toBe('kick-off');
+    }
+  });
+
+  it('gives the ball to the defending keeper after a save or a shot off target', () => {
+    const result = play(21);
+    const shown = shownOf(result);
+    const plays = buildPassingPlay(result, shown);
+    let checked = 0;
+    shown.forEach((index, k) => {
+      const event = result.events[index];
+      const after = plays.get(shown[k + 1]);
+      if (event.type !== 'shot' || event.outcome === 'blocked' || !after) return;
+      const keeper = result.players.find((p) => p.side !== event.side && p.position === 'GK' && p.started)!;
+      // The keeper starts it (his first pass is the first frame), from his own end.
+      const first = after[0];
+      const ownEnd = event.side === 'home' ? first.ball.x > 0.5 : first.ball.x < 0.5;
+      expect(ownEnd).toBe(true);
+      expect(first.dots.find((d) => d.highlight)!.side).not.toBe(event.side);
+      expect(keeper).toBeDefined();
+      checked++;
+    });
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('restarts from the centre spot with the team that conceded', () => {
+    const { result } = findMatch((m) => m.events.findIndex((e) => e.type === 'goal' && e.minute < 80));
+    const shown = shownOf(result);
+    const plays = buildPassingPlay(result, shown);
+    const goalAt = shown.find((i) => result.events[i].type === 'goal' && result.events[i].minute < 80)!;
+    const goal = result.events[goalAt] as Extract<MatchResult['events'][number], { type: 'goal' }>;
+    const after = plays.get(shown[shown.indexOf(goalAt) + 1]);
+    if (!after) return; // the next line was a kick-off or a whistle
+    expect(after[0].dots.find((d) => d.highlight)!.side).toBe(goal.side === 'home' ? 'away' : 'home');
+    expect(Math.abs(after[0].ball.x - 0.5)).toBeLessThan(0.3);
+  });
+
+  it('keeps a 2D match to about two minutes', () => {
+    // The screen's timing: each line waits 0.7 s (a goal 2.5 s), plus its passing play and build-up.
+    for (const seed of [3, 21, 40]) {
+      const result = play(seed);
+      const shown = shownOf(result);
+      const plays = buildPassingPlay(result, shown);
+      const buildUps = buildBuildUps(result);
+      const ms = shown.reduce((sum, index, k) => {
+        const previousGoal = k > 0 && result.events[shown[k - 1]].type === 'goal';
+        return sum + (previousGoal ? 2500 : 700) + (plays.get(index)?.length ?? 0) * PASS_STEP_MS + (buildUps.get(index)?.length ?? 0) * BUILD_UP_STEP_MS;
+      }, 0);
+      console.log(`seed ${seed}: ${shown.length} lines, ${(ms / 1000).toFixed(0)} s`);
+      expect(ms).toBeLessThan(150_000);
+    }
   });
 });

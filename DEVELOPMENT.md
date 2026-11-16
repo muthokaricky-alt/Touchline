@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, 2D passing play, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1079,6 +1079,25 @@ as advised.
 - First browser run caught the banner showing for under a second (the
   next build-up replaced the goal frame after 0.7 s): goals now hold 2.5 s.
 
+**Passing play** (user: "make the circles and the ball move dynamically";
+passing play rather than gentle drift):
+- `buildPassingPlay(result, shown)` (pure, keyed like the build-ups): in
+  each gap between two shown lines, one pass per ~2 match minutes (1–6) to
+  a nearby teammate, mostly forward; both teams slide with the ball (along
+  the pitch and towards its side) and the nearest opponent presses the
+  holder. None after half-time/full-time or before a kick-off.
+- Who has it: the team on the ball at the last moment; after a goal the
+  team that conceded, from the centre spot; after a save or a shot off
+  target the defending keeper (a block: whoever is nearest). If the next
+  moment is the other team's (their chance, a foul against them), they win
+  it about half-way through; the starting side always makes at least one
+  pass first (a test caught a keeper's restart that was never seen).
+- Screen: passes then build-up play as one "lead-in" before the line, each
+  frame with its own time (`PASS_STEP_MS` 600, build-ups 520), built once
+  per match (`useMemo`) so the step timer isn't restarted by re-renders.
+  Commentary mode keeps the old 700 ms pace. A full match without skipping:
+  61–78 s computed, ~90 s in the browser (was ~46 s); Rick Kyalo scored.
+
 ### Rick Kyalo (after Milestone 10)
 
 Decisions (user): an all-20s Kenyan striker, 24, who joins whichever club
@@ -1733,6 +1752,17 @@ drawn, aggregates shown. Zero console errors, no overflow.
   (who took his bench place), Cancel, Pick from squad opens the picker for
   that position, all kept after a reload, no horizontal overflow. Zero
   console errors.
+
+### 2D passing play ✅
+- `buildPassingPlay`, lead-ins (passing + build-up) on the match screen.
+- Tests: 5 new (passes on the pitch with the ball at a highlighted holder,
+  deterministic; the ball with the team whose chance is next, none in the
+  break; restart from the centre spot after a goal and by the keeper after
+  a save/miss; match length under 150 s). Everyday suite 941.
+- Verified: `tsc` clean, lint clean, tests pass, web export; headless
+  Chrome screenshots every 0.6 s: passes between teammates, both teams
+  shifting, a turnover; a full match in 90 s to the report, goal banner.
+  Zero console errors.
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European

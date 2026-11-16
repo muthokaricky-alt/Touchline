@@ -303,5 +303,185 @@ function momentOf(event: MatchEvent, key: string, previousBall: { x: number; y: 
   }
 }
 
+// --- Passing play (between moments) --------------------------------------------------------
+//
+// Between two commentary lines the dots used to stand still. Now the team on
+// the ball passes it around: a chain of passes to nearby teammates, mostly
+// forward, with both teams sliding with the ball and the nearest opponent
+// pressing. Illustrative like the rest: the engine decides what happens; this
+// only fills the time between its moments.
+
+/** Time each pass is shown (the dots glide between passes). */
+export const PASS_STEP_MS = 600;
+/** Most passes shown between two lines. */
+const MAX_PASSES = 6;
+/** A pass goes to a teammate about this far away (pitch units). */
+const PASS_LENGTH = 0.2;
+
+type Ball = { x: number; y: number };
+
+/** The minute on the clock, counting added time (45+2 → 47). */
+const clockOf = (event: MatchEvent) => event.minute + (event.addedTime ?? 0);
+
+const distance = (a: Ball, b: Ball) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/**
+ * A team on the ball near `ball`: both shapes slide with the ball (along the
+ * pitch and towards its side), the holder stands on it, and the nearest
+ * opponent closes him down. `holder` null: nobody on the ball yet.
+ */
+function playFrame(side: Side, onPitch: Record<Side, readonly OnPitch[]>, ball: Ball, holder: PlayerId | null): PitchFrame {
+  // How far the ball is up the pitch, from the attacking team's point of view (0 own goal … 1 their goal).
+  const t = side === 'home' ? ball.x : 1 - ball.x;
+  const slideAlong = (t - 0.5) * 0.4;
+  const slideAcross = (ball.y - 0.5) * 0.3;
+  const keepers = new Set([...onPitch.home, ...onPitch.away].filter((p) => p.position === 'GK').map((p) => p.playerId));
+  const dots = [...shape(side, onPitch[side], 'attacking'), ...shape(other(side), onPitch[other(side)], 'defending')].map((d) => {
+    const keeper = keepers.has(d.playerId);
+    const along = (keeper ? 0.15 : 1) * slideAlong;
+    return { ...d, x: d.x + (side === 'home' ? along : -along), y: keeper ? d.y : d.y + slideAcross };
+  });
+  const own = holder ? dots.find((d) => d.playerId === holder) : undefined;
+  if (own) {
+    own.highlight = true;
+    own.x = side === 'home' ? ball.x - 0.02 : ball.x + 0.02;
+    own.y = ball.y;
+  }
+  // The nearest outfield opponent steps towards the ball.
+  const presser = nearestTo(
+    dots.filter((d) => d.side !== side && !keepers.has(d.playerId)),
+    ball,
+  );
+  if (presser) {
+    presser.x += (ball.x - presser.x) * 0.55;
+    presser.y += (ball.y - presser.y) * 0.55;
+  }
+  return { ball: { x: clamp(ball.x), y: clamp(ball.y) }, dots: dots.map(clampDot), goal: null };
+}
+
+function nearestTo(dots: readonly PitchDot[], at: Ball): PitchDot | null {
+  let best: PitchDot | null = null;
+  for (const d of dots) if (!best || distance(d, at) < distance(best, at)) best = d;
+  return best;
+}
+
+/**
+ * The next holder: a teammate about a pass length away, preferably moving
+ * the ball towards `targetT` (how far up the pitch the move should end),
+ * never the keeper unless the ball is near his own goal. Deterministic per `key`.
+ */
+function nextHolder(frame: PitchFrame, side: Side, keeper: PlayerId | undefined, holder: PlayerId, targetT: number, key: string): PitchDot | null {
+  const t = (x: number) => (side === 'home' ? x : 1 - x);
+  let best: PitchDot | null = null;
+  let bestScore = -Infinity;
+  for (const d of frame.dots) {
+    if (d.side !== side || d.playerId === holder) continue;
+    if (d.playerId === keeper && t(frame.ball.x) > 0.2) continue;
+    const length = distance(d, frame.ball);
+    const progress = t(d.x) - t(frame.ball.x);
+    // Close to a normal pass length, towards the target, with a little deterministic variety.
+    const score = -Math.abs(length - PASS_LENGTH) * 3 - Math.abs(t(d.x) - targetT) * 1.2 + progress * 0.4 + jitter(key + d.playerId) * 0.35;
+    if (score > bestScore) {
+      best = d;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/**
+ * Passing play before each shown item, keyed by the item's event index (like
+ * buildBuildUps). `shown` lists the event indexes the commentary shows, in
+ * order; play fills each gap between two of them, one pass per ~2 minutes of
+ * match time (1–6). None after half-time or full-time, or before a kick-off
+ * (play has stopped).
+ *
+ * Who has the ball: the team on it at the last moment (after a goal, the
+ * team that conceded, from the centre spot). If the next moment belongs to
+ * the other team, they win it about half-way through.
+ */
+export function buildPassingPlay(result: MatchResult, shown: readonly number[]): Map<number, PitchFrame[]> {
+  const moments: Moment[] = [];
+  const lineUps: Record<Side, OnPitch[]>[] = [];
+  let lastBall: Ball = { x: 0.5, y: 0.5 };
+  walkLineUps(result, (event, index, onPitch) => {
+    const moment = momentOf(event, `${index}`, lastBall);
+    lastBall = moment.ball;
+    moments[index] = moment;
+    lineUps[index] = { home: [...onPitch.home], away: [...onPitch.away] };
+  });
+
+  const plays = new Map<number, PitchFrame[]>();
+  for (let k = 1; k < shown.length; k++) {
+    const from = shown[k - 1];
+    const to = shown[k];
+    const before = result.events[from];
+    const next = result.events[to];
+    if (before.type === 'half-time' || before.type === 'full-time' || next.type === 'kick-off') continue;
+    const minutes = Math.max(1, Math.min(MAX_PASSES, Math.round((clockOf(next) - clockOf(before)) / 2)));
+    const onPitch = lineUps[from];
+    const key = `p${to}`;
+    const keeperOf = (s: Side) => onPitch[s].find((p) => p.position === 'GK')?.playerId;
+    // The outfielder of `s` nearest the ball (when nobody was named at the last moment, or on a turnover).
+    const nearest = (s: Side, at: Ball) =>
+      nearestTo(
+        playFrame(s, onPitch, at, null).dots.filter((d) => d.side === s && d.playerId !== keeperOf(s)),
+        at,
+      )?.playerId ?? null;
+
+    // Who starts on the ball, and where.
+    let side: Side;
+    let ball: Ball;
+    let holder: PlayerId | null;
+    if (before.type === 'goal') {
+      side = other(before.side);
+      ball = { x: 0.5, y: 0.5 };
+      holder = pick(onPitch[side], ['ST', 'AM', 'CM'], [], key + 'k');
+    } else if (before.type === 'shot') {
+      // The defending side restarts: the keeper after a save or a shot off target (goal kick), whoever is nearest after a block.
+      side = other(before.side);
+      if (before.outcome === 'blocked') {
+        ball = moments[from].ball;
+        holder = null;
+      } else {
+        ball = { x: towards(side, 0.06), y: 0.5 };
+        holder = keeperOf(side) ?? null;
+      }
+    } else {
+      side = moments[from].attacking ?? moments[to].attacking ?? (jitter(key) < 0.5 ? 'home' : 'away');
+      ball = moments[from].ball;
+      const focus = moments[from].focus;
+      holder = focus && onPitch[side].some((p) => p.playerId === focus) ? focus : null;
+    }
+    holder ??= nearest(side, ball);
+    if (!holder) continue;
+    const nextSide = moments[to].attacking ?? side;
+    // Keep the move in midfield; a build-up (if a chance follows) takes it from there.
+    const targetT = 0.5;
+    // When the ball changes hands, the side that starts makes at least one pass first (so a keeper's restart is seen).
+    const passes = nextSide === side ? minutes : Math.max(2, minutes);
+    const turnoverAt = nextSide === side ? -1 : Math.max(1, Math.floor(passes / 2));
+
+    const frames: PitchFrame[] = [];
+    for (let i = 0; i < passes; i++) {
+      if (i === turnoverAt) {
+        // The other side wins it where the ball is.
+        side = nextSide;
+        holder = nearest(side, ball) ?? holder;
+        frames.push(playFrame(side, onPitch, ball, holder));
+        continue;
+      }
+      const frame = playFrame(side, onPitch, ball, holder);
+      const receiver = nextHolder(frame, side, keeperOf(side), holder, targetT, `${key}-${i}`);
+      if (!receiver) break;
+      holder = receiver.playerId;
+      ball = { x: receiver.x, y: receiver.y };
+      frames.push(playFrame(side, onPitch, ball, holder));
+    }
+    if (frames.length) plays.set(to, frames);
+  }
+  return plays;
+}
+
 const clamp = (n: number) => Math.min(0.985, Math.max(0.015, n));
 const clampDot = (d: PitchDot): PitchDot => ({ ...d, x: clamp(d.x), y: clamp(d.y) });
