@@ -167,6 +167,15 @@ export function decidedTieWinner(season: Season, fixture: Fixture): ClubId | nul
   return stage?.leg === 2 ? twoLegWinner(season.fixtures, fixture) : tieWinner(fixture);
 }
 
+/**
+ * For the second leg of a two-legged tie: the score over both legs, this
+ * fixture's home side first, if it ends `score`. Null for any other match.
+ */
+export function tieAggregate(season: Season, fixture: Fixture, score: { home: number; away: number }): { home: number; away: number } | null {
+  if (!isTwoLegged(season, fixture.competitionId) || twoLegStage(fixture.matchday)?.leg !== 2) return null;
+  return aggregateScore(otherLeg(season.fixtures, fixture), score);
+}
+
 /** Number of rounds, final included. */
 export function cupTotalRounds(season: Season, cupId: CompetitionId): number {
   if (isTwoLegged(season, cupId)) return TWO_LEG_ROUNDS;

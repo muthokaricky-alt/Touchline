@@ -991,6 +991,10 @@ penalties, no away goals):
   plays twice within two days).
 - Fixtures tab: "Round of 16 · 1st leg" etc., "agg 1–2" under second-leg
   scores, statuses by stage ("In the Round of 16" across both legs).
+- Match report: after a second leg, "Calderbrook City win 2–1 on aggregate"
+  (or "2–2 on aggregate" followed by the penalties line), revealed at full
+  time like the shootout; `tieAggregate` works live too, because the first
+  leg is already in the season's results.
 - Fixed on the way: the cup view showed any cup match the user didn't
   win as "L", so a drawn group match looked like a defeat; only matches
   that decide a tie use W/L now, the rest W/D/L.

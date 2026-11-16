@@ -15,7 +15,7 @@ import {
   TWO_LEG_ROUNDS,
   twoLegWinner,
 } from '../continental';
-import { cupFixtures, cupRoundLabel, cupWinner, decidedTieWinner, isKnockoutFixture, needsPenalties, nextCupRound } from '../cup';
+import { cupFixtures, cupRoundLabel, cupWinner, decidedTieWinner, isKnockoutFixture, needsPenalties, nextCupRound, tieAggregate } from '../cup';
 import type { Fixture, Season } from '../season';
 import { createSeason } from '../season-flow';
 
@@ -120,6 +120,15 @@ describe('two-legged ties', () => {
     expect(needsPenalties(after, leg2, { home: 2, away: 0 })).toBe(false);
     expect(needsPenalties(after, leg2, { home: 0, away: 0 })).toBe(false);
     expect(aggregateScore(otherLeg(after.fixtures, leg2), { home: 1, away: 0 })).toEqual({ home: 1, away: 1 });
+  });
+
+  it('gives the match report an aggregate for a second leg only', () => {
+    const after = withFirstLeg({ home: 1, away: 0 });
+    // First leg 1–0 to its hosts; the second leg's hosts win 2–0: 2–1 to them on aggregate.
+    expect(tieAggregate(after, leg2, { home: 2, away: 0 })).toEqual({ home: 2, away: 1 });
+    expect(tieAggregate(after, leg1, { home: 1, away: 0 })).toBeNull();
+    const groupMatch = cupFixtures(after, CUP).find((f) => f.matchday === 1)!;
+    expect(tieAggregate(after, groupMatch, { home: 1, away: 1 })).toBeNull();
   });
 
   it('decides the tie on aggregate, then on the second leg’s shootout; a first leg decides nothing', () => {

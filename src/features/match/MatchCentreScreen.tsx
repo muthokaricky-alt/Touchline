@@ -25,6 +25,12 @@ type Score = { home: number; away: number };
 export type OtherResult = { key: string; homeName: string; awayName: string; score: Score; penalties?: Score };
 
 /** "Kestrel Bay win 4–3 on penalties" */
+/** "Calderbrook City win 2–1 on aggregate"; a level aggregate just states it (the penalties line says who went through). */
+function aggregateLine(homeName: string, awayName: string, a: Score): string {
+  if (a.home === a.away) return `${a.home}–${a.away} on aggregate`;
+  return `${a.home > a.away ? homeName : awayName} win ${Math.max(a.home, a.away)}–${Math.min(a.home, a.away)} on aggregate`;
+}
+
 function penaltiesLine(homeName: string, awayName: string, p: Score): string {
   return `${p.home > p.away ? homeName : awayName} win ${Math.max(p.home, p.away)}–${Math.min(p.home, p.away)} on penalties`;
 }
@@ -40,6 +46,8 @@ type MatchCentreScreenProps = {
   awayName: string;
   /** Cup shootout, revealed at full time. */
   penalties?: Score;
+  /** Second legs: the score over both legs (home side of this match first), revealed at full time. */
+  aggregate?: Score | null;
   timeline: readonly TimelineItem[];
   statRows: readonly StatRow[];
   ratings: { home: readonly RatingRow[]; away: readonly RatingRow[] };
@@ -68,6 +76,7 @@ export function MatchCentreScreen({
   homeName,
   awayName,
   penalties,
+  aggregate,
   timeline,
   statRows,
   ratings,
@@ -146,6 +155,11 @@ export function MatchCentreScreen({
         </>
       ) : (
         <>
+          {aggregate ? (
+            <AppText variant="heading" color="accent" align="center" accessibilityLiveRegion="polite">
+              {aggregateLine(homeName, awayName, aggregate)}
+            </AppText>
+          ) : null}
           {penalties ? (
             <AppText variant="heading" color="accent" align="center" accessibilityLiveRegion="polite">
               {penaltiesLine(homeName, awayName, penalties)}

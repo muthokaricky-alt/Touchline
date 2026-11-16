@@ -12,6 +12,7 @@ import { MatchSetupScreen } from '@/features/match/MatchSetupScreen';
 import { buildRatingRows, buildStatRows, buildTimeline } from '@/features/match/timeline';
 import type { MatchVenue } from '@/game/match/friendly';
 import { resumeClock, snapshotAt, type LiveMatch, type LiveView, type UserChange } from '@/game/match/live';
+import { tieAggregate } from '@/game/season/cup';
 import { competitionName, roundLabel } from '@/game/season/season-flow';
 import { findClub } from '@/game/squad/squad-selectors';
 import { useGameStore } from '@/store/game-store';
@@ -231,6 +232,8 @@ function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentr
       : [];
     return {
       overline: fixture ? `${competitionName(database, fixture.competitionId)} · ${roundLabel(season, fixture)}` : 'Friendly',
+      // A second leg: the first leg is in the season's results already, live or finished.
+      aggregate: fixture ? tieAggregate(season, fixture, result.score) : null,
       otherResults,
       timeline: buildTimeline(result, playerName),
       statRows: buildStatRows(result.stats),
@@ -289,6 +292,7 @@ function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentr
       homeName={result.home.name}
       awayName={result.away.name}
       penalties={result.penalties}
+      aggregate={view.aggregate}
       timeline={view.timeline}
       statRows={view.statRows}
       ratings={view.ratings}
