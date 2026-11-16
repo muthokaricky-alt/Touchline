@@ -1114,6 +1114,16 @@ both); installable and offline (PWA).
   `npx wrangler@4.163.0 deploy --dry-run` from an empty `dist/`).
   `netlify.toml` stays for Netlify.
 - Saves on the web are per browser (localStorage); export/import moves them.
+- **Live on Cloudflare** (https://touchline.muthokaricky.workers.dev): the
+  first service worker never installed there. Cloudflare redirects
+  `/squad.html` → `/squad` and `@`/`+` in file names → `%40`/`%2B`, and the
+  worker fetched all 85 files at once with `cache.addAll`, which fails on
+  any single dropped request (one blip was seen). Chrome also refuses a
+  *redirected* response for a page load, so cached `.html` pages would
+  have failed offline anyway. The worker (format 2) now requests clean,
+  encoded addresses, downloads six at a time with two retries, requires
+  only the essentials (start page + JS bundles), strips the "redirected"
+  mark, and looks files up under both spellings.
 
 ### Scouting (after Milestone 10)
 

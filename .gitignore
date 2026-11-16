@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Expo Simulators session credentials (never commit)
+.env.eas-simulator
