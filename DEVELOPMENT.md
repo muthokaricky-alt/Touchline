@@ -1414,10 +1414,13 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   clash with national-cup weeks, final after the National Cup final; full
   world: a winner, no club playing twice within two days, next season
   qualified from the final tables.
-- Verified: `tsc` clean, lint clean, `test:all` passes, web export.
-  **Not browser-verified:** the headless walkthrough (a career at
-  Ravensmoor United into its Round of 16) hung in the script and was
-  stopped; to redo.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px and 1280px: a career at Ravensmoor United →
+  Fixtures lists the Continental Cup after the National Cup, "Bye to the
+  Round of 16" → 13 league matches and a National Cup tie in date order →
+  "Continental Cup · Round of 16" (won) → "In the Quarter-finals". Zero
+  console errors, no overflow. (A first walkthrough hung in the script's
+  own waiting loops, not the game; rewritten with step-by-step logging.)
 
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting
