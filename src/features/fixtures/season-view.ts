@@ -63,7 +63,11 @@ export function competitionOptions(db: GameDatabase, season: Season, userClubId:
     (c): c is string => c !== undefined,
   );
 
-  return countries.flatMap((country) => {
+  // Cups that belong to no country (the Continental Cup) come right after the user's country.
+  const international = season.cups
+    .filter((cup) => !countries.includes(competition(cup.competitionId)?.country ?? ''))
+    .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const }));
+  return countries.flatMap((country, index) => {
     const label = (id: CompetitionId) => (country === homeCountry ? competitionName(db, id) : (competition(id)?.shortName ?? competitionName(db, id)));
     return [
       ...leagues
@@ -72,6 +76,7 @@ export function competitionOptions(db: GameDatabase, season: Season, userClubId:
       ...season.cups
         .filter((cup) => competition(cup.competitionId)?.country === country)
         .map((cup) => ({ id: cup.competitionId, label: competitionName(db, cup.competitionId), kind: 'cup' as const })),
+      ...(index === 0 ? international : []),
     ];
   });
 }

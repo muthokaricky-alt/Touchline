@@ -345,6 +345,19 @@ export const FOREIGN_CUPS: readonly Cup[] = FOREIGN_LEAGUE_SPECS.map((league) =>
   country: league.country,
 }));
 
+/**
+ * The Continental Cup: the top four of every country's top division (24
+ * clubs), single-leg knockout. Its `country` is 'INT' (international): it
+ * belongs to no country, and its entrants are qualified clubs, not leagues.
+ */
+export const CONTINENTAL_CUP: Cup = {
+  id: 'comp_continental_cup',
+  type: 'cup',
+  name: 'Continental Cup',
+  shortName: 'Continental',
+  country: 'INT',
+};
+
 /** The National Cup's country, listed first wherever countries are listed. */
 export const HOME_COUNTRY = 'ENG';
 
@@ -362,6 +375,7 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   GHA: 'Ghana',
   UGA: 'Uganda',
   TAN: 'Tanzania',
+  INT: 'International',
 };
 
 export const countryName = (code: string) => COUNTRY_NAMES[code] ?? code;

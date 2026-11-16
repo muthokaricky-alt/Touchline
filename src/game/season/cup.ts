@@ -118,9 +118,16 @@ function entrantLeagues(season: Season, cupId: CompetitionId) {
   return season.leagues.filter((l) => ids.includes(l.competitionId));
 }
 
-/** Entrants: every club in the cup country's leagues. Lowest tier listed last. */
+/** Entrants: the qualified clubs (strongest first) or every club in the cup country's leagues (lowest tier last). */
 export function cupEntrants(season: Season, cupId: CompetitionId): ClubId[] {
-  return entrantLeagues(season, cupId).flatMap((l) => l.clubIds);
+  const explicit = seasonCup(season, cupId)?.entrants;
+  return explicit ? [...explicit] : entrantLeagues(season, cupId).flatMap((l) => l.clubIds);
+}
+
+/** A round's date: fixed by the season cup, or spread through its league calendar. */
+function roundDate(season: Season, cupId: CompetitionId, round: number, totalRounds: number): string {
+  const fixed = seasonCup(season, cupId)?.roundDates?.[round - 1];
+  return fixed ?? cupRoundDate(season.startYear, round, totalRounds, cupLeagueWeeks(season, cupId));
 }
 
 export function cupFixtures(season: Season, cupId: CompetitionId): Fixture[] {
@@ -158,23 +165,29 @@ export function firstCupRound(season: Season, cupId: CompetitionId): Fixture[] {
   const needPlay = entrants.length > target ? 2 * (entrants.length - target) : entrants.length;
   const seed = cupSeed(season, cupId);
 
-  const leagues = entrantLeagues(season, cupId);
-  const lowestTier = leagues[leagues.length - 1].clubIds;
-  const rng = createRng(mixSeed(seed, 999));
-  const pool = [...lowestTier];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = rng.int(0, i);
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+  let participants: ClubId[];
+  if (seasonCup(season, cupId)?.entrants) {
+    // Qualified clubs are listed strongest first: the last `needPlay` play the first round, the rest get byes.
+    participants = entrants.slice(entrants.length - needPlay);
+  } else {
+    const leagues = entrantLeagues(season, cupId);
+    const lowestTier = leagues[leagues.length - 1].clubIds;
+    const rng = createRng(mixSeed(seed, 999));
+    const pool = [...lowestTier];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = rng.int(0, i);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    // If the lowest tier is too small, top up from the tier above (bottom-up).
+    const candidates = [...pool, ...leagues.slice(0, -1).reverse().flatMap((l) => l.clubIds)];
+    participants = needPlay === entrants.length ? entrants : candidates.slice(0, needPlay);
   }
-  // If the lowest tier is too small, top up from the tier above (bottom-up).
-  const candidates = [...pool, ...leagues.slice(0, -1).reverse().flatMap((l) => l.clubIds)];
-  const participants = needPlay === entrants.length ? entrants : candidates.slice(0, needPlay);
 
   return drawCupRound({
     cupId,
     round: 1,
     participants,
-    date: cupRoundDate(season.startYear, 1, total, cupLeagueWeeks(season, cupId)),
+    date: roundDate(season, cupId, 1, total),
     startYear: season.startYear,
     seed,
   });
@@ -200,7 +213,7 @@ export function nextCupRound(season: Season, cupId: CompetitionId): Fixture[] {
     cupId,
     round: latest + 1,
     participants: remaining,
-    date: cupRoundDate(season.startYear, latest + 1, total, cupLeagueWeeks(season, cupId)),
+    date: roundDate(season, cupId, latest + 1, total),
     startYear: season.startYear,
     seed: cupSeed(season, cupId),
   });

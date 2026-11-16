@@ -1,10 +1,11 @@
 import { buildFictionalDatabase } from '@/data/fictional';
+import { addDays, daysBetween, weekdayOf } from '@/utils/date';
 import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { autoPickLineup } from '@/game/lineup';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
-import { cupFixtures, cupWinner, tieWinner } from '../cup';
+import { cupEntrants, cupFixtures, cupLeagueWeeks, cupRoundCount, cupRoundDate, cupWinner, tieWinner } from '../cup';
 import { seasonPlayerStats } from '../player-stats';
 import { playUserFixture } from '../__fixtures__/play';
 import { mixSeed, SeasonSchema, type Season } from '../season';
@@ -64,9 +65,10 @@ describe('createSeason', () => {
       ['comp_germany_cup', ['comp_germany_premier']],
       ['comp_italy_cup', ['comp_italy_premier']],
       ['comp_spain_cup', ['comp_spain_premier']],
+      ['comp_continental_cup', [FIRST, 'comp_kenya_premier', 'comp_france_premier', 'comp_germany_premier', 'comp_italy_premier', 'comp_spain_premier']],
     ]);
     // Each cup abroad: its league's 18 clubs, a first round of 2 ties (18 → 16).
-    for (const cup of season.cups.slice(1)) {
+    for (const cup of season.cups.slice(1, 6)) {
       const league = season.leagues.find((l) => l.competitionId === cup.entrantLeagues[0])!;
       const first = cupFixtures(season, cup.competitionId);
       expect(first).toHaveLength(2);
@@ -82,6 +84,49 @@ describe('createSeason', () => {
 
   it('starts with the earliest fixture date first', () => {
     expect(nextDate(season)).toBe('2026-08-08');
+  });
+});
+
+describe('the Continental Cup', () => {
+  const season = createSeason(world, 2026, 1234);
+  const cup = season.cups.find((c) => c.competitionId === 'comp_continental_cup')!;
+  const tops = season.leagues.filter((l) => cup.entrantLeagues.includes(l.competitionId));
+  const leagueOf = (id: string) => tops.find((l) => l.clubIds.includes(id))!.competitionId;
+
+  it('takes the top four of every top division (first season: by reputation), champions first', () => {
+    expect(cup.entrants).toHaveLength(24);
+    for (const league of tops) expect(cup.entrants!.filter((id) => league.clubIds.includes(id))).toHaveLength(4);
+    // One "champion" per country first (the biggest club of each top division)...
+    expect(new Set(cup.entrants!.slice(0, 6).map(leagueOf)).size).toBe(6);
+    const reputation = (id: string) => world.clubs.find((c) => c.id === id)!.reputation;
+    for (const league of tops) {
+      const biggest = Math.max(...league.clubIds.map(reputation));
+      const champion = cup.entrants!.slice(0, 6).find((id) => leagueOf(id) === league.competitionId)!;
+      expect(reputation(champion)).toBe(biggest);
+    }
+    // ...and England's Second Division sends nobody.
+    expect(cup.entrants!.some((id) => season.leagues[1].clubIds.includes(id))).toBe(false);
+  });
+
+  it('gives the first eight a bye; the other 16 play the first round, on a Tuesday', () => {
+    const first = cupFixtures(season, 'comp_continental_cup');
+    expect(first).toHaveLength(8);
+    const playing = new Set(first.flatMap((f) => [f.homeId, f.awayId]));
+    expect([...playing].sort()).toEqual([...cup.entrants!.slice(8)].sort());
+    expect(weekdayOf(first[0].date)).toBe(2); // Tuesday
+  });
+
+  it('never puts a round in a week with a national-cup round', () => {
+    const weekOf = (date: string) => Math.floor(daysBetween('2026-08-08', date) / 7);
+    const nationalWeeks = new Set(
+      season.cups
+        .slice(0, 6)
+        .flatMap((c) => [1, 2, 3, 4, 5, 6].map((round) => cupRoundDate(2026, round, cupRoundCount(cupEntrants(season, c.competitionId).length), cupLeagueWeeks(season, c.competitionId))))
+        .map(weekOf),
+    );
+    for (const date of cup.roundDates!.slice(0, -1)) expect(nationalWeeks.has(weekOf(date))).toBe(false);
+    // The final is the Saturday after the National Cup final.
+    expect(cup.roundDates!.at(-1)).toBe(addDays(cupRoundDate(2026, 6, 6, 38), 7));
   });
 });
 

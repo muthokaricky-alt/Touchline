@@ -75,6 +75,8 @@ export function buildDashboardSummary(
   const country = db.competitions.find((c) => c.id === leagueId)?.country;
   const homeCup = season.cups.find((cup) => db.competitions.find((c) => c.id === cup.competitionId)?.country === country);
   const winner = homeCup ? cupWinner(season, homeCup.competitionId) : null;
+  const continental = season.cups.find((cup) => db.competitions.find((c) => c.id === cup.competitionId)?.country === 'INT');
+  const continentalWinner = continental ? cupWinner(season, continental.competitionId) : null;
   const contracts = db.contracts.filter((c) => c.clubId === clubId);
 
   return {
@@ -97,6 +99,7 @@ export function buildDashboardSummary(
             userZone: userRow.zone,
             cupName: homeCup ? competitionName(db, homeCup.competitionId) : null,
             cupWinnerName: winner ? nameOf(winner) : null,
+            continentalWinnerName: continentalWinner ? nameOf(continentalWinner) : null,
           }
         : null,
     form: userRow?.form ?? [],

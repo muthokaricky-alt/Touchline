@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues (steps A and B) and cups abroad (save v11). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting, foreign leagues (steps A and B), cups abroad and the Continental Cup (save v11). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -923,6 +923,27 @@ first round of 2 ties trims the field to 16, then 16 → 8 → 4 → 2 → final
 - **Save v11:** the old one-cup fields become a one-cup list (or are kept
   if a save already has `cups`); the cups abroad start next season.
 
+#### Continental Cup
+
+Decisions (user): "Continental Cup"; the top 4 of every top division (24
+clubs); single-leg knockout.
+
+- **Qualified clubs, not leagues:** `SeasonCup` gained optional `entrants`
+  (strongest first) and `roundDates`. Entrants: champions (league order),
+  then runners-up, thirds, fourths (each by reputation); the first eight
+  get a bye, the last 16 play the first round. First season: by club
+  reputation; then by the previous season's final tables (`createSeason`
+  takes the finished season; `startNextSeason` passes it).
+- **Calendar:** rounds on Tuesdays in weeks 6, 13, 21 and 29 (no national
+  cup has a round in those weeks; they play Wednesdays in 3, 10, 11, 18,
+  20, 25, 28, 32), final the Saturday after the National Cup final. Tested
+  over a full-world season: no club ever plays twice within two days.
+- Competition `country: 'INT'`; listed on the Fixtures tab right after the
+  user's country; the season summary names its winner; trophies and cup
+  bans work as for any cup. Last in `season.cups`, so it has its own seed.
+- No save change: both new fields are optional; v11 saves get the
+  Continental Cup from their next season.
+
 #### Faster tests with the bigger world
 
 - `npm test` had gone from ~36 s to ~85 s: about eight tests play whole
@@ -1384,6 +1405,20 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   matches → "Kenyan Cup · Round of 16" → "Knocked out in the Round of 16".
   Zero console errors, no overflow.
 
+### Continental Cup ✅ (after the roadmap)
+- `CONTINENTAL_CUP`; explicit entrants and round dates on a season cup;
+  qualification by table (reputation in the first season); Fixtures and
+  season summary.
+- Tests: 945 total (5 new): 24 entrants (4 per top division, champions
+  first, no Second Division clubs), byes and a Tuesday first round, no
+  clash with national-cup weeks, final after the National Cup final; full
+  world: a winner, no club playing twice within two days, next season
+  qualified from the final tables.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export.
+  **Not browser-verified:** the headless walkthrough (a career at
+  Ravensmoor United into its Round of 16) hung in the script and was
+  stopped; to redo.
+
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting
   for the user's review: `src/data/fictional/clubs.ts`.
@@ -1424,7 +1459,6 @@ All ten roadmap milestones are built. What's left before a release:
 3. Then choose: store submission (production profile, store listings,
    privacy policy) or more gameplay. Performance with the
    leagues abroad after the phone test (a cheaper results model for
-   matches abroad if needed). Parked ideas: a continental
-   cup between the countries' top clubs,
+   matches abroad if needed). Parked ideas:
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

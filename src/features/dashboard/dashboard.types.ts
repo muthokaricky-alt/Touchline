@@ -46,6 +46,8 @@ export type SeasonEndSummary = {
   userZone: 'champion' | 'promotion' | 'relegation' | null;
   cupName: string | null;
   cupWinnerName: string | null;
+  /** Winner of the Continental Cup, when there is one this season. */
+  continentalWinnerName?: string | null;
 };
 
 export type LeagueTableRow = {

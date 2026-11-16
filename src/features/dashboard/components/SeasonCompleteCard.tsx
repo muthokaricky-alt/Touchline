@@ -41,6 +41,7 @@ export function SeasonCompleteCard({ seasonLabel, summary, review, onStartNextSe
         <AppText color="textSecondary" align="center">
           {summary.championName} are {summary.leagueName} champions.
           {summary.cupName && summary.cupWinnerName ? ` ${summary.cupWinnerName} won the ${summary.cupName}.` : ''}
+          {summary.continentalWinnerName ? ` ${summary.continentalWinnerName} won the Continental Cup.` : ''}
         </AppText>
       </View>
       {review ? (

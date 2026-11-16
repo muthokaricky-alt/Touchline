@@ -23,6 +23,7 @@ describe('competitionOptions', () => {
       [FIRST, 'league', 'First Division'],
       ['comp_second_division', 'league', 'Second Division'],
       ['comp_national_cup', 'cup', 'National Cup'],
+      ['comp_continental_cup', 'cup', 'Continental Cup'],
       ['comp_kenya_premier', 'league', 'Kenya'],
       ['comp_kenya_cup', 'cup', 'Kenyan Cup'],
       ['comp_france_premier', 'league', 'France'],
@@ -89,6 +90,7 @@ describe('competitionOptions for a manager abroad', () => {
     expect(competitionOptions(world, season, 'club_ndom_fc').map((o) => o.label)).toEqual([
       'Kenyan Premier Division',
       'Kenyan Cup',
+      'Continental Cup',
       'First Div',
       'Second Div',
       'National Cup',

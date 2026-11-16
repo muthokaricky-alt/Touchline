@@ -55,7 +55,15 @@ export const FixtureSchema = z.strictObject({
 /** A cup in this season and the leagues that enter it. */
 export const SeasonCupSchema = z.strictObject({
   competitionId: CompetitionIdSchema,
+  /** For a national cup: every club of these leagues enters. For the Continental Cup: the leagues qualifiers come from. */
   entrantLeagues: z.array(CompetitionIdSchema).min(1),
+  /**
+   * Qualified clubs, strongest first (the Continental Cup). When set, they are
+   * the entrants instead of the leagues' clubs, and byes go to the first ones.
+   */
+  entrants: z.array(ClubIdSchema).min(2).optional(),
+  /** Fixed date of each round (the Continental Cup avoids the national cups' weeks). Otherwise computed from the league calendar. */
+  roundDates: z.array(IsoDateSchema).min(1).optional(),
 });
 
 /** Which clubs play in a league THIS season (promotion/relegation changes it). */

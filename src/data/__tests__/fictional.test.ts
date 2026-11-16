@@ -61,6 +61,7 @@ describe('fictional database', () => {
       ['German Cup', 'GER'],
       ['Italian Cup', 'ITA'],
       ['Spanish Cup', 'ESP'],
+      ['Continental Cup', 'INT'],
     ]);
     // Every club abroad plays in its own country's league; background clubs in none.
     for (const league of leagues) {

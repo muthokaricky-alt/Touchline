@@ -4,6 +4,7 @@ import { DATABASE_VERSION, type GameDatabase } from '../schemas';
 import {
   ALL_FICTIONAL_CLUBS,
   BACKGROUND_CLUBS,
+  CONTINENTAL_CUP,
   FIRST_DIVISION,
   FOREIGN_CUPS,
   FOREIGN_LEAGUE_CLUBS,
@@ -39,7 +40,7 @@ export function buildFictionalDatabase(seed: number = FICTIONAL_SEED): GameDatab
   const database: GameDatabase = {
     version: DATABASE_VERSION,
     clubs: [...ALL_FICTIONAL_CLUBS],
-    competitions: [FIRST_DIVISION, SECOND_DIVISION_LEAGUE, NATIONAL_CUP, ...FOREIGN_LEAGUES, ...FOREIGN_CUPS],
+    competitions: [FIRST_DIVISION, SECOND_DIVISION_LEAGUE, NATIONAL_CUP, ...FOREIGN_LEAGUES, ...FOREIGN_CUPS, CONTINENTAL_CUP],
     players: [],
     attributes: [],
     contracts: [],
@@ -91,6 +92,7 @@ export function buildFictionalDatabase(seed: number = FICTIONAL_SEED): GameDatab
 export {
   ALL_FICTIONAL_CLUBS,
   BACKGROUND_CLUBS,
+  CONTINENTAL_CUP,
   COUNTRY_NAMES,
   countryName,
   FICTIONAL_CLUBS,

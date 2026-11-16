@@ -2,6 +2,7 @@ import { isCup, isLeague, type ClubId, type CompetitionId, type GameDatabase, ty
 import { simulateShootout, type ShootoutPlayer } from '@/engine/penalties';
 import { simulateMatch } from '@/engine/simulate';
 import type { MatchChange, MatchInput, MatchResult, Side } from '@/engine/types';
+import { addDays } from '@/utils/date';
 
 import { aiSetup, buildAiTeam } from '../ai/opponent';
 import { suspendedFor } from '../discipline/suspensions';
@@ -12,9 +13,9 @@ import { flattenAttributes } from '../ratings';
 import { selectSquadCandidates } from '../squad/squad-selectors';
 import type { Tactics } from '../tactics/tactics';
 import { cupEntrants, cupRoundCount, cupRoundName, cupWinner, firstCupRound, isCupFixture, nextCupRound } from './cup';
-import { scheduleLeague } from './fixtures';
+import { scheduleLeague, seasonStartDate } from './fixtures';
 import { addMatchesToStats } from './player-stats';
-import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season } from './season';
+import { mixSeed, seasonLabel, type Fixture, type FixtureResult, type LeagueMembership, type Season, type SeasonCup } from './season';
 import { computeTable, type TableRow } from './table';
 
 /**
@@ -76,12 +77,58 @@ function seasonLeagueOrder(db: GameDatabase): League[] {
     .map((x) => x.league);
 }
 
+// --- The Continental Cup ----------------------------------------------------------
+
+/** Clubs each country's top division sends. */
+export const CONTINENTAL_PLACES = 4;
+/**
+ * Weeks (counted from the season's first Saturday) of the Continental Cup's
+ * Tuesday rounds. None is a week with a national-cup round (those are
+ * Wednesdays in weeks 3, 10, 11, 18, 20, 25, 28 and 32), so no club plays
+ * two cup ties in a week. The final is the Saturday after the National Cup final.
+ */
+const CONTINENTAL_WEEKS = [6, 13, 21, 29, 36];
+
+const reputationOf = (db: GameDatabase, id: ClubId) => db.clubs.find((c) => c.id === id)?.reputation ?? 0;
+
+/**
+ * The Continental Cup for a new season: the top CONTINENTAL_PLACES of every
+ * country's top division, by last season's table (by club reputation in the
+ * first season). Entrants are listed strongest first, which decides the byes:
+ * champions (league order), then runners-up by reputation, then thirds, fourths.
+ */
+function continentalCup(db: GameDatabase, leagues: readonly League[], startYear: number, previous?: Season): SeasonCup | null {
+  const cup = db.competitions.find((c) => isCup(c) && c.country === 'INT');
+  const tops = leagues.filter((l) => l.tier === 1);
+  if (!cup || tops.length < 2) return null;
+  const byReputation = (ids: readonly ClubId[]) =>
+    [...ids].sort((a, b) => reputationOf(db, b) - reputationOf(db, a) || a.localeCompare(b));
+  const ranked = tops.map((league) => {
+    const played = previous?.leagues.some((l) => l.competitionId === league.id) && previous.fixtures.some((f) => f.competitionId === league.id && f.result);
+    return played
+      ? computeTable(previous!.fixtures, leagueForSeason(db, previous!, league.id)).map((r) => r.clubId)
+      : byReputation(league.clubIds);
+  });
+  const entrants = Array.from({ length: CONTINENTAL_PLACES }, (_, place) => {
+    const atPlace = ranked.map((clubs) => clubs[place]).filter((id): id is ClubId => id !== undefined);
+    return place === 0 ? atPlace : byReputation(atPlace);
+  }).flat();
+
+  const start = seasonStartDate(startYear);
+  const rounds = cupRoundCount(entrants.length);
+  const lastLeagueWeek = Math.max(...leagues.map((l) => (l.clubIds.length - 1) * l.rules.roundsPerOpponent));
+  const tuesdays = CONTINENTAL_WEEKS.slice(0, rounds - 1).map((week) => addDays(start, (week - 1) * 7 + 3));
+  const final = addDays(start, (lastLeagueWeek + 1) * 7); // the Saturday after the National Cup final
+  return { competitionId: cup.id, entrantLeagues: tops.map((l) => l.id), entrants, roundDates: [...tuesdays, final] };
+}
+
 /**
  * A new season. Leagues come from `memberships` (after promotion/relegation)
  * or, for the first season, from the database; a league the memberships
  * don't mention (a save from before it existed) starts with its database clubs.
+ * `previous` (the finished season) decides who plays in the Continental Cup.
  */
-export function createSeason(db: GameDatabase, startYear: number, seed: number, memberships?: LeagueMembership[]): Season {
+export function createSeason(db: GameDatabase, startYear: number, seed: number, memberships?: LeagueMembership[], previous?: Season): Season {
   const dbLeagues = seasonLeagueOrder(db);
   const leagues = dbLeagues.map(
     (l) => memberships?.find((m) => m.competitionId === l.id) ?? { competitionId: l.id, clubIds: [...l.clubIds] },
@@ -104,7 +151,10 @@ export function createSeason(db: GameDatabase, startYear: number, seed: number, 
     .filter(isCup)
     .filter((cup) => countries.includes(cup.country))
     .sort((a, b) => countries.indexOf(a.country) - countries.indexOf(b.country))
-    .map((cup) => ({ competitionId: cup.id, entrantLeagues: dbLeagues.filter((l) => l.country === cup.country).map((l) => l.id) }));
+    .map((cup): SeasonCup => ({ competitionId: cup.id, entrantLeagues: dbLeagues.filter((l) => l.country === cup.country).map((l) => l.id) }));
+  const leaguesThisSeason = dbLeagues.map((l) => ({ ...l, clubIds: leagues.find((m) => m.competitionId === l.id)!.clubIds }));
+  const continental = continentalCup(db, leaguesThisSeason, startYear, previous);
+  if (continental) cups.push(continental);
   const season: Season = { label: seasonLabel(startYear), startYear, seed, leagues, cups, fixtures, playerStats: [] };
   return { ...season, fixtures: [...fixtures, ...cups.flatMap((cup) => firstCupRound(season, cup.competitionId))] };
 }
@@ -423,5 +473,5 @@ export function nextMemberships(db: GameDatabase, season: Season): LeagueMembers
 /** A new season one year on, with promotion/relegation applied and a fresh (derived) seed. */
 export function startNextSeason(db: GameDatabase, season: Season): Season {
   if (!isSeasonComplete(season)) throw new RangeError('The current season is still in progress');
-  return createSeason(db, season.startYear + 1, mixSeed(season.seed, 4242), nextMemberships(db, season));
+  return createSeason(db, season.startYear + 1, mixSeed(season.seed, 4242), nextMemberships(db, season), season);
 }
