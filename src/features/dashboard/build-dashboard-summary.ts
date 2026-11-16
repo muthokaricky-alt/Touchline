@@ -2,7 +2,7 @@ import type { ClubId, GameDatabase } from '@/data/schemas';
 import { conditionOf, type ConditionState } from '@/game/condition/condition';
 import { suspendedFor } from '@/game/discipline/suspensions';
 import { unreadCount, type InboxMessage as GameMessage } from '@/game/inbox/inbox';
-import { cupWinner, isCupFixture } from '@/game/season/cup';
+import { cupWinner, firstLegOf, isCupFixture } from '@/game/season/cup';
 import type { Season } from '@/game/season/season';
 import {
   competitionName,
@@ -47,7 +47,6 @@ export function buildDashboardSummary(
 
   const table = leagueTable(db, season, leagueId);
   const userRow = table.find((r) => r.clubId === clubId);
-  const anyPlayed = table.some((r) => r.played > 0);
   const total = totalMatchdays(season, leagueId);
 
   const fixture = nextFixtureFor(season, clubId);
@@ -55,8 +54,13 @@ export function buildDashboardSummary(
     ? (() => {
         const venue = fixture.homeId === clubId ? ('home' as const) : ('away' as const);
         const opponentId = venue === 'home' ? fixture.awayId : fixture.homeId;
-        const opponentRow = table.find((r) => r.clubId === opponentId); // undefined for a cup opponent from another league
+        // A cup opponent from another league is placed in its own league's table.
+        const opponentLeague = leagueOfClub(season, opponentId);
+        const otherLeague = opponentLeague !== null && opponentLeague !== leagueId;
+        const opponentTable = otherLeague ? leagueTable(db, season, opponentLeague) : table;
+        const opponentRow = opponentTable.find((r) => r.clubId === opponentId);
         const isCup = isCupFixture(season, fixture);
+        const firstLeg = firstLegOf(season, fixture);
         return {
           opponentId,
           opponentName: nameOf(opponentId),
@@ -64,8 +68,12 @@ export function buildDashboardSummary(
           competition: isCup ? `${competitionName(db, fixture.competitionId)} · ${roundLabel(season, fixture)}` : leagueName,
           date: formatMatchDate(fixture.date),
           kickOff: isCup ? '19:45' : (preview.nextMatch?.kickOff ?? '15:00'),
-          opponentPosition: anyPlayed && opponentRow ? opponentRow.position : null,
+          opponentPosition: opponentRow && opponentRow.played > 0 ? opponentRow.position : null,
+          opponentLeagueName: otherLeague ? competitionName(db, opponentLeague) : null,
           opponentForm: opponentRow?.form ?? [],
+          firstLeg: firstLeg?.result
+            ? `First leg: ${nameOf(firstLeg.homeId)} ${firstLeg.result.score.home}–${firstLeg.result.score.away} ${nameOf(firstLeg.awayId)}`
+            : null,
         };
       })()
     : null;

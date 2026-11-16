@@ -1,7 +1,10 @@
 import { buildFictionalDatabase } from '@/data/fictional';
 import { domesticWorld } from '@/data/fictional/__fixtures__/domestic';
 import { autoPickLineup } from '@/game/lineup';
+import { nextCupRound } from '@/game/season/cup';
+import type { Season } from '@/game/season/season';
 import { createSeason, isSeasonComplete, nextFixtureFor, playRemaining } from '@/game/season/season-flow';
+import { addDays } from '@/utils/date';
 import { playUserFixture } from '@/game/season/__fixtures__/play';
 import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
@@ -112,5 +115,39 @@ describe('buildDashboardSummary: during and after the season', () => {
     expect(summary.seasonEnd!.userPosition).toBe(summary.table.find((r) => r.clubId === CLUB)!.position);
     expect(summary.seasonEnd!.championName).toBe(summary.table[0].clubName);
     expect(summary.seasonEnd!.cupWinnerName).not.toBeNull();
+  });
+});
+
+describe('buildDashboardSummary: a Continental Cup second leg', () => {
+  // Full world; results filled in (home wins 1–0) rather than simulated, up to the tie.
+  const world = buildFictionalDatabase();
+  const CUP = 'comp_continental_cup';
+  const filledBefore = (s: Season, date: string): Season => ({
+    ...s,
+    fixtures: s.fixtures.map((f) => (f.result || f.date >= date ? f : { ...f, result: { score: { home: 1, away: 0 }, goals: [], cards: [], playerOfTheMatch: null } })),
+  });
+  let s = createSeason(world, 2026, 1234);
+  const lastGroupDay = s.fixtures.filter((f) => f.competitionId === CUP).map((f) => f.date).sort().at(-1)!;
+  s = filledBefore(s, addDays(lastGroupDay, 1));
+  s = { ...s, fixtures: [...s.fixtures, ...nextCupRound(s, CUP)] };
+  const leg2 = s.fixtures.find((f) => f.competitionId === CUP && f.matchday === 8)!;
+  s = filledBefore(s, leg2.date);
+  const user = leg2.homeId;
+
+  it('shows the first leg instead of the table line', () => {
+    expect(nextFixtureFor(s, user)?.id).toBe(leg2.id);
+    const summary = buildDashboardSummary(world, user, s, leg2.date, [], previewDashboard);
+    const nameOf = (id: string) => world.clubs.find((c) => c.id === id)!.name;
+    // The first leg was the other way round: its hosts (the second leg's visitors) won 1–0.
+    expect(summary.nextMatch?.firstLeg).toBe(`First leg: ${nameOf(leg2.awayId)} 1–0 ${nameOf(leg2.homeId)}`);
+  });
+
+  it('places a cup opponent from another league in its own league’s table', () => {
+    const opponent = leg2.awayId;
+    const sameLeague = s.leagues.some((l) => l.clubIds.includes(user) && l.clubIds.includes(opponent));
+    const summary = buildDashboardSummary(world, user, s, leg2.date, [], previewDashboard);
+    expect(summary.nextMatch?.opponentPosition).not.toBeNull();
+    if (sameLeague) expect(summary.nextMatch?.opponentLeagueName).toBeNull();
+    else expect(summary.nextMatch?.opponentLeagueName).toMatch(/Division$/);
   });
 });

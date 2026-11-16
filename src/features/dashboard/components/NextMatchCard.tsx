@@ -38,11 +38,17 @@ export function NextMatchCard({ club, clubForm, match, onViewFixtures, onPlayMat
         <TeamColumn name={away.name} form={away.form} label="Away" />
       </View>
 
-      <AppText variant="caption" color="textSecondary" align="center">
-        {match.opponentPosition === null
-          ? 'Opening day of the season'
-          : `${match.opponentName} are ${formatOrdinal(match.opponentPosition)} in the table`}
-      </AppText>
+      {match.firstLeg ? (
+        <AppText variant="bodyStrong" align="center">
+          {match.firstLeg}
+        </AppText>
+      ) : (
+        <AppText variant="caption" color="textSecondary" align="center">
+          {match.opponentPosition === null
+            ? 'Opening day of the season'
+            : `${match.opponentName} are ${formatOrdinal(match.opponentPosition)} in ${match.opponentLeagueName ? `the ${match.opponentLeagueName}` : 'the table'}`}
+        </AppText>
+      )}
 
       <View style={styles.actions}>
         <View style={styles.flex}>

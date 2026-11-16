@@ -36,7 +36,11 @@ export type NextMatchSummary = {
   kickOff: string;
   /** null before any league match has been played (no meaningful position yet). */
   opponentPosition: number | null;
+  /** When the opponent plays in another league (a cup tie): that league's name, for "3rd in the …". */
+  opponentLeagueName?: string | null;
   opponentForm: readonly MatchOutcome[];
+  /** Second legs: "First leg: Calderbrook City 1–1 Ravensmoor United". */
+  firstLeg?: string | null;
 };
 
 export type SeasonEndSummary = {

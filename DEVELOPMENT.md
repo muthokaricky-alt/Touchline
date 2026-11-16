@@ -1001,6 +1001,11 @@ penalties, no away goals):
   ties, "level on aggregate goes to penalties" for second legs, nothing for
   group matches and first legs (it used to say "penalties" for every cup
   match, wrong since the group stage).
+- Dashboard next-match card: a second leg shows the same "First leg: …"
+  line; a cup opponent from another league is placed in its own league
+  ("Kisumu Lakeside are 2nd in the Kenyan Premier Division": it used to
+  say "Opening day of the season" for any opponent outside the user's
+  league).
 - Fixed on the way: the cup view showed any cup match the user didn't
   win as "L", so a drawn group match looked like a defeat; only matches
   that decide a tie use W/L now, the rest W/D/L.
