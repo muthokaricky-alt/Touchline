@@ -36,6 +36,8 @@ type TransfersScreenProps = {
   results: readonly MarketPlayerView[];
   onPlayerPress: (playerId: PlayerId) => void;
   onBack: () => void;
+  /** "Where" filter choices (the user's country's leagues, abroad…). */
+  scopes: readonly { value: MarketScope; label: string }[];
   /** The scouts' current assignments (tap one to open the player). */
   scouting: { assignments: readonly AssignmentView[]; scouts: number };
 };
@@ -47,13 +49,6 @@ const GROUPS: readonly { value: PositionGroup | 'all'; label: string }[] = [
   { value: 'midfielders', label: 'MID' },
   { value: 'attackers', label: 'ATT' },
 ];
-const SCOPES: readonly { value: MarketScope; label: string }[] = [
-  { value: 'all', label: 'Everyone' },
-  { value: 'free', label: 'Free agents' },
-  { value: 'first', label: 'First Div' },
-  { value: 'second', label: 'Second Div' },
-  { value: 'abroad', label: 'Abroad' },
-];
 const VALUE_CAPS = [
   { value: 'any', label: 'Any value' },
   { value: '1000000', label: '≤ €1M' },
@@ -62,7 +57,7 @@ const VALUE_CAPS = [
 ] as const;
 
 /** Transfer market: window status, budgets, filters and the best matching players. */
-export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack, scouting }: TransfersScreenProps) {
+export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack, scopes, scouting }: TransfersScreenProps) {
   const { window } = budget;
   return (
     <Screen bottomInset>
@@ -113,7 +108,7 @@ export function TransfersScreen({ budget, filters, onFiltersChange, results, onP
 
       <Card title="Search" icon="squad">
         <ChoiceChips options={GROUPS} value={filters.group} onChange={(group) => onFiltersChange({ ...filters, group })} accessibilityLabel="Position" />
-        <ChoiceChips options={SCOPES} value={filters.scope} onChange={(scope) => onFiltersChange({ ...filters, scope })} accessibilityLabel="Where" />
+        <ChoiceChips options={scopes} value={filters.scope} onChange={(scope) => onFiltersChange({ ...filters, scope })} accessibilityLabel="Where" />
         <ChoiceChips
           options={VALUE_CAPS}
           value={filters.maxValue === null ? 'any' : (String(filters.maxValue) as (typeof VALUE_CAPS)[number]['value'])}

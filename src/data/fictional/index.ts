@@ -82,6 +82,8 @@ export function buildFictionalDatabase(seed: number = FICTIONAL_SEED): GameDatab
 export {
   ALL_FICTIONAL_CLUBS,
   BACKGROUND_CLUBS,
+  COUNTRY_NAMES,
+  countryName,
   FICTIONAL_CLUBS,
   FIRST_DIVISION,
   FOREIGN_LEAGUE_CLUBS,

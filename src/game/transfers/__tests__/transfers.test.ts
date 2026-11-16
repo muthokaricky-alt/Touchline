@@ -6,7 +6,7 @@ import { starterIds } from '@/game/lineup';
 import { createSeason } from '@/game/season/season-flow';
 
 import { completeTransfer, contractEnd, MAX_SQUAD, squadSize, transferProblems, wageBill } from '../complete';
-import { DEFAULT_FILTERS, searchMarket } from '../market';
+import { DEFAULT_FILTERS, marketScopes, searchMarket } from '../market';
 import { askingPrice, personalTerms, playerContext, respondToBid, respondToTerms } from '../negotiation';
 
 const db = buildFictionalDatabase();
@@ -172,8 +172,25 @@ describe('searchMarket', () => {
     expect(young.every((p) => p.age <= 21)).toBe(true);
     const cheap = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, maxValue: 1_000_000 }, SUMMER);
     expect(cheap.every((p) => p.value <= 1_000_000)).toBe(true);
-    const second = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, scope: 'second' }, SUMMER, 2000);
+    const second = searchMarket(db, season, USER, { ...DEFAULT_FILTERS, scope: 'league:comp_second_division' }, SUMMER, 2000);
     const secondClubs = new Set(season.leagues[1].clubIds.map((id) => club(id).name));
     expect(second.every((p) => p.clubName !== null && secondClubs.has(p.clubName))).toBe(true);
+  });
+});
+
+describe('the market for a manager abroad', () => {
+  const season = createSeason(db, 2026, 5);
+  const NDOM = 'club_ndom_fc';
+  const country = new Map(db.clubs.map((c) => [c.id, c.country]));
+  const clubOf = new Map(db.contracts.map((c) => [c.playerId, c.clubId]));
+
+  it('offers his own country’s league and "Abroad" (which then includes England)', () => {
+    expect(marketScopes(db, season, NDOM).map((s) => s.label)).toEqual(['Everyone', 'Free agents', 'Kenya', 'Abroad']);
+    const abroad = searchMarket(db, season, NDOM, { ...DEFAULT_FILTERS, scope: 'abroad' }, '2026-07-15', 3000);
+    expect(abroad.every((m) => country.get(clubOf.get(m.id)!) !== 'KEN')).toBe(true);
+    expect(abroad.some((m) => country.get(clubOf.get(m.id)!) === 'ENG')).toBe(true);
+    const kenya = searchMarket(db, season, NDOM, { ...DEFAULT_FILTERS, scope: 'league:comp_kenya_premier' }, '2026-07-15', 3000);
+    expect(kenya.length).toBeGreaterThan(0);
+    expect(kenya.every((m) => country.get(clubOf.get(m.id)!) === 'KEN' && clubOf.get(m.id) !== NDOM)).toBe(true);
   });
 });

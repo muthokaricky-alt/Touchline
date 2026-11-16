@@ -155,10 +155,10 @@ describe('helpers', () => {
 });
 
 describe('career views', () => {
-  it('lists all 40 clubs by league, biggest first, with what the board expects', () => {
+  it('lists every league club (England first), biggest first, with what the board expects', () => {
     const leagues = selectCareerChoices(db, season);
-    expect(leagues.map((l) => l.leagueName)).toEqual(['First Division', 'Second Division']);
-    expect(leagues.flatMap((l) => l.clubs)).toHaveLength(40);
+    expect(leagues.slice(0, 2).map((l) => l.leagueName)).toEqual(['First Division', 'Second Division']);
+    expect(leagues.flatMap((l) => l.clubs)).toHaveLength(40 + 5 * 18);
     expect(leagues[0].clubs[0].expectation).toBe('Win the league');
     expect(leagues[0].clubs[0].reputation).toBeGreaterThanOrEqual(leagues[0].clubs.at(-1)!.reputation);
   });
@@ -169,5 +169,39 @@ describe('career views', () => {
     const manager = { ...newManager('Alex', 12), sackedOffers: ['club_kestrel_bay'] };
     const view = selectBoardView(db, season, 'club_greywater_town', manager);
     expect(view.sackedOffers?.[0]).toMatchObject({ clubId: 'club_kestrel_bay', name: 'Kestrel Bay' });
+  });
+});
+
+describe('careers abroad', () => {
+  const kenya = season.leagues.find((l) => l.competitionId === 'comp_kenya_premier')!;
+  // The board ranks by reputation, ties by club id.
+  const kenyaByRep = byRep.filter((c) => kenya.clubIds.includes(c.id)).sort((a, b) => b.reputation - a.reputation || a.id.localeCompare(b.id));
+
+  it('scales targets to an 18-club league; with no relegation the smallest must stay out of the bottom three', () => {
+    expect(boardExpectation(db, season, kenyaByRep[0].id)).toMatchObject({ target: 1, label: 'Win the league' });
+    expect(boardExpectation(db, season, kenyaByRep[8].id)).toMatchObject({ target: 9, label: 'Finish in the top half' });
+    expect(boardExpectation(db, season, kenyaByRep.at(-1)!.id)).toMatchObject({ target: 15, label: 'Stay out of the bottom three' });
+    // England's 20-club targets are unchanged (top half 10, mid-table 14, safety 17th).
+    const firstRanked = [...firstDivisionByRep].sort((a, b) => b.reputation - a.reputation || a.id.localeCompare(b.id));
+    expect(boardExpectation(db, season, firstRanked[9].id)).toMatchObject({ target: 10 });
+    expect(boardExpectation(db, season, firstRanked[13].id)).toMatchObject({ target: 14 });
+  });
+
+  it('offers come from league clubs at home and abroad, home clubs about twice as likely; background clubs never offer', () => {
+    const inLeague = new Set(season.leagues.flatMap((l) => l.clubIds));
+    const country = new Map(db.clubs.map((c) => [c.id, c.country]));
+    const offers = Array.from({ length: 600 }, (_, i) => jobOffers(db, 55, 'club_greywater_town', i, false)).flat();
+    expect(offers.every((id) => inLeague.has(id))).toBe(true);
+    const homeShare = offers.filter((id) => country.get(id) === 'ENG').length / offers.length;
+    expect(offers.some((id) => country.get(id) !== 'ENG')).toBe(true);
+    // Candidates are ~1/4 English (40 of 130 league clubs at similar spreads): doubled weight lifts that well above a quarter.
+    expect(homeShare).toBeGreaterThan(0.33);
+    expect(homeShare).toBeLessThan(0.6);
+  });
+
+  it('offers a new manager every league, England first, each with its country', () => {
+    const choices = selectCareerChoices(db, season);
+    expect(choices.map((c) => c.countryName)).toEqual(['England', 'England', 'Kenya', 'France', 'Germany', 'Italy', 'Spain']);
+    expect(choices.find((c) => c.country === 'KEN')!.clubs.map((c) => c.name)).toContain('Chapati FC');
   });
 });

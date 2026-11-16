@@ -49,25 +49,29 @@ export type CupView = {
 };
 
 /**
- * The user's league first, then the other leagues of the user's country,
- * the cup, and the leagues abroad (labelled by country, so the chips fit).
+ * Grouped by country: the user's country first (their league first, then
+ * the country's other leagues, then its cup), then the other countries in
+ * season order. Other countries' leagues are labelled by their short name
+ * ("Kenya", "First Div"), so the chips fit on a phone.
  */
 export function competitionOptions(db: GameDatabase, season: Season, userClubId: ClubId): CompetitionOption[] {
   const userLeague = leagueOfClub(season, userClubId);
   const competition = (id: CompetitionId) => db.competitions.find((c) => c.id === id);
   const homeCountry = userLeague ? competition(userLeague)?.country : undefined;
-  const isHome = (id: CompetitionId) => competition(id)?.country === homeCountry;
   const leagues = [...season.leagues].sort((a, b) => Number(b.competitionId === userLeague) - Number(a.competitionId === userLeague));
-  const option = (id: CompetitionId) => ({
-    id,
-    label: isHome(id) ? competitionName(db, id) : (competition(id)?.shortName ?? competitionName(db, id)),
-    kind: 'league' as const,
+  const countries = [...new Set([homeCountry, ...leagues.map((l) => competition(l.competitionId)?.country)])].filter(
+    (c): c is string => c !== undefined,
+  );
+  const cup = season.cupId ? competition(season.cupId) : undefined;
+  return countries.flatMap((country) => {
+    const label = (id: CompetitionId) => (country === homeCountry ? competitionName(db, id) : (competition(id)?.shortName ?? competitionName(db, id)));
+    return [
+      ...leagues
+        .filter((l) => competition(l.competitionId)?.country === country)
+        .map((l) => ({ id: l.competitionId, label: label(l.competitionId), kind: 'league' as const })),
+      ...(cup && season.cupId && cup.country === country ? [{ id: season.cupId, label: competitionName(db, season.cupId), kind: 'cup' as const }] : []),
+    ];
   });
-  return [
-    ...leagues.filter((l) => isHome(l.competitionId)).map((l) => option(l.competitionId)),
-    ...(season.cupId ? [{ id: season.cupId, label: competitionName(db, season.cupId), kind: 'cup' as const }] : []),
-    ...leagues.filter((l) => !isHome(l.competitionId)).map((l) => option(l.competitionId)),
-  ];
 }
 
 function rowView(db: GameDatabase, f: Fixture, userClubId: ClubId, isCup: boolean): FixtureRowView {

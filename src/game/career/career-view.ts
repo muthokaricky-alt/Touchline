@@ -1,4 +1,4 @@
-import { HOME_COUNTRY } from '@/data/fictional';
+import { countryName } from '@/data/fictional';
 import type { ClubId, GameDatabase } from '@/data/schemas';
 
 import { aiSetup } from '../ai/opponent';
@@ -18,30 +18,33 @@ export type ClubChoiceView = {
   expectation: string;
 };
 
-export type LeagueChoicesView = { leagueName: string; clubs: ClubChoiceView[] };
+export type LeagueChoicesView = { leagueName: string; country: string; countryName: string; clubs: ClubChoiceView[] };
 
-/** Every club in the home country, grouped by league (top tier first), strongest first: what a new manager can choose from. */
+/**
+ * Every league club, grouped by league: England first (top tier first),
+ * then the leagues abroad; strongest club first. What a new manager can
+ * choose from (the screen shows one country at a time).
+ */
 export function selectCareerChoices(db: GameDatabase, season: Season): LeagueChoicesView[] {
-  const home = (competitionId: string) => db.competitions.find((c) => c.id === competitionId)?.country === HOME_COUNTRY;
-  return season.leagues
-    .filter((membership) => home(membership.competitionId))
-    .map((membership) => ({ membership, tier: boardExpectation(db, season, membership.clubIds[0])?.tier ?? 9 }))
-    .sort((a, b) => a.tier - b.tier)
-    .map(({ membership }) => ({
-      leagueName: competitionName(db, membership.competitionId),
-      clubs: membership.clubIds
-        .map((id) => {
-          const club = db.clubs.find((c) => c.id === id)!;
-          return {
-            id,
-            name: club.name,
-            reputation: club.reputation,
-            squadRating: Math.round(aiSetup(db, id).strength * 10) / 10,
-            expectation: boardExpectation(db, season, id)?.label ?? '',
-          };
-        })
-        .sort((a, b) => b.reputation - a.reputation || a.name.localeCompare(b.name)),
-    }));
+  const countryOf = (competitionId: string) => db.competitions.find((c) => c.id === competitionId)?.country ?? '';
+  // Season order already is England by tier, then the leagues abroad (see createSeason).
+  return season.leagues.map((membership) => ({
+    leagueName: competitionName(db, membership.competitionId),
+    country: countryOf(membership.competitionId),
+    countryName: countryName(countryOf(membership.competitionId)),
+    clubs: membership.clubIds
+      .map((id) => {
+        const club = db.clubs.find((c) => c.id === id)!;
+        return {
+          id,
+          name: club.name,
+          reputation: club.reputation,
+          squadRating: Math.round(aiSetup(db, id).strength * 10) / 10,
+          expectation: boardExpectation(db, season, id)?.label ?? '',
+        };
+      })
+      .sort((a, b) => b.reputation - a.reputation || a.name.localeCompare(b.name)),
+  }));
 }
 
 export type JobOfferView = { clubId: ClubId; name: string; leagueName: string; reputation: number; expectation: string };

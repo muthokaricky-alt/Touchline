@@ -9,7 +9,7 @@ import { lineupStrength } from '@/game/match/build-match-team';
 import { competitionName, isSeasonComplete, leagueOfClub, nextFixtureFor, roundLabel } from '@/game/season/season-flow';
 import { MAX_SQUAD, MIN_USER_SQUAD, releaseCost, renewalYears, squadSize, transferProblems, wageBill } from '@/game/transfers/complete';
 import { liveOffers } from '@/game/transfers/offers';
-import { searchMarket, type MarketFilters } from '@/game/transfers/market';
+import { marketScopes, searchMarket, type MarketFilters } from '@/game/transfers/market';
 import { askingPrice, personalTerms, playerContext } from '@/game/transfers/negotiation';
 import { transferWindow } from '@/game/transfers/window';
 import {
@@ -125,6 +125,14 @@ export function useScoutingStatus(playerId: PlayerId) {
   const clubId = useGameStore((s) => s.userClubId);
   const scouting = useGameStore((s) => s.scouting);
   return useMemo(() => scoutingStatus(scouting, database, clubId, playerId), [scouting, database, clubId, playerId]);
+}
+
+/** The market's "Where" choices: the user's country's leagues and "Abroad". */
+export function useMarketScopes() {
+  const database = useGameStore((s) => s.database);
+  const season = useGameStore((s) => s.season);
+  const clubId = useGameStore((s) => s.userClubId);
+  return useMemo(() => marketScopes(database, season, clubId), [database, season, clubId]);
 }
 
 /** The scouts' current assignments, for the Transfers screen. */

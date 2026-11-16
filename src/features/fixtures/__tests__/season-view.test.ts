@@ -74,3 +74,19 @@ describe('buildCupView', () => {
     level.forEach((t) => expect(t.penalties).not.toBeNull());
   });
 });
+
+describe('competitionOptions for a manager abroad', () => {
+  it('lists his league first, then England (leagues and cup), then the other countries', () => {
+    const season = createSeason(db, 2026, 9);
+    expect(competitionOptions(db, season, 'club_ndom_fc').map((o) => o.label)).toEqual([
+      'Kenyan Premier Division',
+      'First Div',
+      'Second Div',
+      'National Cup',
+      'France',
+      'Germany',
+      'Italy',
+      'Spain',
+    ]);
+  });
+});

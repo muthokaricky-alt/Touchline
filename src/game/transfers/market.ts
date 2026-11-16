@@ -7,8 +7,12 @@ import { ageAt, contractYearsLeft, marketValue, playerAbility, wageDemand } from
 
 /** Transfer market search: every player not at the user's club, filtered and ranked. Pure. */
 
-/** 'abroad': players at clubs in other countries than the user's. */
-export type MarketScope = 'all' | 'free' | 'first' | 'second' | 'abroad';
+/**
+ * Where to look: everyone, free agents, one league (`league:<competition id>`,
+ * the user's country's leagues are offered), or 'abroad' (clubs in other
+ * countries than the user's).
+ */
+export type MarketScope = 'all' | 'free' | 'abroad' | `league:${string}`;
 
 export type MarketFilters = {
   group: PositionGroup | 'all';
@@ -47,7 +51,8 @@ export function searchMarket(
   const contracts = new Map(db.contracts.map((c) => [c.playerId, c]));
   const clubs = new Map(db.clubs.map((c) => [c.id, c]));
   const attributes = new Map(db.attributes.map((a) => [a.playerId, a]));
-  const leagueOf = new Map(season.leagues.flatMap((l, i) => l.clubIds.map((id) => [id, i] as const)));
+  const leagueOf = new Map(season.leagues.flatMap((l) => l.clubIds.map((id) => [id, l.competitionId] as const)));
+  const scopeLeague = filters.scope.startsWith('league:') ? filters.scope.slice('league:'.length) : null;
   const userRep = clubs.get(userClubId)?.reputation ?? 10;
   const userCountry = clubs.get(userClubId)?.country;
 
@@ -57,8 +62,7 @@ export function searchMarket(
     if (contract?.clubId === userClubId) continue;
     if (filters.group !== 'all' && POSITION_GROUP[player.primaryPosition] !== filters.group) continue;
     if (filters.scope === 'free' && contract) continue;
-    if (filters.scope === 'first' && (!contract || leagueOf.get(contract.clubId) !== 0)) continue;
-    if (filters.scope === 'second' && (!contract || leagueOf.get(contract.clubId) !== 1)) continue;
+    if (scopeLeague && (!contract || leagueOf.get(contract.clubId) !== scopeLeague)) continue;
     if (filters.scope === 'abroad' && (!contract || clubs.get(contract.clubId)?.country === userCountry)) continue;
     const age = ageAt(player, date);
     if (filters.maxAge !== null && age > filters.maxAge) continue;
@@ -84,4 +88,18 @@ export function searchMarket(
     });
   }
   return views.sort((a, b) => b.rating - a.rating || a.value - b.value || (a.id < b.id ? -1 : 1)).slice(0, limit);
+}
+
+/** The market's "Where" choices for a user at `userClubId`: their country's leagues by short name. */
+export function marketScopes(db: GameDatabase, season: Season, userClubId: ClubId): { value: MarketScope; label: string }[] {
+  const country = db.clubs.find((c) => c.id === userClubId)?.country;
+  const leagues = season.leagues
+    .map((l) => db.competitions.find((c) => c.id === l.competitionId))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined && c.country === country);
+  return [
+    { value: 'all', label: 'Everyone' },
+    { value: 'free', label: 'Free agents' },
+    ...leagues.map((l) => ({ value: `league:${l.id}` as const, label: l.shortName })),
+    { value: 'abroad', label: 'Abroad' },
+  ];
 }

@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting and foreign leagues step A (save v10). Next: foreign leagues step B. Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, plus suspensions, in-match management, scouting and foreign leagues (steps A and B, save v10). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -872,6 +872,34 @@ leagues, simulation, viewing; B = transfers/jobs/careers abroad, tuning.
 - **Save v10:** same fields; older saves get the generated contracts of
   the clubs abroad (only for players without one, so it's safe to re-run).
 
+#### Foreign leagues, step B: careers abroad
+
+Decisions (user): home clubs twice as likely to offer a job; the smallest
+clubs abroad must stay out of the bottom three; new career by country
+chips; no further performance work until the phone test.
+
+- **Job offers** (`jobOffers`) from any club that plays in a league, at
+  home or abroad (background clubs never offer), clubs in the manager's
+  current country weighted ×2 (`HOME_OFFER_WEIGHT`) with a weighted
+  shuffle (Efraimidis–Spirakis: key u^(1/w), highest first). Measured over
+  600 seeds: ~40–50% of offers from home, although only ~a quarter of the
+  candidates are. A post-sacking fallback offer stays at home.
+- **Board targets scale with league size** (top half = ⌊size/2⌋,
+  mid-table = size − 6, safety = size − 3; England's 10 / 14 / 17th
+  unchanged); leagues without relegation say "Stay out of the bottom
+  three" instead of "Avoid relegation" (it can still get you sacked).
+- **New career:** `selectCareerChoices` returns every league club with its
+  country (England first, season order); the screen shows country chips
+  and that country's leagues. `COUNTRY_NAMES` / `countryName` in the data.
+- **Views follow the user's country:** Fixtures chips group by country
+  (yours first, cups inside their country; other countries' leagues by
+  short name, e.g. "First Div" for a manager in Kenya). Market "Where"
+  chips are `marketScopes`: Everyone, Free agents, your country's leagues
+  (`league:<id>` scopes, replacing the hard-coded First/Second Div), Abroad.
+- Season-end moves abroad, sackings and the summer at a new club reuse the
+  existing career flow unchanged (tested: a full season at Ndom FC, review,
+  rollover, still in the Kenyan league).
+
 ### Scouting (after Milestone 10)
 
 Decisions (user): scouting reveals potential only (attributes stay
@@ -1288,6 +1316,20 @@ Install new Expo/RN packages with `npx expo install <pkg>` so versions match the
   Abroad lists players at Real Castrovega, AC Valdoro, SV Eichental,
   Ndom FC. Zero console errors, no overflow.
 
+### Foreign leagues, step B ✅ (after the roadmap)
+- Weighted job offers from home and abroad, size-scaled board targets with
+  "stay out of the bottom three", new career by country, Fixtures and
+  market views per user country.
+- Tests: 937 total (6 new): targets abroad (and England unchanged), offer
+  weighting and no background clubs, career choices, market scopes for a
+  manager abroad, Fixtures order abroad, a full store season at Ndom FC.
+- Verified: `tsc` clean, lint clean, `test:all` passes, web export;
+  headless Chrome at 412px and 1280px: new career → Kenya chip → Chapati FC
+  ("finish in the top half") → dashboard on the Kenyan Premier Division →
+  a match (Thika Falcons 1–0) → Fixtures chips Kenyan Premier Division,
+  First Div, Second Div, National Cup, France… → market chips Everyone,
+  Free agents, Kenya, Abroad. Zero console errors, no overflow.
+
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting
   for the user's review: `src/data/fictional/clubs.ts`.
@@ -1326,9 +1368,9 @@ All ten roadmap milestones are built. What's left before a release:
    eas-cli`, `eas login`, then `eas build --platform android --profile
    preview` for an installable APK (eas.json is already set up).
 3. Then choose: store submission (production profile, store listings,
-   privacy policy) or more gameplay. Next: **foreign leagues step B**
-   (jobs and new careers abroad incl. expectations without relegation,
-   offers from clubs abroad, market/scouting by country, performance after
-   the phone test, faster store tests). Parked ideas:
+   privacy policy) or more gameplay. Performance with the
+   leagues abroad after the phone test (a cheaper results model for
+   matches abroad if needed; faster store tests). Parked ideas: cups for
+   the countries abroad,
    season-end offer expectations using next season's league, cloud saves
    (needs a backend: accounts, costs, privacy).

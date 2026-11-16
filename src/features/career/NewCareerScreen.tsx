@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, ListRow, PageHeader, Pill, RatingBadge, Screen, TextField } from '@/components/ui';
+import { AppText, Button, Card, ChoiceChips, ListRow, PageHeader, Pill, RatingBadge, Screen, TextField } from '@/components/ui';
 import type { ClubId } from '@/data/schemas';
 import type { LeagueChoicesView } from '@/game/career/career-view';
 import { spacing } from '@/theme';
@@ -17,7 +17,12 @@ export function NewCareerScreen({ leagues, onStart }: NewCareerScreenProps) {
   const [name, setName] = useState('');
   const [clubId, setClubId] = useState<ClubId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One country at a time (130 clubs in one list is too long); England first.
+  const countries = [...new Map(leagues.map((l) => [l.country, l.countryName])).entries()].map(([value, label]) => ({ value, label }));
+  const [country, setCountry] = useState<string>(countries[0]?.value ?? '');
+  const shown = leagues.filter((l) => l.country === country);
   const chosen = leagues.flatMap((l) => l.clubs).find((c) => c.id === clubId) ?? null;
+  const chosenLeague = leagues.find((l) => l.clubs.some((c) => c.id === clubId));
   const ready = name.trim().length > 0 && chosen !== null;
 
   return (
@@ -30,7 +35,10 @@ export function NewCareerScreen({ leagues, onStart }: NewCareerScreenProps) {
       <Card title="Your choice" icon="club" highlighted={chosen !== null}>
         {chosen ? (
           <>
-            <AppText variant="bodyStrong">{chosen.name}</AppText>
+            <AppText variant="bodyStrong">
+              {chosen.name}
+              {chosenLeague ? ` · ${chosenLeague.leagueName}` : ''}
+            </AppText>
             <AppText color="textSecondary">The board expects: {chosen.expectation.toLowerCase()}.</AppText>
           </>
         ) : (
@@ -40,8 +48,10 @@ export function NewCareerScreen({ leagues, onStart }: NewCareerScreenProps) {
         <Button label="Start career" icon="check" disabled={!ready} onPress={() => clubId && setError(onStart(name, clubId))} />
       </Card>
 
+      <ChoiceChips options={countries} value={country} onChange={setCountry} accessibilityLabel="Country" />
+
       <View style={styles.columns}>
-        {leagues.map((league) => (
+        {shown.map((league) => (
           <Card key={league.leagueName} title={league.leagueName} icon="table" style={styles.column}>
             <View>
               {league.clubs.map((club, index) => (

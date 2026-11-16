@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ClubIdSchema, type ClubId, type GameDatabase } from '@/data/schemas';
+import { ClubIdSchema, isLeague, type ClubId, type GameDatabase } from '@/data/schemas';
 import { createRng } from '@/utils/random';
 
 import { cupWinner } from '../season/cup';
@@ -64,21 +64,26 @@ export function boardExpectation(db: GameDatabase, season: Season, clubId: ClubI
     .sort((a, b) => b.rep - a.rep || a.id.localeCompare(b.id));
   const rank = reps.findIndex((c) => c.id === clubId) + 1;
   const size = league.clubIds.length;
-  const safe = size - 3; // three go down
+  // Scaled to the league's size: for 20 clubs, top half 10, mid-table 14, safety 17th.
+  const safe = size - 3;
+  const half = Math.floor(size / 2);
+  const midTable = size - 6;
+  // Leagues abroad relegate nobody: the smallest clubs must stay out of the bottom three instead.
+  const bottom = league.rules.relegationPlaces > 0 ? 'Avoid relegation' : 'Stay out of the bottom three';
   const tier = league.tier;
   let target: number;
   let label: string;
   if (tier === 1) {
     if (rank === 1) [target, label] = [1, 'Win the league'];
     else if (rank <= 4) [target, label] = [4, 'Finish in the top four'];
-    else if (rank <= 10) [target, label] = [10, 'Finish in the top half'];
-    else if (rank <= 14) [target, label] = [14, 'A mid-table finish'];
-    else [target, label] = [safe, 'Avoid relegation'];
+    else if (rank <= half) [target, label] = [half, 'Finish in the top half'];
+    else if (rank <= midTable) [target, label] = [midTable, 'A mid-table finish'];
+    else [target, label] = [safe, bottom];
   } else {
     if (rank <= 3) [target, label] = [3, 'Win promotion'];
     else if (rank <= 8) [target, label] = [8, 'Push for promotion'];
-    else if (rank <= 14) [target, label] = [14, 'A mid-table finish'];
-    else [target, label] = [safe, 'Avoid relegation'];
+    else if (rank <= midTable) [target, label] = [midTable, 'A mid-table finish'];
+    else [target, label] = [safe, bottom];
   }
   return { competitionId, leagueName: competitionName(db, competitionId), tier, target, label };
 }
@@ -179,21 +184,31 @@ export function seasonReview(db: GameDatabase, season: Season, clubId: ClubId, c
 /** The club reputation (1–20 scale) a manager of this reputation is offered. */
 const clubLevelFor = (reputation: number) => 4 + reputation / 8;
 
+/** Clubs in his current country are this much more likely to offer than clubs abroad. */
+export const HOME_OFFER_WEIGHT = 2;
+
 /**
- * Clubs offering him a job: those around his level (a little above for a
- * strong reputation), never his current club. Deterministic per seed.
- * `atLeastOne` (after a sacking) guarantees an offer from a smaller club.
+ * Clubs offering him a job: league clubs around his level (a little above
+ * for a strong reputation), at home or abroad, never his current club.
+ * Clubs in his current country are HOME_OFFER_WEIGHT times as likely
+ * (there are three times as many clubs abroad). Background clubs, which
+ * play in no league, never offer. Deterministic per seed. `atLeastOne`
+ * (after a sacking) guarantees an offer from a smaller club at home.
  */
 export function jobOffers(db: GameDatabase, reputation: number, currentClubId: ClubId, seed: number, atLeastOne: boolean): ClubId[] {
   const level = clubLevelFor(reputation);
   const rng = createRng(mixSeed(seed, 4242));
-  // Offers come from clubs in his own country (jobs abroad are a later step).
   const country = db.clubs.find((c) => c.id === currentClubId)?.country;
-  const home = db.clubs.filter((c) => c.country === country);
-  const candidates = home
-    .filter((c) => c.id !== currentClubId && Math.abs(c.reputation - level) <= 2)
+  const inLeague = new Set(db.competitions.filter(isLeague).flatMap((l) => l.clubIds));
+  const home = db.clubs.filter((c) => c.country === country && inLeague.has(c.id));
+  const candidates = db.clubs
+    .filter((c) => inLeague.has(c.id) && c.id !== currentClubId && Math.abs(c.reputation - level) <= 2)
     .sort((a, b) => a.id.localeCompare(b.id));
-  const shuffled = candidates.map((c) => ({ c, k: rng.next() })).sort((a, b) => a.k - b.k).map((x) => x.c);
+  // Weighted shuffle (Efraimidis–Spirakis): key = u^(1/weight), highest first; a weight of 2 doubles the chance of coming early.
+  const shuffled = candidates
+    .map((c) => ({ c, k: rng.next() ** (1 / (c.country === country ? HOME_OFFER_WEIGHT : 1)) }))
+    .sort((a, b) => b.k - a.k)
+    .map((x) => x.c);
   const count = Math.min(shuffled.length, rng.int(atLeastOne ? 1 : 0, 3));
   const offers = shuffled.slice(0, count).map((c) => c.id);
   if (atLeastOne && offers.length === 0) {

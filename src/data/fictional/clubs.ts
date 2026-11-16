@@ -333,6 +333,24 @@ export const FOREIGN_LEAGUES: readonly League[] = FOREIGN_LEAGUE_SPECS.map((leag
   rules: { roundsPerOpponent: 2, points: LEAGUE_POINTS, promotionPlaces: 0, relegationPlaces: 0 },
 }));
 
-/** The country the user's career starts in (and the National Cup's). */
+/** The National Cup's country, listed first wherever countries are listed. */
 export const HOME_COUNTRY = 'ENG';
+
+/** Display names of the countries in the world. */
+export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
+  ENG: 'England',
+  KEN: 'Kenya',
+  FRA: 'France',
+  GER: 'Germany',
+  ITA: 'Italy',
+  ESP: 'Spain',
+  NED: 'Netherlands',
+  POR: 'Portugal',
+  NGA: 'Nigeria',
+  GHA: 'Ghana',
+  UGA: 'Uganda',
+  TAN: 'Tanzania',
+};
+
+export const countryName = (code: string) => COUNTRY_NAMES[code] ?? code;
 
