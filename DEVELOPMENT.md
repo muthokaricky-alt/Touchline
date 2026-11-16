@@ -1031,6 +1031,36 @@ penalties, no away goals):
   remaining tests are England-only store scenarios over a real season
   (~19 s each), as before the leagues abroad.
 
+### The website (after Milestone 10)
+
+Decisions (user): phone app first, then the website (both); hosting on
+Netlify or Cloudflare Pages (the user picks when signing up; config for
+both); installable and offline (PWA).
+
+- **Same code, static export:** `npm run build:web` = `expo export
+  --platform web` + `scripts/build-sw.mjs dist`. The guide for the user is
+  `docs/WEBSITE.md`.
+- **Installable:** `src/app/+html.tsx` (Expo Router's root HTML, SDK 58
+  form with `useServerDocumentContext`; checked against the docs and the
+  installed package) adds the manifest link, theme colour, iOS home-screen
+  tags and a navy first paint. `public/` (copied into `dist/` by Expo):
+  `manifest.webmanifest`, `icons/` (192/512 "any", 512 "maskable" with the
+  mark in the safe zone, 180 Apple touch icon; rendered by the icon script's
+  new second folder argument), `_headers` (no-cache for `sw.js` and the
+  manifest, a year for hashed bundles; read by Netlify and Cloudflare).
+- **Offline:** the generated service worker pre-caches every built file
+  (85 files, 4.1 MB) under `touchline-<hash of all contents>`, so a deploy
+  makes a new cache and the old one is deleted. Pages come from the cache;
+  a page that wasn't pre-rendered, or one the host answers with an error,
+  gets the app shell (`index.html`), which shows the right screen. Registered
+  by `useOfflineSupport` (`src/components/use-offline-support(.web).ts`:
+  web only, production builds only, after mount so pre-rendering is
+  unaffected).
+- **Hosting:** `netlify.toml` (build command, `dist`, Node 22, fallback to
+  `index.html` for unknown paths); Cloudflare Pages needs the same settings
+  in its dashboard and falls back to `index.html` by itself.
+- Saves on the web are per browser (localStorage); export/import moves them.
+
 ### Scouting (after Milestone 10)
 
 Decisions (user): scouting reveals potential only (attributes stay
@@ -1118,8 +1148,8 @@ npm run test:calibration  # the statistical suites only (*.calibration.test.ts, 
 npm run test:all       # everything (~65 s): run before committing engine/balance changes
 npm run typecheck      # tsc --noEmit
 npm run lint           # ESLint (eslint-config-expo); must be clean
-npm run build:web      # static web export to dist/
-node scripts/render-icons.mjs assets/images   # regenerate the icon set from its SVG design
+npm run build:web      # website: static export to dist/ + offline service worker (scripts/build-sw.mjs)
+node scripts/render-icons.mjs assets/images public/icons   # regenerate the app + website icons from the SVG design
 ```
 
 Install new Expo/RN packages with `npx expo install <pkg>` so versions match the SDK.
@@ -1508,6 +1538,18 @@ countries) → R16 legs drawn at once (Tue 29 Dec away, Tue 12 Jan at home as
 a group winner) → 1–1, 0–1 → "Knocked out in the Round of 16", QF legs
 drawn, aggregates shown. Zero console errors, no overflow.
 
+### The website ✅ (after the roadmap)
+- Root HTML, manifest, web icons, headers, generated service worker,
+  registration hook, Netlify config, `docs/WEBSITE.md`.
+- Verified: `tsc` clean, lint clean, tests pass, web export; headless
+  Chrome at 412px and 1280px: no manifest or installability errors, the
+  service worker controls the page with all 85 files cached; with the
+  network **off**: the app loads, a new career starts, a match plays to the
+  report, `/squad` opens, and a player profile that wasn't pre-rendered
+  (Lucas Garnier, Ashcombe Town) opens through the app shell. (The first
+  run found that last case returned the host's 404; fixed.) Zero console
+  errors. Not yet deployed: the user creates the Netlify or Cloudflare site.
+
 ### Known issues / not yet verified
 - **Kenyan club names** (and the other invented names abroad) are waiting
   for the user's review: `src/data/fictional/clubs.ts`.
@@ -1539,8 +1581,8 @@ drawn, aggregates shown. Zero console errors, no overflow.
 
 **Release order (user, 16 Nov 2026): phone app first, then the website.**
 Step-by-step for the user: `docs/PHONE_BUILD.md` (Expo Go test → free
-Android APK with EAS). The website (static export on a free host, maybe a
-PWA) comes after; app stores need the user's approval (paid accounts).
+Android APK with EAS) and `docs/WEBSITE.md` (Netlify or Cloudflare Pages,
+installable + offline). App stores need the user's approval (paid accounts).
 
 All ten roadmap milestones are built. What's left before a release:
 1. **Device testing** with `docs/DEVICE_TEST_CHECKLIST.md` (the user runs

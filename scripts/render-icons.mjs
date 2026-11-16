@@ -5,7 +5,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const [outDir] = process.argv.slice(2);
+// Usage: node scripts/render-icons.mjs assets/images [public/icons]
+// The optional second folder gets the website's icons (manifest + iOS home screen).
+const [outDir, webDir] = process.argv.slice(2);
 mkdirSync(outDir, { recursive: true });
 
 const NAVY = '#101820';
@@ -50,6 +52,14 @@ const ICONS = [
   { file: 'favicon.png', size: 48, svg: svg(48) },
 ];
 
+/** Website (PWA) icons: full bleed for "any", the mark in the inner safe zone for "maskable". */
+const WEB_ICONS = [
+  { file: 'icon-192.png', size: 192, svg: svg(192) },
+  { file: 'icon-512.png', size: 512, svg: svg(512) },
+  { file: 'maskable-512.png', size: 512, svg: svg(512, { scale: 0.62 }) },
+  { file: 'apple-touch-icon.png', size: 180, svg: svg(180) },
+];
+
 const port = 9300 + Math.floor(Math.random() * 500);
 const CHROME = process.env.CHROME_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const chrome = spawn(CHROME, [
@@ -67,13 +77,14 @@ await send('Page.enable');
 // Transparent page background, so icons without a background stay transparent.
 await send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
 
-for (const icon of ICONS) {
+const jobs = [...ICONS.map((icon) => ({ ...icon, dir: outDir })), ...(webDir ? WEB_ICONS.map((icon) => ({ ...icon, dir: webDir })) : [])];
+for (const icon of jobs) {
   await send('Emulation.setDeviceMetricsOverride', { width: icon.size, height: icon.size, deviceScaleFactor: 1, mobile: false });
   const html = `<html><body style="margin:0;background:transparent">${icon.svg}</body></html>`;
   await send('Page.navigate', { url: 'data:text/html;base64,' + Buffer.from(html).toString('base64') });
   await sleep(400);
   const { result } = await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: icon.size, height: icon.size, scale: 1 } });
-  writeFileSync(join(outDir, icon.file), Buffer.from(result.data, 'base64'));
+  writeFileSync(join(icon.dir, icon.file), Buffer.from(result.data, 'base64'));
   console.log(`${icon.file} ${icon.size}x${icon.size}`);
 }
 writeFileSync(join(outDir, 'touchline-icon.svg'), svg(1024).trim() + '\n');

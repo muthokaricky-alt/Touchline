@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui';
+import { useOfflineSupport } from '@/components/use-offline-support';
 import { useSaveHydration } from '@/persistence/use-hydration';
 import { colors, navigationTheme, spacing } from '@/theme';
 
@@ -23,6 +24,8 @@ SplashScreen.preventAutoHideAsync();
  */
 export default function RootLayout() {
   const hydrated = useSaveHydration();
+  // Website only: the service worker that makes it installable and playable offline.
+  useOfflineSupport();
 
   useEffect(() => {
     if (hydrated) SplashScreen.hide();

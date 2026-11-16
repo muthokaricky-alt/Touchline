@@ -1,0 +1,16 @@
+# Netlify: builds the website from this repository on every push to main.
+# (Cloudflare Pages uses the same build command and output folder; see docs/WEBSITE.md.)
+
+[build]
+  command = "npm run build:web"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Pages that aren't pre-rendered (e.g. another club's player profile) load
+# the app, which then shows the right screen. Existing files are served first.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
