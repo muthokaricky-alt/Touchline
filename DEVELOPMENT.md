@@ -1934,8 +1934,9 @@ drawn, aggregates shown. Zero console errors, no overflow.
 - Tests: base64 round trip of every byte value and length, z2 is plain
   text, z1 still decodes, a storage that cuts at NUL keeps the save, a
   lossy storage fails loudly. 957 tests. Headless Chrome: z2 stored,
-  career kept after reload. **Not yet verified on the phone** (needs the
-  next APK). Careers already damaged on the phone can't be recovered.
+  career kept after reload. **Verified on the user's Android phone**
+  (17 Nov 2026, APK from 17c4f41): a career survives closing and reopening
+  the app. Careers damaged before the fix couldn't be recovered.
 
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European
