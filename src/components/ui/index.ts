@@ -10,6 +10,7 @@ export { ListRow } from './ListRow';
 export { PageHeader } from './PageHeader';
 export { Pill, type PillTone } from './Pill';
 export { PositionBadge } from './PositionBadge';
+export { PressableScale } from './PressableScale';
 export { ProgressBar } from './ProgressBar';
 export { RatingBadge } from './RatingBadge';
 export { Screen } from './Screen';

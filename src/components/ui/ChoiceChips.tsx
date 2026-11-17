@@ -1,8 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { hapticSelection } from '@/components/haptics';
 
 import { colors, layout, radii, spacing } from '@/theme';
 
 import { AppText } from './AppText';
+import { PressableScale } from './PressableScale';
 
 type ChoiceChipsProps<T extends string> = {
   options: readonly { value: T; label: string }[];
@@ -20,9 +23,12 @@ export function ChoiceChips<T extends string>({ options, value, onChange, access
       {options.map((option) => {
         const selected = option.value === value;
         return (
-          <Pressable
+          <PressableScale
             key={option.value}
-            onPress={() => onChange(option.value)}
+            onPress={() => {
+              if (!selected) hapticSelection();
+              onChange(option.value);
+            }}
             accessibilityRole="radio"
             accessibilityState={{ selected, checked: selected }}
             accessibilityLabel={option.label}
@@ -30,7 +36,7 @@ export function ChoiceChips<T extends string>({ options, value, onChange, access
             <AppText variant="bodyStrong" color={selected ? 'onAccent' : 'textPrimary'}>
               {option.label}
             </AppText>
-          </Pressable>
+          </PressableScale>
         );
       })}
     </View>

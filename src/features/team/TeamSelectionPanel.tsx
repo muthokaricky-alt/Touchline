@@ -19,6 +19,7 @@ import type { LineupIssue, LineupPlace } from '@/game/lineup';
 import type { TeamSheetSlotView, TeamSheetView } from '@/game/squad/team-sheet';
 import { spacing } from '@/theme';
 
+import { hapticLand } from '@/components/haptics';
 import { ConditionTag } from '@/features/player/ConditionTag';
 
 import { Pitch } from './components/Pitch';
@@ -33,6 +34,8 @@ type TeamSelectionPanelProps = {
   onChooseForSlot: (slotId: string) => void;
   /** Swaps whoever is in two places (tap one, tap another). */
   onSwap: (a: LineupPlace, b: LineupPlace) => void;
+  /** Opens a player's profile (long press, or Profile in the swap bar). */
+  onOpenPlayer: (playerId: PlayerId) => void;
   onAddSubstitute: () => void;
   onRemoveSubstitute: (playerId: PlayerId) => void;
   onAutoPick: () => void;
@@ -44,6 +47,7 @@ export function TeamSelectionPanel({
   onFormationChange,
   onChooseForSlot,
   onSwap,
+  onOpenPlayer,
   onAddSubstitute,
   onRemoveSubstitute,
   onAutoPick,
@@ -57,7 +61,10 @@ export function TeamSelectionPanel({
     const outcome = tapOutcome(sheet, selected, place);
     if (outcome.kind === 'select') setPicked(outcome.place);
     else setPicked(null);
-    if (outcome.kind === 'swap') onSwap(outcome.a, outcome.b);
+    if (outcome.kind === 'swap') {
+      hapticLand();
+      onSwap(outcome.a, outcome.b);
+    }
     if (outcome.kind === 'choose') onChooseForSlot(outcome.slotId);
   };
   const slotHint = (slot: TeamSheetSlotView) =>
@@ -80,11 +87,16 @@ export function TeamSelectionPanel({
           onSlotPress={(slotId) => tap({ kind: 'slot', slotId })}
           selectedSlotId={selected?.kind === 'slot' ? selected.slotId : null}
           hintFor={slotHint}
+          onPlayerLongPress={onOpenPlayer}
         />
         {/* Below the pitch, so selecting a player never moves the pitch under your finger. */}
         {selected && selectedPlayer ? (
           <SwapBar
             name={selectedPlayer.shortName}
+            onProfile={() => {
+              setPicked(null);
+              onOpenPlayer(selectedPlayer.id);
+            }}
             onChoose={
               selected.kind === 'slot'
                 ? () => {
@@ -97,8 +109,8 @@ export function TeamSelectionPanel({
           />
         ) : (
           <AppText variant="caption" color="textSecondary" align="center">
-            Tap a player, then another player or a substitute, to swap them. Tap an empty position to pick from the squad.
-            Ring colour: green natural · amber accomplished · red out of position.
+            Tap a player, then another player or a substitute, to swap them. Press and hold a player for his profile. Tap
+            an empty position to pick from the squad. Ring colour: green natural · amber accomplished · red out of position.
           </AppText>
         )}
       </View>
@@ -121,6 +133,7 @@ export function TeamSelectionPanel({
                   divider={index > 0}
                   title={sub.shortName}
                   onPress={() => tap({ kind: 'bench', playerId: sub.id })}
+                  onLongPress={() => onOpenPlayer(sub.id)}
                   selected={selected?.kind === 'bench' && selected.playerId === sub.id}
                   accessibilityLabel={`${sub.shortName}, ${sub.primaryPosition}, rating ${sub.rating}`}
                   accessibilityHint={
@@ -155,7 +168,7 @@ export function TeamSelectionPanel({
 }
 
 /** Shown while a player is picked for a swap. */
-function SwapBar({ name, onChoose, onCancel }: { name: string; onChoose?: () => void; onCancel: () => void }) {
+function SwapBar({ name, onProfile, onChoose, onCancel }: { name: string; onProfile: () => void; onChoose?: () => void; onCancel: () => void }) {
   return (
     <Card highlighted>
       <View accessibilityLiveRegion="polite" style={styles.swapText}>
@@ -165,6 +178,7 @@ function SwapBar({ name, onChoose, onCancel }: { name: string; onChoose?: () => 
         </AppText>
       </View>
       <View style={styles.swapButtons}>
+        <Button label="Profile" icon="person" variant="secondary" onPress={onProfile} />
         {onChoose ? <Button label="Pick from squad" icon="squad" variant="secondary" onPress={onChoose} /> : null}
         <Button label="Cancel" variant="secondary" onPress={onCancel} />
       </View>

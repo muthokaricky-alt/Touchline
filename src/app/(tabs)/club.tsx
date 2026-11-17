@@ -2,6 +2,8 @@ import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 
 import { ClubScreen } from '@/features/club/ClubScreen';
+import { useMusicSettings } from '@/features/music/music-settings';
+import { TRACKS } from '@/features/music/tracks';
 import { competitionName, leagueOfClub } from '@/game/season/season-flow';
 import { fullName } from '@/game/squad/squad-selectors';
 import { SLOT_COUNT } from '@/persistence/slot-storage';
@@ -23,6 +25,7 @@ export default function ClubRoute() {
   const startNewGame = useGameStore((s) => s.startNewGame);
   const manager = useGameStore((s) => s.manager);
   const budget = useTransferBudget();
+  const music = useMusicSettings();
   const { lastSavedAt, loadedFromSave, notice, activeSlot, slots: slotIndex } = useSaveStatus();
 
   const leagueId = leagueOfClub(season, clubId);
@@ -150,6 +153,12 @@ export default function ClubRoute() {
         history,
       }}
       save={{ lastSavedLabel, loadedFromSave, notice }}
+      music={{
+        enabled: music.enabled,
+        nowPlaying: TRACKS[music.trackIndex]?.title ?? TRACKS[0].title,
+        onToggle: () => music.setEnabled(!music.enabled),
+        onNext: music.nextTrack,
+      }}
       onOpenMarket={() => router.push('/transfers')}
       onStartNewGame={startNewGame}
       onDismissNotice={saveStatus.dismissNotice}

@@ -88,7 +88,7 @@ export function MatchSetupScreen({
             <ChoiceChips options={VENUE_OPTIONS} value={venue} onChange={onVenueChange} accessibilityLabel="Venue" />
           </Card>
 
-          <Button label="Kick off" icon="match" onPress={onKickOff} disabled={!ready} />
+          <Button label="Kick off" icon="match" busyLabel="Simulating…" onPress={onKickOff} disabled={!ready} />
           {!ready && blockingIssues.length > 0 ? (
             <AppText variant="caption" color="danger" align="center">
               Fix your lineup before kick-off.

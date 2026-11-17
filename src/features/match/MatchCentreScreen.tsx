@@ -13,6 +13,8 @@ import { Scoreboard } from './components/Scoreboard';
 import { StatsPanel } from './components/StatsPanel';
 import { phaseLabel, scorerLines, type RatingRow, type StatRow, type TimelineItem } from './timeline';
 import { BUILD_UP_STEP_MS, PASS_STEP_MS, type PitchFrame } from './pitch2d';
+import { hapticSuccess } from '@/components/haptics';
+
 import { useMatchView, type MatchViewMode } from './use-match-view';
 import { useReplay } from './use-replay';
 
@@ -30,18 +32,24 @@ export type MatchPitch = {
   passing: readonly (readonly PitchFrame[] | undefined)[];
   buildUps: readonly (readonly PitchFrame[] | undefined)[];
   kits: Record<Side, Kit>;
+  /** The user's side (null in a match between two other clubs): their goals get a haptic. */
+  userSide: Side | null;
   numberOf: (playerId: string) => string;
   nameOf: (playerId: string) => string;
 };
 
 /** The last moment stays on the pitch this long before the next build-up starts… */
-const HOLD_MS = 700;
+const HOLD_MS = 1000;
 /** …and a goal (with its banner) this long. */
-const GOAL_HOLD_MS = 2500;
+const GOAL_HOLD_MS = 3000;
 /** After a build-up, a short pause before the line appears (the shot). */
-const AFTER_BUILD_UP_MS = 300;
+const AFTER_BUILD_UP_MS = 450;
 /** After passing play with no chance, the line appears straight after the last pass. */
-const AFTER_PLAY_MS = 100;
+const AFTER_PLAY_MS = 150;
+/** Commentary only: one line every… */
+const COMMENTARY_STEP_MS = 700;
+/** The longest glide into a moment (it then stays still for the rest of its hold). */
+const MOMENT_GLIDE_MS = 700;
 
 /** What plays on the pitch before an item's line: passing play, then the build-up (each frame with its own time). */
 type LeadIn = { frames: readonly PitchFrame[]; durations: readonly number[]; chance: boolean };
@@ -60,14 +68,15 @@ function leadInOf(passing: readonly PitchFrame[] = [], buildUp: readonly PitchFr
  * showing the last moment) for `holdMs`, then each frame for its duration.
  * Restarts for each new item; stops while paused.
  */
-function useLeadInStep(leadIn: LeadIn | undefined, playing: boolean, itemIndex: number, holdMs: number): number {
+function useLeadInStep(leadIn: LeadIn | undefined, playing: boolean, itemIndex: number, holdMs: number, speed: number): number {
   const [step, setStep] = useState({ itemIndex, value: -1 });
   const current = step.itemIndex === itemIndex ? step.value : -1;
   useEffect(() => {
     if (!leadIn || !playing || current >= leadIn.frames.length - 1) return;
-    const timer = setTimeout(() => setStep({ itemIndex, value: current + 1 }), current < 0 ? holdMs : leadIn.durations[current]);
+    const wait = (current < 0 ? holdMs : leadIn.durations[current]) / speed;
+    const timer = setTimeout(() => setStep({ itemIndex, value: current + 1 }), wait);
     return () => clearTimeout(timer);
-  }, [leadIn, playing, current, itemIndex, holdMs]);
+  }, [leadIn, playing, current, itemIndex, holdMs, speed]);
   return current;
 }
 
@@ -155,15 +164,16 @@ export function MatchCentreScreen({
   const holdAfter = useCallback((index: number) => (pitchOn && pitch?.frames[index]?.goal ? GOAL_HOLD_MS : HOLD_MS), [pitchOn, pitch]);
   // Built once per match (the same objects every render, so the step timer isn't restarted).
   const leadIns = useMemo(() => (pitch ? pitch.frames.map((_, i) => leadInOf(pitch.passing[i], pitch.buildUps[i])) : []), [pitch]);
+  const speed = matchView.speed;
   const stepFor = useCallback(
     (next: number) => {
-      if (!pitchOn) return 700;
+      if (!pitchOn) return COMMENTARY_STEP_MS / speed;
       const leadIn = leadIns[next];
-      if (!leadIn) return holdAfter(next - 1);
+      if (!leadIn) return holdAfter(next - 1) / speed;
       const playing = leadIn.durations.reduce((sum, ms) => sum + ms, 0);
-      return holdAfter(next - 1) + playing + (leadIn.chance ? AFTER_BUILD_UP_MS : AFTER_PLAY_MS);
+      return (holdAfter(next - 1) + playing + (leadIn.chance ? AFTER_BUILD_UP_MS : AFTER_PLAY_MS)) / speed;
     },
-    [pitchOn, leadIns, holdAfter],
+    [pitchOn, leadIns, holdAfter, speed],
   );
   const replay = useReplay(timeline.length, stepFor, initialRevealed);
   const [view, setView] = useState<ReportView>('timeline');
@@ -174,8 +184,20 @@ export function MatchCentreScreen({
   const current = shown.at(-1) ?? timeline[0];
   const live = renderManagement !== undefined;
   const pendingLeadIn = pitchOn && !replay.finished ? leadIns[replay.revealed] : undefined;
-  const leadInStep = useLeadInStep(pendingLeadIn, replay.playing && !managing, replay.revealed, holdAfter(replay.revealed - 1));
-  const frame = pendingLeadIn && leadInStep >= 0 ? pendingLeadIn.frames[leadInStep] : pitch?.frames[Math.max(0, replay.revealed - 1)];
+  const leadInStep = useLeadInStep(pendingLeadIn, replay.playing && !managing, replay.revealed, holdAfter(replay.revealed - 1), speed);
+  const inLeadIn = pendingLeadIn !== undefined && leadInStep >= 0;
+  const frame = inLeadIn ? pendingLeadIn.frames[leadInStep] : pitch?.frames[Math.max(0, replay.revealed - 1)];
+  // Each glide lasts as long as its frame is shown, so the dots never stop and start between passes.
+  const moveMs = (inLeadIn ? pendingLeadIn.durations[leadInStep] : MOMENT_GLIDE_MS) / speed;
+  const speedButton = (
+    <Button
+      label={`${speed}×`}
+      variant="secondary"
+      onPress={() => matchView.setSpeed(speed === 1 ? 2 : 1)}
+      accessibilityLabel={`Match speed ${speed} times`}
+      accessibilityHint={speed === 1 ? 'Doubles the speed' : 'Back to normal speed'}
+    />
+  );
   const showPitch = pitchOn && frame !== undefined;
   const goalBanner = frame?.goal
     ? {
@@ -183,6 +205,13 @@ export function MatchCentreScreen({
         detail: `${current.clock} ${pitch!.nameOf(frame.goal.scorerId)}${frame.goal.assistId ? ` · assist ${pitch!.nameOf(frame.goal.assistId)}` : ''}`,
       }
     : null;
+
+  // Your team scores: a success haptic, in the same moment the goal appears on the pitch.
+  const goalKey = frame?.goal ? `${current.key}-${frame.goal.side}` : null;
+  const userScored = frame?.goal?.side === pitch?.userSide;
+  useEffect(() => {
+    if (goalKey && userScored && pitchOn) hapticSuccess();
+  }, [goalKey, userScored, pitchOn]);
 
   // Full time in a live match: record it once (the report then shows the other results too).
   const recorded = useRef(false);
@@ -218,8 +247,9 @@ export function MatchCentreScreen({
         onSkip={replay.skipToEnd}
         onManage={live ? manage : undefined}
         onExit={matchView.exitFullScreen}
+        speedButton={speedButton}
         kitColours={{ home: pitch!.kits.home.fill, away: pitch!.kits.away.fill }}>
-        <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} />
+        <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} moveMs={moveMs} />
       </FullScreenMatch>
     );
   }
@@ -257,7 +287,7 @@ export function MatchCentreScreen({
               ) : null}
             </View>
           ) : null}
-          {showPitch ? <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} /> : null}
+          {showPitch ? <Pitch2D frame={frame!} kits={pitch!.kits} numberOf={pitch!.numberOf} goalBanner={goalBanner} moveMs={moveMs} /> : null}
           {live ? <Button label="Manage team" icon="tactics" variant="secondary" onPress={manage} accessibilityHint="Pauses the match: substitutions and instructions" /> : null}
           <View style={styles.controls}>
             <View style={styles.flex}>
@@ -267,6 +297,7 @@ export function MatchCentreScreen({
                 onPress={replay.togglePlaying}
               />
             </View>
+            {speedButton}
             <View style={styles.flex}>
               <Button label="Skip to full time" onPress={replay.skipToEnd} />
             </View>
@@ -356,6 +387,7 @@ type FullScreenMatchProps = {
   onSkip: () => void;
   onManage?: () => void;
   onExit: () => void;
+  speedButton: ReactNode;
   kitColours: { home: string; away: string };
   children: ReactNode;
 };
@@ -377,6 +409,7 @@ function FullScreenMatch({
   onSkip,
   onManage,
   onExit,
+  speedButton,
   kitColours,
   children,
 }: FullScreenMatchProps) {
@@ -407,6 +440,7 @@ function FullScreenMatch({
         </AppText>
         {onManage ? <Button label="Manage" variant="secondary" icon="tactics" onPress={onManage} /> : null}
         <Button label={playing ? 'Pause' : 'Resume'} variant="secondary" onPress={onTogglePlaying} />
+        {speedButton}
         <Button label="Skip" onPress={onSkip} />
       </View>
     </SafeAreaView>

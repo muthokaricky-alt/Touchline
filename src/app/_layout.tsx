@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui';
 import { useOfflineSupport } from '@/components/use-offline-support';
+import { MusicPlayer } from '@/features/music/MusicPlayer';
 import { useSaveHydration } from '@/persistence/use-hydration';
 import { colors, navigationTheme, spacing } from '@/theme';
 
@@ -40,6 +41,8 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider value={navigationTheme}>
         <StatusBar style="light" />
+        {/* After the save has loaded: so never during the website's pre-rendering. */}
+        {hydrated ? <MusicPlayer /> : null}
         {hydrated ? (
           <Stack
             screenOptions={{

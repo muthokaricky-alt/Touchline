@@ -50,7 +50,13 @@ export function NewCareerScreen({ leagues, onStart }: NewCareerScreenProps) {
           </AppText>
         ) : null}
       </View>
-      <Button label="Start career" icon="check" disabled={!ready} onPress={() => clubId && setError(onStart(name, clubId))} />
+      <Button
+        label="Start career"
+        icon="check"
+        busyLabel="Setting up…"
+        disabled={!ready}
+        onPress={() => clubId && setError(onStart(name, clubId))}
+      />
     </View>
   );
 

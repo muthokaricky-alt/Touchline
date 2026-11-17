@@ -1,8 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { hapticSelection } from '@/components/haptics';
 
 import { colors, layout, radii, spacing } from '@/theme';
 
 import { AppText } from './AppText';
+import { PressableScale } from './PressableScale';
 
 type SegmentedControlProps<T extends string> = {
   segments: readonly { value: T; label: string }[];
@@ -22,9 +25,12 @@ export function SegmentedControl<T extends string>({ segments, value, onChange, 
       {segments.map((segment) => {
         const selected = segment.value === value;
         return (
-          <Pressable
+          <PressableScale
             key={segment.value}
-            onPress={() => onChange(segment.value)}
+            onPress={() => {
+              if (!selected) hapticSelection();
+              onChange(segment.value);
+            }}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             accessibilityLabel={segment.label}
@@ -32,7 +38,7 @@ export function SegmentedControl<T extends string>({ segments, value, onChange, 
             <AppText variant="bodyStrong" color={selected ? 'onAccent' : 'textSecondary'} align="center">
               {segment.label}
             </AppText>
-          </Pressable>
+          </PressableScale>
         );
       })}
     </View>

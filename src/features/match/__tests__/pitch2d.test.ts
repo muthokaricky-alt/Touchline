@@ -120,7 +120,7 @@ describe('buildBuildUps', () => {
 describe('buildPassingPlay', () => {
   const shownOf = (r: MatchResult) => buildTimeline(r, (id) => id).map((item) => Number(item.key));
 
-  it('fills the gaps between shown moments with 1-6 passes on the pitch, the ball always at a highlighted holder', () => {
+  it('fills the gaps between shown moments with 1-10 steps on the pitch, the ball always at a highlighted holder', () => {
     const result = play(21);
     const shown = shownOf(result);
     const plays = buildPassingPlay(result, shown);
@@ -128,7 +128,7 @@ describe('buildPassingPlay', () => {
     for (const [index, frames] of plays) {
       expect(shown).toContain(index);
       expect(frames.length).toBeGreaterThanOrEqual(1);
-      expect(frames.length).toBeLessThanOrEqual(6);
+      expect(frames.length).toBeLessThanOrEqual(10); // up to 9 passes, plus a restart
       for (const frame of frames) {
         const holder = frame.dots.find((d) => d.highlight)!;
         expect(Math.hypot(holder.x - frame.ball.x, holder.y - frame.ball.y)).toBeLessThan(0.05);
@@ -190,8 +190,48 @@ describe('buildPassingPlay', () => {
     expect(Math.abs(after[0].ball.x - 0.5)).toBeLessThan(0.3);
   });
 
-  it('keeps a 2D match to about two minutes', () => {
-    // The screen's timing: each line waits 0.7 s (a goal 2.5 s), plus its passing play and build-up.
+  it('ends each passing move exactly where the next moment starts, so nothing jumps across the pitch', () => {
+    const result = play(21);
+    const shown = shownOf(result);
+    const plays = buildPassingPlay(result, shown);
+    const buildUps = buildBuildUps(result);
+    const frames = buildPitchFrames(result);
+    let checked = 0;
+    for (const [index, passes] of plays) {
+      const start = buildUps.get(index)?.[0] ?? frames.get(index)!;
+      const event = result.events[index];
+      // Moments in open play (chances, fouls, cards): the last pass lands on the spot.
+      if (!buildUps.has(index) && !['card', 'foul', 'tackle'].includes(event.type)) continue;
+      expect(passes.at(-1)!.ball).toEqual(start.ball);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(5);
+  });
+
+  it('never jumps: in the order the screen shows them, the ball only moves a pass length between frames (long balls aside)', () => {
+    for (const seed of [3, 21, 40, 55, 77]) {
+      const r = play(seed);
+      const shown = shownOf(r);
+      const frames = buildPitchFrames(r);
+      const plays = buildPassingPlay(r, shown);
+      const buildUps = buildBuildUps(r);
+      let previous = frames.get(shown[0])!;
+      for (const index of shown.slice(1)) {
+        const event = r.events[index];
+        const longBall = (event.type === 'shot' || event.type === 'goal') && event.chance === 'long-ball';
+        const sequence = [...(plays.get(index) ?? []), ...(buildUps.get(index) ?? []), frames.get(index)!];
+        for (const frame of sequence) {
+          const jump = Math.hypot(frame.ball.x - previous.ball.x, frame.ball.y - previous.ball.y);
+          // Whistles reset to the centre spot; long balls are meant to be long.
+          if (event.type !== 'half-time' && event.type !== 'full-time' && event.type !== 'kick-off' && !longBall) expect(jump).toBeLessThan(0.62);
+          previous = frame;
+        }
+      }
+    }
+  });
+
+  it('a 2D match at normal speed lasts about one and a half to two and a half minutes', () => {
+    // The screen's timing: each line waits 1 s (after a goal 3 s), plus its passing play and build-up.
     for (const seed of [3, 21, 40]) {
       const result = play(seed);
       const shown = shownOf(result);
@@ -199,10 +239,11 @@ describe('buildPassingPlay', () => {
       const buildUps = buildBuildUps(result);
       const ms = shown.reduce((sum, index, k) => {
         const previousGoal = k > 0 && result.events[shown[k - 1]].type === 'goal';
-        return sum + (previousGoal ? 2500 : 700) + (plays.get(index)?.length ?? 0) * PASS_STEP_MS + (buildUps.get(index)?.length ?? 0) * BUILD_UP_STEP_MS;
+        return sum + (previousGoal ? 3000 : 1000) + (plays.get(index)?.length ?? 0) * PASS_STEP_MS + (buildUps.get(index)?.length ?? 0) * BUILD_UP_STEP_MS;
       }, 0);
       console.log(`seed ${seed}: ${shown.length} lines, ${(ms / 1000).toFixed(0)} s`);
-      expect(ms).toBeLessThan(150_000);
+      expect(ms).toBeGreaterThan(80_000);
+      expect(ms).toBeLessThan(160_000);
     }
   });
 });

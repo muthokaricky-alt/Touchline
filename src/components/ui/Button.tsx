@@ -1,9 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { colors, layout, radii, spacing } from '@/theme';
 
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { PressableScale } from './PressableScale';
 
 type ButtonProps = {
   label: string;
@@ -12,7 +14,15 @@ type ButtonProps = {
   variant?: 'primary' | 'secondary' | 'danger';
   icon?: IconName;
   disabled?: boolean;
+  /** For screen readers when the label alone is cryptic (e.g. "2×"). */
+  accessibilityLabel?: string;
   accessibilityHint?: string;
+  /**
+   * For actions that take a moment (simulating a matchday): shown on the
+   * button straight away, and the action runs once that's on screen, so a
+   * tap always gets an answer within a frame or two.
+   */
+  busyLabel?: string;
 };
 
 export function Button({
@@ -21,17 +31,44 @@ export function Button({
   variant = 'primary',
   icon,
   disabled = false,
+  accessibilityLabel,
   accessibilityHint,
+  busyLabel,
 }: ButtonProps) {
   const isPrimary = variant === 'primary';
   const contentColor = variant === 'secondary' ? 'textPrimary' : 'onAccent';
+  const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const press = () => {
+    if (!onPress) return;
+    if (!busyLabel) return onPress();
+    setBusy(true);
+    // Two frames: the busy label is drawn before the (synchronous) work blocks the thread.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        try {
+          onPress();
+        } finally {
+          if (mounted.current) setBusy(false);
+        }
+      }),
+    );
+  };
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
+    <PressableScale
+      onPress={press}
+      disabled={disabled || busy}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, busy }}
+      accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       style={({ pressed }) => [
         styles.base,
@@ -42,10 +79,10 @@ export function Button({
       <View style={styles.content}>
         {icon ? <Icon name={icon} size={18} color={contentColor} /> : null}
         <AppText variant="bodyStrong" color={contentColor}>
-          {label}
+          {busy && busyLabel ? busyLabel : label}
         </AppText>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 

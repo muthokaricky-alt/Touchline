@@ -3,7 +3,7 @@
 Living document. Update it at the end of every coding session so the next
 session (human or AI) can pick up without losing context.
 
-_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, 2D passing play, a UI/UX review, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
+_Last updated: 16 Nov 2026 — All ten milestones built, Rick Kyalo, lineup swap, 2D passing play, a UI/UX review, smoother 2D with a speed button, menu music, interaction polish, plus suspensions, in-match management, scouting, foreign leagues, cups abroad, the Continental Cup, the website and the 2D match view (steps A and B; save v12). Waiting on device testing (docs/DEVICE_TEST_CHECKLIST.md)._
 
 ---
 
@@ -1183,6 +1183,97 @@ matches, a list of problems, the user chose all seven fixes.
   the content scrolls; the chosen club, the board's target and Start career
   live there instead of a card above the club list.
 
+### 2D smoothing, speed button, player info in Tactics (after Milestone 10)
+
+User feedback after the phone build: "the ball and circles are sometimes
+off", "slightly too fast", no player info from Tactics.
+
+- **Causes found:** (1) a passing move ended wherever its last pass went,
+  but the next moment (a foul, a build-up) started somewhere else, so ball
+  and dots shot across the pitch; (2) moment frames used the basic team
+  shapes while passing play slid both teams with the ball, so all 22 dots
+  lurched; (3) dots arrived in 0.48 s and then waited for 0.6 s steps
+  (stop-start). Measured: ball moves between consecutive shown frames
+  over five matches, biggest 1.15 of the pitch length after shots/goals.
+- **Fixes:** every frame in play comes from `playFrame` (moments, build-ups,
+  passing); the last touch of a move lands on the next moment's spot (and
+  with its player, when he's on the side in possession), including before
+  stoppages; enough steps to make the trip (`STEP_REACH` 0.28, up to 8),
+  passes capped at 0.34 when someone nearer is free; restarts (kick-off,
+  goal kick) shown first. A regression test replays five matches in screen
+  order and fails on any jump over 0.62 (long balls and whistles aside).
+- **Slower, continuous:** passes 900 ms, build-up steps 780, holds 1 s (goal
+  3 s); `Pitch2D` takes `moveMs` and each glide lasts as long as its frame
+  is shown. A normal-speed match: 108–144 s computed (lines also dropped
+  from 22 to 20 since same-minute substitutions share one).
+- **Speed button** 1× / 2× next to Pause (and in full screen), remembered on
+  the device with the 2D/Commentary choice (`useMatchView().speed`); every
+  wait and glide is divided by it.
+- **Player info in Tactics:** "Profile" in the swap bar, and a long press on
+  any player (pitch or bench) opens the profile (`onLongPress` on
+  `ListRow` and the pitch markers, also as a screen-reader action). `Button`
+  got an optional `accessibilityLabel`.
+
+### Menu music (after Milestone 10)
+
+Decisions (user): three generated jazzy beats (not SoundCloud: needs
+internet, can't be faded during matches, autoplay blocked, tracking
+cookies on the website); menus only, with an on/off switch.
+
+- **Tracks:** `scripts/make-music.mjs` synthesises them (FM electric piano,
+  walking bass, swung brush drums, vibes, vinyl; seeded, seamless 32-bar
+  loops) and encodes MP3 (mono, 32 kHz, 64 kbps: 83–101 s, 0.65–0.8 MB)
+  with lamejs, installed only for this (`npm install --no-save
+  lamejs@1.2.1`; its package entry point is broken, so the script runs its
+  single-file build in a `vm` context). The user ran it (running
+  downloaded code that way needs their permission). Files in
+  `assets/music`, typed by `src/types/assets.d.ts`.
+- **Player** (`features/music/MusicPlayer.tsx`, mounted in the root layout
+  after the save loads, so never pre-rendered): expo-audio's
+  `useAudioPlaylist` (`loop: 'all'`), plays when music is on, the app is in
+  front (AppState / page visibility) and the route isn't `/match`; 0.9 s
+  fades; volume 0.35. Respects the silent switch, mixes with other apps.
+  Web: browsers refuse sound before an interaction, so it retries on the
+  next tap/click/key. The browser run caught a new track starting at full
+  volume (each web track is its own `<audio>` element): volume is reset on
+  every track change.
+- **Settings** (`music-settings.ts`, a small Zustand store, device
+  preference in platform storage, not the save): on/off, track playing,
+  "next" requests. Club tab Music card: on/off, now playing, Next track.
+- `expo-audio` config plugin with `microphonePermission: false` and
+  `recordAudioAndroid: false` (its defaults would ask for a microphone the
+  game never uses). Native config: in the next build.
+
+### Interaction polish (after Milestone 10)
+
+User's principles (squash and stretch, anticipation, staging, pose to pose,
+follow-through, secondary action, snappy timing, exaggerated feedback,
+Fitts, Hick, Miller, Doherty, Postel, frequency of use), applied with the
+animate-expo skill's rules (UI thread, transform/opacity only, strong
+ease-out, under 300 ms, reduced motion, haptics sparingly).
+
+- **`PressableScale`** (ui primitive): shrinks on press-in (100 ms, 0.97;
+  rows 0.985, icons 0.92, pitch markers 0.94), back in 150 ms; Reanimated
+  on the UI thread; no scale with Reduce Motion; `pressRetentionOffset` so
+  a drifting finger doesn't cancel. Used by Button, IconButton,
+  ChoiceChips, SegmentedControl, ListRow and the pitch markers.
+- **Fitts:** IconButton `hitSlop` 8 around its 44 pt square.
+- **Doherty threshold:** `Button busyLabel` shows "Simulating…" /
+  "Setting up…" / "Preparing the season…" at once and runs the
+  synchronous action two frames later (Kick off, Start career, Next
+  season, Play out the season), so a tap never looks ignored.
+- **Haptics** (`components/haptics.ts`, expo-haptics, no-ops on the web):
+  selection when a chip/segment changes, a light impact on a lineup swap,
+  success when the user's team scores. Never the only feedback.
+- **Follow-through:** a shirt pops (1.18 and back) when a different player
+  lands in a position.
+- **Staging / exaggeration on goals (2D):** everyone but the scorer and the
+  assister fades to 35%; the scorer pops to 1.45 and settles at 1.2 while
+  the goal shows (pose to pose); the banner enters with a small overshoot
+  (Keyframe, honours Reduce Motion).
+- **Left alone on purpose (frequency of use):** tab switches, scrolling and
+  text entry stay unanimated.
+
 ### The website (after Milestone 10)
 
 Decisions (user): phone app first, then the website (both); hosting on
@@ -1328,6 +1419,7 @@ npm run typecheck      # tsc --noEmit
 npm run lint           # ESLint (eslint-config-expo); must be clean
 npm run build:web      # website: static export to dist/ + offline service worker (scripts/build-sw.mjs)
 node scripts/render-icons.mjs assets/images public/icons   # regenerate the app + website icons from the SVG design
+npm install --no-save lamejs@1.2.1; node scripts/make-music.mjs assets/music   # regenerate the menu music
 ```
 
 Install new Expo/RN packages with `npx expo install <pkg>` so versions match the SDK.
@@ -1807,6 +1899,25 @@ drawn, aggregates shown. Zero console errors, no overflow.
   order and merged substitutions, pre-match comparison, Fixtures rows,
   Affordable market, XI/SUB tags). Zero console errors.
 
+### 2D smoothing, speed button, player info ✅
+- Verified: `tsc` clean, lint clean, tests pass (a no-jump test over five
+  matches); headless Chrome: Profile from the swap bar, long press on a
+  substitute, 1×/2× (8' after 8 s, then 7 more minutes in the next 8 s).
+
+### Menu music ✅
+- Verified: tests (settings: on by default, remembered off, next track);
+  headless Chrome with the page's audio elements recorded: silent until the
+  first interaction, paused (faded) on the match screen, back afterwards,
+  Next track at background volume, off survives a reload. 953 tests.
+  Not verified: how it sounds (the user listens), native playback.
+
+### Interaction polish ✅
+- Verified: `tsc`, lint, 953 tests, expo-doctor 19/20 (the known
+  informational check); headless Chrome: a held button computes to
+  `scale(0.97)` and back to 1, a swapped shirt at ~1.18 mid-pop, "Setting
+  up…" on Start career immediately, a goal with the other dots faded and
+  the banner. Haptics and the feel of the springs need a phone.
+
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European
   and background names are still the ones I invented.
@@ -1846,9 +1957,12 @@ All ten roadmap milestones are built. What's left before a release:
    it in Expo Go; fix whatever it finds). Nothing native has been run on a
    phone yet: SQLite saves, splash gate, keyboard, gestures, share sheet,
    document picker.
-2. **First EAS build** (user, needs a free Expo account): `npm install -g
-   eas-cli`, `eas login`, then `eas build --platform android --profile
-   preview` for an installable APK (eas.json is already set up).
+2. **EAS builds work** (16 Nov 2026): project `@muthokaricky/Touchline`
+   (projectId in app.json), Android keystore kept by EAS. Two preview APKs
+   built with `eas build --platform android --profile preview`; the second
+   (commit 15b407e) has everything up to the UI/UX review. Free-plan builds
+   wait 10–40 min in the queue, then take ~10 min. The EAS Simulator needs
+   a paid plan (`eas simulator:availability` said unavailable).
 3. Then choose: store submission (production profile, store listings,
    privacy policy) or more gameplay. Performance with the
    leagues abroad after the phone test (a cheaper results model for

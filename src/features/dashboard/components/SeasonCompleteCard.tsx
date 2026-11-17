@@ -70,7 +70,7 @@ export function SeasonCompleteCard({ seasonLabel, summary, review, onStartNextSe
         </View>
         {review?.sacked ? null : (
           <View style={styles.flex}>
-            <Button label="Next season" icon="fixtures" onPress={() => onStartNextSeason()} />
+            <Button label="Next season" icon="fixtures" busyLabel="Preparing the season…" onPress={() => onStartNextSeason()} />
           </View>
         )}
       </View>
@@ -85,7 +85,7 @@ export function SeasonFinishingCard({ onFinishSeason }: { onFinishSeason: () => 
       <AppText color="textSecondary">
         You’ve played all your fixtures. A few matches elsewhere are still to be played before the season ends.
       </AppText>
-      <Button label="Play out the season" icon="match" onPress={onFinishSeason} />
+      <Button label="Play out the season" icon="match" busyLabel="Simulating…" onPress={onFinishSeason} />
     </Card>
   );
 }

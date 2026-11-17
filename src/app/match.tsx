@@ -217,6 +217,7 @@ function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentr
   const playerName = usePlayerNames();
   const database = useGameStore((s) => s.database);
   const season = useGameStore((s) => s.season);
+  const userClubId = useGameStore((s) => s.userClubId);
   const finishMatch = useGameStore((s) => s.finishMatch);
   const makeMatchChange = useGameStore((s) => s.makeMatchChange);
   const onFullTime = useCallback(() => {
@@ -252,6 +253,7 @@ function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentr
       buildUps: timeline.map((item) => buildUps.get(Number(item.key))),
       passing: timeline.map((item) => passing.get(Number(item.key))),
       kits: matchKits(colours(result.home.clubId), colours(result.away.clubId)),
+      userSide: result.home.clubId === userClubId ? 'home' : result.away.clubId === userClubId ? 'away' : null,
       numberOf: (id) => numbers.get(id) ?? '',
       nameOf: playerName,
     };
@@ -266,7 +268,7 @@ function MatchCentre({ result, fixtureId, live, onContinue, onDone }: MatchCentr
       playerOfTheMatch: result.playerOfTheMatch ? playerName(result.playerOfTheMatch) : null,
       pitch,
     };
-  }, [result, fixtureId, season, database, playerName]);
+  }, [result, fixtureId, season, database, playerName, userClubId]);
 
   // A resumed match starts where the last change was made (fixed at mount).
   const [initialRevealed] = useState(() => {

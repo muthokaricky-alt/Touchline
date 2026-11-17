@@ -1,8 +1,9 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { colors, layout, radii, type ColorToken } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
+import { PressableScale } from './PressableScale';
 
 type IconButtonProps = {
   icon: IconName;
@@ -16,16 +17,18 @@ type IconButtonProps = {
 /** Square icon-only button (back, close, remove) with a full-size touch target. */
 export function IconButton({ icon, accessibilityLabel, onPress, color = 'textPrimary', disabled = false }: IconButtonProps) {
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={0.92}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
-      hitSlop={4}
+      // A larger target than the 44pt square shows (Fitts's law): icons are small and often near edges.
+      hitSlop={8}
       style={({ pressed }) => [styles.button, pressed && styles.pressed, disabled && styles.disabled]}>
       <Icon name={icon} size={20} color={color} />
-    </Pressable>
+    </PressableScale>
   );
 }
 

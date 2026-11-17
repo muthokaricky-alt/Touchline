@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { colors, layout, radii, spacing } from '@/theme';
 
 import { AppText } from './AppText';
+import { PressableScale } from './PressableScale';
 
 type ListRowProps = {
   title: string;
@@ -16,6 +17,8 @@ type ListRowProps = {
   divider?: boolean;
   /** Makes the row tappable. */
   onPress?: () => void;
+  /** A second action on a long press (e.g. open a player's profile while taps select him). */
+  onLongPress?: () => void;
   /** Screen-reader label for tappable rows; defaults to title + subtitle. */
   accessibilityLabel?: string;
   accessibilityHint?: string;
@@ -30,6 +33,7 @@ export function ListRow({
   trailing,
   divider,
   onPress,
+  onLongPress,
   accessibilityLabel,
   accessibilityHint,
   selected,
@@ -54,15 +58,18 @@ export function ListRow({
   if (!onPress) return <View style={[styles.row, divider && styles.divider]}>{content}</View>;
 
   return (
-    <Pressable
+    // Wide rows shrink less than buttons: the same feel without the whole card lurching.
+    <PressableScale
+      scaleTo={0.985}
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? (subtitle ? `${title}, ${subtitle}` : title)}
       accessibilityHint={accessibilityHint}
       accessibilityState={selected === undefined ? undefined : { selected }}
       style={({ pressed }) => [styles.row, styles.pressable, divider && styles.divider, pressed && styles.pressed, selected && styles.selected]}>
       {content}
-    </Pressable>
+    </PressableScale>
   );
 }
 

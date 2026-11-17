@@ -5,6 +5,8 @@ import { AppText, Button, Card, Icon, PageHeader, Pill, Screen, StatTile } from 
 import { spacing } from '@/theme';
 import { formatCompactCurrency, formatWeeklyWage } from '@/utils/format';
 
+import { MusicCard, type MusicCardProps } from '@/features/music/MusicCard';
+
 import { SaveSlotsCard } from './SaveSlotsCard';
 
 export type ClubInfoView = {
@@ -52,13 +54,14 @@ type ClubScreenProps = {
   slots: ComponentProps<typeof SaveSlotsCard>;
   transfers: ClubTransfersView;
   save: SaveView;
+  music: MusicCardProps;
   onOpenMarket: () => void;
   onStartNewGame: () => void;
   onDismissNotice: () => void;
 };
 
 /** Club facts, transfers and the career save. Staff and detailed finances arrive later. */
-export function ClubScreen({ club, career, slots, transfers, save, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
+export function ClubScreen({ club, career, slots, transfers, save, music, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
   return (
     <Screen>
       <PageHeader overline={club.leagueName} title={club.name} subtitle={`${club.city} · founded ${club.founded}`} />
@@ -136,6 +139,7 @@ export function ClubScreen({ club, career, slots, transfers, save, onOpenMarket,
           ) : null}
           <SaveCard save={save} onStartNewGame={onStartNewGame} onDismissNotice={onDismissNotice} />
           <SaveSlotsCard {...slots} />
+          <MusicCard {...music} />
         </View>
       </View>
     </Screen>

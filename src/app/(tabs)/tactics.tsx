@@ -40,6 +40,7 @@ export default function TacticsRoute() {
           onFormationChange={changeFormation}
           onChooseForSlot={openPicker}
           onSwap={swapPlaces}
+          onOpenPlayer={(id) => router.push({ pathname: '/player/[id]', params: { id } })}
           onAddSubstitute={() => openPicker('bench')}
           onRemoveSubstitute={removeFromLineup}
           onAutoPick={autoPick}

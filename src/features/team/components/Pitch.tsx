@@ -1,6 +1,8 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { StyleSheet, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
-import { AppText } from '@/components/ui';
+import { AppText, PressableScale } from '@/components/ui';
 import type { PositionFit } from '@/game/squad/position-fit';
 import type { TeamSheetSlotView } from '@/game/squad/team-sheet';
 import { POSITION_NAMES } from '@/game/positions';
@@ -34,9 +36,11 @@ type PitchProps = {
   selectedSlotId?: string | null;
   /** What tapping a slot will do, for screen readers. */
   hintFor?: (slot: TeamSheetSlotView) => string;
+  /** Long press on a player: e.g. open his profile. */
+  onPlayerLongPress?: (playerId: string) => void;
 };
 
-export function Pitch({ slots, onSlotPress, selectedSlotId = null, hintFor }: PitchProps) {
+export function Pitch({ slots, onSlotPress, selectedSlotId = null, hintFor, onPlayerLongPress }: PitchProps) {
   return (
     <View style={styles.pitch}>
       <PitchMarkings />
@@ -47,24 +51,33 @@ export function Pitch({ slots, onSlotPress, selectedSlotId = null, hintFor }: Pi
           selected={slot.slotId === selectedSlotId}
           hint={hintFor?.(slot) ?? 'Choose a player for this position'}
           onPress={() => onSlotPress(slot.slotId)}
+          onLongPress={slot.player && onPlayerLongPress ? () => onPlayerLongPress(slot.player!.id) : undefined}
         />
       ))}
     </View>
   );
 }
 
-function SlotMarker({ slot, selected, hint, onPress }: { slot: TeamSheetSlotView; selected: boolean; hint: string; onPress: () => void }) {
+type SlotMarkerProps = { slot: TeamSheetSlotView; selected: boolean; hint: string; onPress: () => void; onLongPress?: () => void };
+
+function SlotMarker({ slot, selected, hint, onPress, onLongPress }: SlotMarkerProps) {
   const { player } = slot;
   const unavailable = player ? (player.injured ? 'Injured' : player.suspended ? 'Suspended' : null) : null;
   const label = player
     ? `${slot.slotId}: ${player.shortName}, rating ${player.rating}, ${FIT_WORD[player.fit]}${unavailable ? `, ${unavailable.toLowerCase()}` : player.fitness < 90 ? `, ${player.fitness}% fit` : ''}`
     : `${slot.slotId}: empty, ${POSITION_NAMES[slot.position]} needed`;
 
+  const pop = useArrivalPop(player?.id ?? null);
+
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={0.94}
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityActions={onLongPress ? [{ name: 'longpress', label: 'Open profile' }] : undefined}
+      onAccessibilityAction={(e) => e.nativeEvent.actionName === 'longpress' && onLongPress?.()}
       accessibilityHint={hint}
       accessibilityState={{ selected }}
       style={({ pressed }) => [
@@ -73,15 +86,16 @@ function SlotMarker({ slot, selected, hint, onPress }: { slot: TeamSheetSlotView
         pressed && styles.markerPressed,
         selected && styles.markerSelected,
       ]}>
-      <View
+      <Animated.View
         style={[
           styles.shirt,
           player ? { borderColor: colors[unavailable ? 'danger' : FIT_RING[player.fit]] } : styles.shirtEmpty,
+          pop,
         ]}>
         <AppText variant="bodyStrong" color={player ? 'textPrimary' : 'textSecondary'}>
           {player ? (player.squadNumber ?? '–') : '+'}
         </AppText>
-      </View>
+      </Animated.View>
       <AppText variant="caption" numberOfLines={1} align="center" style={styles.name}>
         {player ? player.lastName : 'Empty'}
       </AppText>
@@ -92,8 +106,28 @@ function SlotMarker({ slot, selected, hint, onPress }: { slot: TeamSheetSlotView
         align="center">
         {player ? (unavailable ?? (player.fitness < 90 ? `${slot.slotId} · ${player.fitness}%` : `${slot.slotId} · ${player.rating}`)) : slot.slotId}
       </AppText>
-    </Pressable>
+    </PressableScale>
   );
+}
+
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+
+/**
+ * When a different player arrives in this position (a swap, a pick from the
+ * squad), his shirt grows a little and settles: the eye follows the change.
+ * Not on the first render, and not with Reduce Motion on.
+ */
+function useArrivalPop(playerId: string | null) {
+  const scale = useSharedValue(1);
+  const reduced = useReducedMotion();
+  const previous = useRef(playerId);
+  useEffect(() => {
+    if (previous.current === playerId) return;
+    previous.current = playerId;
+    if (reduced || playerId === null) return;
+    scale.set(withSequence(withTiming(1.18, { duration: 120, easing: EASE_OUT }), withTiming(1, { duration: 260, easing: EASE_OUT })));
+  }, [playerId, reduced, scale]);
+  return useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 }
 
 /** Halfway line, centre circle and penalty boxes. Purely decorative. */

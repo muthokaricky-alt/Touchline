@@ -19,7 +19,10 @@ import { platformStorage } from '@/persistence/storage';
  */
 
 const PREFERENCE_KEY = 'touchline-match-view';
+const SPEED_KEY = 'touchline-match-speed';
 export type MatchViewMode = '2d' | 'commentary';
+/** Replay speed: 1× normal, 2× twice as fast. */
+export type MatchSpeed = 1 | 2;
 
 function readMode(): MatchViewMode {
   try {
@@ -29,8 +32,25 @@ function readMode(): MatchViewMode {
   }
 }
 
+function readSpeed(): MatchSpeed {
+  try {
+    return platformStorage.getItem(SPEED_KEY) === '2' ? 2 : 1;
+  } catch {
+    return 1;
+  }
+}
+
 export function useMatchView() {
   const [mode, setModeState] = useState<MatchViewMode>(readMode);
+  const [speed, setSpeedState] = useState<MatchSpeed>(readSpeed);
+  const setSpeed = useCallback((next: MatchSpeed) => {
+    setSpeedState(next);
+    try {
+      void platformStorage.setItem(SPEED_KEY, String(next));
+    } catch {
+      // Not remembered, still applied.
+    }
+  }, []);
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
 
@@ -73,5 +93,5 @@ export function useMatchView() {
     void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
   }, []);
 
-  return { mode, setMode, landscape, enterFullScreen, exitFullScreen };
+  return { mode, setMode, speed, setSpeed, landscape, enterFullScreen, exitFullScreen };
 }
