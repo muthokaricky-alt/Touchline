@@ -1918,6 +1918,25 @@ drawn, aggregates shown. Zero console errors, no overflow.
   up…" on Start career immediately, a goal with the other dots faded and
   the banner. Haptics and the feel of the springs need a phone.
 
+### Saves lost on the phone (fixed, save storage format z2)
+- **Found by the user on the first APK:** every launch started a new
+  career. Never seen in browsers. Cause: `z1:` saves were deflate output
+  as a "binary string" (one character per byte, NUL included); on a phone
+  the string crosses JSI/JNI into SQLite, where a NUL can end the text
+  (expo-sqlite binds iOS text with length -1, and string conversions on the
+  way can stop at NUL too). The save and its backup came back cut off,
+  `decompress` failed on both, persist saw "no save" and started a new game
+  silently.
+- **Fix:** `z2:` = deflate bytes as base64 (plain ASCII; ~33% bigger, a
+  matchday-2 save is 158 KB). `z1:` and uncompressed saves still load.
+  Every write is read back and compared; a storage that changes it throws,
+  which the save layer shows as a notice instead of losing the career.
+- Tests: base64 round trip of every byte value and length, z2 is plain
+  text, z1 still decodes, a storage that cuts at NUL keeps the save, a
+  lossy storage fails loudly. 957 tests. Headless Chrome: z2 stored,
+  career kept after reload. **Not yet verified on the phone** (needs the
+  next APK). Careers already damaged on the phone can't be recovered.
+
 ### Known issues / not yet verified
 - **Club names abroad**: Kenya reviewed by the user (save v12); the European
   and background names are still the ones I invented.

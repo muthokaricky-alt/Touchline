@@ -166,7 +166,7 @@ describe('autosave', () => {
     state().playNextFixture();
     flushSave();
     const stored = memory.getItem(SLOT) as string;
-    expect(stored.startsWith('z1:')).toBe(true);
+    expect(stored.startsWith('z2:')).toBe(true);
     expect(stored.length).toBeLessThan(savedFile().length / 5);
   });
 

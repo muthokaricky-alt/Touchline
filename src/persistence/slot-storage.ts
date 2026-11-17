@@ -9,9 +9,16 @@ import type { StateStorage } from 'zustand/middleware';
  * The slot storage:
  *   - compresses every save with deflate (fflate): a 1.1 MB season save
  *     becomes ~100 KB, so three slots plus backups fit easily in a browser's
- *     ~5 MB. Stored as a "binary string" (one character per byte) behind a
- *     `z1:` prefix; anything without the prefix is an older, uncompressed
- *     save and is read as it is.
+ *     ~5 MB. Stored as base64 text behind a `z2:` prefix.
+ *     History: `z1:` stored the bytes as a "binary string" (one character
+ *     per byte, NUL included). Browsers keep that, but on phones the string
+ *     crosses into native code and SQLite, where a NUL can end the text
+ *     (iOS binds text up to the first NUL): saves came back cut off, the
+ *     backup too, and the app started a new game on every launch. `z1:`
+ *     saves are still read; anything without a prefix is an older,
+ *     uncompressed save and is read as it is.
+ *   - reads every write back and compares it: storage that changes what it
+ *     was given fails loudly (a notice) instead of losing the career later.
  *   - keeps the previous save as `<key>.backup` before every write, so a
  *     damaged write can be recovered.
  *   - keeps a small index (who, where, when) per slot, so the slot picker
@@ -25,7 +32,8 @@ export const SLOT_COUNT = 3;
 export const LEGACY_SAVE_KEY = 'touchline-save';
 const ACTIVE_SLOT_KEY = 'touchline-active-slot';
 const INDEX_KEY = 'touchline-slots';
-const PREFIX = 'z1:';
+const PREFIX = 'z2:';
+const BINARY_PREFIX = 'z1:';
 
 export const slotKey = (slot: number) => `touchline-save-${slot}`;
 export const backupKey = (key: string) => `${key}.backup`;
@@ -35,12 +43,60 @@ const slotOf = (key: string): number | null => {
 };
 
 export function compress(json: string): string {
-  return PREFIX + strFromU8(deflateSync(strToU8(json), { level: 6 }), true);
+  return PREFIX + toBase64(deflateSync(strToU8(json), { level: 6 }));
 }
 
 /** Throws if a compressed value is damaged. Uncompressed (older) saves pass through. */
 export function decompress(stored: string): string {
-  return stored.startsWith(PREFIX) ? strFromU8(inflateSync(strToU8(stored.slice(PREFIX.length), true))) : stored;
+  if (stored.startsWith(PREFIX)) return strFromU8(inflateSync(fromBase64(stored.slice(PREFIX.length))));
+  if (stored.startsWith(BINARY_PREFIX)) return strFromU8(inflateSync(strToU8(stored.slice(BINARY_PREFIX.length), true)));
+  return stored;
+}
+
+// --- Base64 (text-safe on every platform: letters, digits, + / =) ------------------------------
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const LOOKUP = new Uint8Array(128);
+for (let i = 0; i < ALPHABET.length; i++) LOOKUP[ALPHABET.charCodeAt(i)] = i;
+
+export function toBase64(bytes: Uint8Array): string {
+  const parts: string[] = [];
+  // In chunks, so no single string concatenation gets huge.
+  for (let start = 0; start < bytes.length; start += 3 * 4096) {
+    const end = Math.min(bytes.length, start + 3 * 4096);
+    let chunk = '';
+    for (let i = start; i < end; i += 3) {
+      const a = bytes[i];
+      const b = i + 1 < end ? bytes[i + 1] : 0;
+      const c = i + 2 < end ? bytes[i + 2] : 0;
+      chunk +=
+        ALPHABET[a >> 2] +
+        ALPHABET[((a & 3) << 4) | (b >> 4)] +
+        (i + 1 < end ? ALPHABET[((b & 15) << 2) | (c >> 6)] : '=') +
+        (i + 2 < end ? ALPHABET[c & 63] : '=');
+    }
+    parts.push(chunk);
+  }
+  return parts.join('');
+}
+
+/** Throws on anything that isn't base64 (a damaged save). */
+export function fromBase64(text: string): Uint8Array {
+  if (text.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(text)) throw new RangeError('Not base64');
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  const bytes = new Uint8Array((text.length / 4) * 3 - padding);
+  let out = 0;
+  for (let i = 0; i < text.length; i += 4) {
+    const n =
+      (LOOKUP[text.charCodeAt(i)] << 18) |
+      (LOOKUP[text.charCodeAt(i + 1)] << 12) |
+      (LOOKUP[text.charCodeAt(i + 2)] << 6) |
+      LOOKUP[text.charCodeAt(i + 3)];
+    if (out < bytes.length) bytes[out++] = (n >> 16) & 255;
+    if (out < bytes.length) bytes[out++] = (n >> 8) & 255;
+    if (out < bytes.length) bytes[out++] = n & 255;
+  }
+  return bytes;
 }
 
 /** What the slot picker shows; read from the save when it's written. */
@@ -123,7 +179,10 @@ export function createSlotStorage(base: StateStorage, now: () => number = Date.n
     setItem: (key, value) => {
       const previous = read(key);
       if (previous !== null) void base.setItem(backupKey(key), previous);
-      void base.setItem(key, compress(value));
+      const stored = compress(value);
+      void base.setItem(key, stored);
+      // Read it back: if the device's storage changed it, say so now (the save layer shows a notice).
+      if (read(key) !== stored) throw new Error('This device did not store the save correctly.');
       const slot = slotOf(key);
       const summary = slot !== null ? summarise(value, now()) : null;
       if (slot !== null && summary) writeIndex({ ...readIndex(), [slot]: summary });
