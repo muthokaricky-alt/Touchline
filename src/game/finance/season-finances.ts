@@ -29,9 +29,9 @@ export const TIER_FACTOR = 0.25;
 /** How strongly real-world wealth gaps between countries show up in the game (0 = every country pays the same). */
 export const WEALTH_EXPONENT = 0.1;
 /** Share of the season's earnings that reaches the balance and transfer budget. */
-export const BOARD_SHARE = 0.4;
+export const BOARD_SHARE = 0.75;
 /** A club's transfer budget can't grow past this multiple of its starting budget. */
-export const BUDGET_CAP_MULTIPLE = 4;
+export const BUDGET_CAP_MULTIPLE = 20;
 /** Share of the stadium that fills on an average matchday. */
 export const ATTENDANCE = 0.6;
 /** Ticket price in euros per point of reputation. */
@@ -39,13 +39,14 @@ export const TICKET_PRICE_PER_REPUTATION = 1.2;
 /** Sponsorship per season is reputation² times this. */
 export const SPONSORSHIP_PER_REPUTATION_SQUARED = 25_000;
 
-/** Continental Cup money, in the style of the Champions League: a fee for taking part, a bonus per group win and draw, then a bonus for each knockout stage reached. */
-export const CONTINENTAL_PARTICIPATION = 1_000_000;
-export const CONTINENTAL_GROUP_WIN = 300_000;
-export const CONTINENTAL_GROUP_DRAW = 100_000;
+/** Continental Cup money, in the style of the Champions League: a fee for taking part, a bonus per group win and draw, then a bonus for each knockout stage reached.
+ * Shaped like the real Champions League (about €18.6M to take part, €2.1M per win, €11M / €12.5M / €15M / €18.5M for the knockout stages, €6.5M for the title) at 50% of real size: a champion with six group wins earns about €47M. Real champions earn about €144M, but that includes TV "value pillar" money the game doesn't model. */
+export const CONTINENTAL_PARTICIPATION = 9_300_000;
+export const CONTINENTAL_GROUP_WIN = 1_050_000;
+export const CONTINENTAL_GROUP_DRAW = 350_000;
 /** Paid on reaching the Round of 16, quarter-finals, semi-finals and final. */
-export const CONTINENTAL_STAGE_BONUS = [1_000_000, 1_500_000, 2_500_000, 3_000_000] as const;
-export const CONTINENTAL_WINNER_BONUS = 4_000_000;
+export const CONTINENTAL_STAGE_BONUS = [5_500_000, 6_250_000, 7_500_000, 9_250_000] as const;
+export const CONTINENTAL_WINNER_BONUS = 3_250_000;
 /** The four richest leagues: their clubs get the plain amounts. */
 export const CONTINENTAL_BIG_LEAGUES: readonly string[] = ['ENG', 'ESP', 'GER', 'ITA'];
 /** Clubs from every other country get this multiple, so the less prestigious leagues earn more from the competition. */

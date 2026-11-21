@@ -99,7 +99,7 @@ describe('end-of-season money', () => {
     }
   });
 
-  it('never grows a budget past 4× its starting size over many seasons', () => {
+  it('never grows a budget past 20× its starting size over many seasons', () => {
     let current = db;
     for (let i = 0; i < 12; i++) current = seasonFinances(current, season).db;
     for (const c of current.clubs.filter((x) => x.country === 'KEN')) {
