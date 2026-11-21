@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IsoDateSchema, PlayerIdSchema, type ClubId, type GameDatabase, type PlayerId } from '@/data/schemas';
+import { IsoDateSchema, NationCodeSchema, PlayerIdSchema, type ClubId, type GameDatabase, type PlayerId } from '@/data/schemas';
 import { addDays, ageOn } from '@/utils/date';
 import { formatDate } from '@/utils/format';
 
@@ -23,6 +23,10 @@ import { playerAbility } from '../transfers/valuation';
  *
  * Only the USER's knowledge is modelled. AI clubs (and market values) work
  * with true potential, as before.
+ *
+ * Besides watching one named player, a scout can be sent to a whole country
+ * to find young talent (see ./region-scouting.ts). Both kinds of trip share
+ * the same SCOUTS.
  */
 
 export const SCOUTS = 3;
@@ -34,16 +38,40 @@ export const ScoutingAssignmentSchema = z.strictObject({
   due: IsoDateSchema,
 });
 
+/** Which part of the squad a scouting trip looks at ('all' = any position). */
+export const REGION_GROUPS = ['all', 'goalkeepers', 'defenders', 'midfielders', 'attackers'] as const;
+export const RegionGroupSchema = z.enum(REGION_GROUPS);
+export type RegionGroup = z.infer<typeof RegionGroupSchema>;
+
+/** A scout sent to a country (where its clubs play) to find young talent. */
+export const RegionAssignmentSchema = z.strictObject({
+  nation: NationCodeSchema,
+  group: RegionGroupSchema,
+  started: IsoDateSchema,
+  due: IsoDateSchema,
+});
+
+/** How many discovered prospects the shortlist keeps (the oldest drop off). */
+export const SHORTLIST_MAX = 30;
+
 export const ScoutingStateSchema = z.strictObject({
   assignments: z.array(ScoutingAssignmentSchema).max(SCOUTS),
+  /** Scouts out in a country, looking for young talent. Share the SCOUTS with `assignments`. */
+  regionAssignments: z.array(RegionAssignmentSchema).max(SCOUTS),
   /** Only players the user has scouted (level 1 or 2). */
   knowledge: z.record(PlayerIdSchema, z.union([z.literal(1), z.literal(2)])),
+  /** Prospects found by scouting trips, newest first. */
+  shortlist: z.array(PlayerIdSchema).max(SHORTLIST_MAX),
 });
 
 export type ScoutingAssignment = z.infer<typeof ScoutingAssignmentSchema>;
+export type RegionAssignment = z.infer<typeof RegionAssignmentSchema>;
 export type ScoutingState = z.infer<typeof ScoutingStateSchema>;
 
-export const EMPTY_SCOUTING: ScoutingState = { assignments: [], knowledge: {} };
+export const EMPTY_SCOUTING: ScoutingState = { assignments: [], regionAssignments: [], knowledge: {}, shortlist: [] };
+
+/** Scouts currently out, on a player or on a country. */
+export const busyScouts = (state: ScoutingState): number => state.assignments.length + state.regionAssignments.length;
 
 const clubOf = (db: GameDatabase, playerId: PlayerId): ClubId | null => db.contracts.find((c) => c.playerId === playerId)?.clubId ?? null;
 
@@ -60,7 +88,7 @@ export function scoutingProblem(state: ScoutingState, db: GameDatabase, userClub
   const current = state.assignments.find((a) => a.playerId === playerId);
   if (current) return `A scout is already watching him (report due ${formatDate(current.due)}).`;
   if (knowledgeOf(state, db, userClubId, playerId) >= 2) return 'You already have a full report on him.';
-  if (state.assignments.length >= SCOUTS) return `All ${SCOUTS} scouts are busy.`;
+  if (busyScouts(state) >= SCOUTS) return `All ${SCOUTS} scouts are busy.`;
   return null;
 }
 
@@ -119,15 +147,17 @@ export function deliverReports(
         (level === 1 ? ' Send a scout again for a full report.' : ''),
     });
   }
-  return { state: { assignments: state.assignments.filter((a) => a.due > date), knowledge }, messages };
+  return { state: { ...state, assignments: state.assignments.filter((a) => a.due > date), knowledge }, messages };
 }
 
 /** Removes players who no longer exist (retired, left football). */
 export function withoutMissingPlayers(state: ScoutingState, db: GameDatabase): ScoutingState {
   const present = new Set(db.players.map((p) => p.id));
   return {
+    ...state,
     assignments: state.assignments.filter((a) => present.has(a.playerId)),
     knowledge: Object.fromEntries(Object.entries(state.knowledge).filter(([id]) => present.has(id))),
+    shortlist: state.shortlist.filter((id) => present.has(id)),
   };
 }
 

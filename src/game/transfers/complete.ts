@@ -14,6 +14,7 @@ import { parseIsoDate } from '@/utils/date';
 import { formatDate } from '@/utils/format';
 
 import { POSITION_GROUP } from '../positions';
+import { isProspectId } from '../world/prospects';
 import { playerAbility, wageDemand } from './valuation';
 import { transferWindow } from './window';
 
@@ -222,7 +223,8 @@ export function signReplacement(db: GameDatabase, clubId: ClubId, position: Posi
   const club = db.clubs.find((c) => c.id === clubId);
   if (!club) return null;
   const contracted = new Set(db.contracts.map((c) => c.playerId));
-  const free = db.players.filter((p) => !contracted.has(p.id));
+  // Unscouted youth prospects are the user's to find, not a club's emergency signing.
+  const free = db.players.filter((p) => !contracted.has(p.id) && !isProspectId(p.id));
   const abilityOf = (id: PlayerId) => {
     const attrs = db.attributes.find((a) => a.playerId === id)!;
     return playerAbility(db.players.find((p) => p.id === id)!, attrs);

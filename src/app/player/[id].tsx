@@ -6,7 +6,8 @@ import { useGameStore } from '@/store/game-store';
 import { ContractCard } from '@/features/transfers/ContractCard';
 import { TransferCard } from '@/features/transfers/TransferCard';
 import { ScoutingCard } from '@/features/scouting/ScoutingCard';
-import { useOwnPlayerContract, usePlayerDiscipline, usePlayerProfile, useScoutingStatus, useTransferTarget } from '@/store/hooks';
+import { RetrainingCard } from '@/features/player/RetrainingCard';
+import { useOwnPlayerContract, usePlayerDiscipline, usePlayerProfile, useRetraining, useScoutingStatus, useTransferTarget } from '@/store/hooks';
 
 /**
  * Web static export pre-renders an HTML page per player listed here. The
@@ -30,6 +31,7 @@ export default function PlayerRoute() {
   const scouting = useScoutingStatus(id);
   const target = useTransferTarget(id);
   const own = useOwnPlayerContract(id);
+  const retraining = useRetraining(id);
   const actions = useGameStore.getState; // actions never change; read them when called
 
   // Deep links (or a refreshed web page) may have no history to go back to.
@@ -95,7 +97,10 @@ export default function PlayerRoute() {
 
   // Other clubs' players and free agents can be scouted (your own are known to your coaches).
   const extra = own ? (
-    card
+    <>
+      {card}
+      <RetrainingCard view={retraining} onStart={(position) => attempt(() => actions().retrainPlayer(id, position))} onCancel={() => actions().cancelRetraining(id)} />
+    </>
   ) : (
     <>
       {card}

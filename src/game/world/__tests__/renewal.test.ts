@@ -18,6 +18,7 @@ import {
   retirePlayers,
   worldFor,
 } from '../renewal';
+import { generatedProspects } from '../prospects';
 import { admitIntakeToCareer, retireFromCareer } from '../renewal-career';
 
 const base = assignPotential(buildFictionalDatabase(), FICTIONAL_SEED, FICTIONAL_REFERENCE_DATE);
@@ -44,7 +45,14 @@ describe('youth intakes', () => {
     const again = generatedIntake(fresh.clubs, FICTIONAL_SEED, FIRST_INTAKE_YEAR);
     expect(again).toEqual(intake);
     expect(worldFor(base, FICTIONAL_SEED, 2029).players.length).toBe(
-      base.players.length + [2027, 2028, 2029].reduce((n, y) => n + generatedIntake(base.clubs, FICTIONAL_SEED, y).flatMap((c) => c.players).length, 0),
+      base.players.length +
+        [2027, 2028, 2029].reduce(
+          (n, y) =>
+            n +
+            generatedIntake(base.clubs, FICTIONAL_SEED, y).flatMap((c) => c.players).length +
+            generatedProspects(base.clubs, FICTIONAL_SEED, y).flatMap((p) => p.players).length,
+          0,
+        ),
     );
   });
 

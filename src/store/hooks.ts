@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import type { ClubId, PlayerId } from '@/data/schemas';
 import { buildAiTeam } from '@/game/ai/opponent';
@@ -28,7 +28,10 @@ import { matchPlayingStyle } from '@/game/tactics/presets';
 import { selectDiscipline } from '@/game/discipline/suspensions';
 import { liveView } from '@/game/match/live';
 import { firstLegOf, isCupFixture, penaltiesRule } from '@/game/season/cup';
-import { assignmentViews, knowledgeOf, SCOUTS, scoutingStatus } from '@/game/scouting/scouting';
+import { assignmentViews, busyScouts, knowledgeOf, SCOUTS, scoutingStatus } from '@/game/scouting/scouting';
+import { regionAssignmentViews, regionOptions, shortlistViews } from '@/game/scouting/region-scouting';
+import { retrainingView } from '@/game/squad/retraining';
+import { isProspectId } from '@/game/world/prospects';
 import { conditionAtKickOff, suspendedAtKickOff, useGameStore } from './game-store';
 
 /**
@@ -145,7 +148,31 @@ export function useMarketScopes() {
 export function useScoutAssignments() {
   const database = useGameStore((s) => s.database);
   const scouting = useGameStore((s) => s.scouting);
-  return useMemo(() => ({ assignments: assignmentViews(scouting, database), scouts: SCOUTS }), [scouting, database]);
+  return useMemo(() => ({ assignments: assignmentViews(scouting, database), scouts: SCOUTS, busy: busyScouts(scouting) }), [scouting, database]);
+}
+
+/** What the user can teach one of their own players, and any lesson under way. */
+export function useRetraining(playerId: PlayerId) {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const retraining = useGameStore((s) => s.retraining);
+  return useMemo(() => retrainingView(retraining, database, clubId, playerId), [retraining, database, clubId, playerId]);
+}
+
+/** Scouting trips to a country: where a scout can go, who is out, and the prospects found so far. */
+export function useRegionScouting() {
+  const database = useGameStore((s) => s.database);
+  const clubId = useGameStore((s) => s.userClubId);
+  const date = useGameStore((s) => s.currentDate);
+  const scouting = useGameStore((s) => s.scouting);
+  return useMemo(
+    () => ({
+      nations: regionOptions(database),
+      trips: regionAssignmentViews(scouting),
+      shortlist: shortlistViews(scouting, database, clubId, date),
+    }),
+    [scouting, database, clubId, date],
+  );
 }
 
 /** A player's suspensions and bookings this season, for the profile. */
@@ -287,7 +314,10 @@ export function useTransferMarket(filters: MarketFilters) {
   const clubId = useGameStore((s) => s.userClubId);
   const season = useGameStore((s) => s.season);
   const date = useGameStore((s) => s.currentDate);
-  return useMemo(() => searchMarket(database, season, clubId, filters, date), [database, season, clubId, filters, date]);
+  const knowledge = useGameStore((s) => s.scouting.knowledge);
+  // Youth prospects nobody has scouted yet aren't on the market: a scout has to find them first.
+  const isVisible = useCallback((id: PlayerId) => !isProspectId(id) || knowledge[id] !== undefined, [knowledge]);
+  return useMemo(() => searchMarket(database, season, clubId, filters, date, undefined, isVisible), [database, season, clubId, filters, date, isVisible]);
 }
 
 /**

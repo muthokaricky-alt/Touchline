@@ -59,6 +59,8 @@ export function searchMarket(
   filters: MarketFilters,
   date: string,
   limit = 50,
+  /** Players the user may see: leave out to see everyone. The hook uses it to keep unscouted youth prospects off the market. */
+  isVisible?: (playerId: PlayerId) => boolean,
 ): MarketPlayerView[] {
   const contracts = new Map(db.contracts.map((c) => [c.playerId, c]));
   const clubs = new Map(db.clubs.map((c) => [c.id, c]));
@@ -75,6 +77,7 @@ export function searchMarket(
   for (const player of db.players) {
     const contract = contracts.get(player.id);
     if (contract?.clubId === userClubId) continue;
+    if (isVisible && !isVisible(player.id)) continue;
     if (filters.group !== 'all' && POSITION_GROUP[player.primaryPosition] !== filters.group) continue;
     if (filters.scope === 'free' && contract) continue;
     if (scopeLeague && (!contract || leagueOf.get(contract.clubId) !== scopeLeague)) continue;

@@ -5,6 +5,7 @@ import { createRng } from '@/utils/random';
 
 import { assignPotential, potentialOf } from '../development/potential';
 import { mixSeed } from '../season/season';
+import { FIRST_PROSPECT_YEAR, generatedProspects, isProspectId, prospectYear } from './prospects';
 import { addContract, MAX_SQUAD, squadSize } from '../transfers/complete';
 import { playerAbility, wageDemand } from '../transfers/valuation';
 
@@ -93,6 +94,12 @@ export function worldFor(base: GameDatabase, seed: number, startYear: number): G
       attributes.push(...intake.attributes);
     }
   }
+  for (let year = FIRST_PROSPECT_YEAR; year <= startYear; year++) {
+    for (const pool of generatedProspects(base.clubs, seed, year)) {
+      players.push(...pool.players);
+      attributes.push(...pool.attributes);
+    }
+  }
   const world = { ...base, players, attributes };
   perBase.set(startYear, world);
   return world;
@@ -135,6 +142,11 @@ export function retirePlayers(db: GameDatabase, seed: number, year: number): { d
     const age = ageOn(player.dateOfBirth, date);
     const ability = playerAbility(player, attrs);
     const clubId = clubOf.get(player.id) ?? null;
+    // An unsigned youth prospect stays for their summer's season, then gives up on football (no dice: they are the user's to find).
+    if (clubId === null && isProspectId(player.id)) {
+      if (prospectYear(player.id) < year) leavers.push({ playerId: player.id, clubId, reason: 'quit' });
+      continue;
+    }
     if (roll < retirementChance(age, ability)) leavers.push({ playerId: player.id, clubId, reason: 'retired' });
     else if (clubId === null && roll < quitChance(ability, age)) leavers.push({ playerId: player.id, clubId, reason: 'quit' });
   }
@@ -179,6 +191,15 @@ export function admitIntake(db: GameDatabase, seed: number, year: number, userCl
     players: [...db.players, ...intakes.flatMap((i) => i.players.filter((p) => !existing.has(p.id)))],
     attributes: [...db.attributes, ...intakes.flatMap((i) => i.attributes.filter((a) => !existing.has(a.playerId)))],
   };
+  // This summer's country prospects join with no contract (and stay hidden until scouted).
+  if (year >= FIRST_PROSPECT_YEAR) {
+    const pools = generatedProspects(world.clubs, seed, year);
+    world = {
+      ...world,
+      players: [...world.players, ...pools.flatMap((pool) => pool.players.filter((p) => !existing.has(p.id)))],
+      attributes: [...world.attributes, ...pools.flatMap((pool) => pool.attributes.filter((a) => !existing.has(a.playerId)))],
+    };
+  }
   const userSigned: PlayerId[] = [];
   const userReleased: PlayerId[] = [];
 

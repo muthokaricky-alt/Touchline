@@ -5,6 +5,7 @@ import { selectSquadCandidates } from '@/game/squad/squad-selectors';
 import { DEFAULT_TACTICS } from '@/game/tactics/tactics';
 
 import { DEFAULT_TRAINING, developWorld } from '@/game/development/development';
+import { EMPTY_SCOUTING } from '@/game/scouting/scouting';
 import { completeTransfer } from '@/game/transfers/complete';
 import { admitIntake, FIRST_INTAKE_YEAR, retirePlayers, worldFor } from '@/game/world/renewal';
 
@@ -34,7 +35,8 @@ const valid: GameSave = {
   retired: [],
   manager: { name: 'Alex Kamau', reputation: 52, confidence: 60, warned: false, sackedOffers: null, history: [] },
   liveMatch: null,
-  scouting: { assignments: [], knowledge: {} },
+  scouting: { assignments: [], regionAssignments: [], knowledge: {}, shortlist: [] },
+  retraining: [],
 };
 
 /** The same save as it comes back from storage: through JSON. */
@@ -258,11 +260,49 @@ describe('migrateSave', () => {
   });
 
   it('rejects scouting records for players the world doesn’t have', () => {
-    const ghost = { assignments: [{ playerId: 'plr_999999', started: '2026-08-01', due: '2026-08-15' }], knowledge: {} };
+    const ghost = { assignments: [{ playerId: 'plr_999999', started: '2026-08-01', due: '2026-08-15' }], regionAssignments: [], knowledge: {}, shortlist: [] };
     expect(checkSave(roundTrip({ ...valid, scouting: ghost }), baseFor, FICTIONAL_SEED).ok).toBe(false);
-    expect(checkSave(roundTrip({ ...valid, scouting: { assignments: [], knowledge: { plr_999999: 1 } } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, scouting: { ...EMPTY_SCOUTING, knowledge: { plr_999999: 1 } } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, scouting: { ...EMPTY_SCOUTING, shortlist: ['plr_999999'] } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
     const someone = db.players[0].id;
-    expect(checkSave(roundTrip({ ...valid, scouting: { assignments: [], knowledge: { [someone]: 2 } } }), baseFor, FICTIONAL_SEED).ok).toBe(true);
+    expect(checkSave(roundTrip({ ...valid, scouting: { ...EMPTY_SCOUTING, knowledge: { [someone]: 2 }, shortlist: [someone] } }), baseFor, FICTIONAL_SEED).ok).toBe(true);
+  });
+
+  it('saves retrained positions as changes against the generated world, and lays them back over it', () => {
+    const player = db.players.find((p) => p.primaryPosition === 'LW')!;
+    const changed = { ...db, players: db.players.map((p) => (p.id === player.id ? { ...p, primaryPosition: 'ST' as const, secondaryPositions: ['LW' as const] } : p)) };
+    const changes = worldChanges(changed, db).positionChanges;
+    expect(changes).toEqual({ [player.id]: { primaryPosition: 'ST', secondaryPositions: ['LW'] } });
+    expect(Object.keys(worldChanges(db, db).positionChanges)).toEqual([]);
+    const check = checkSave(roundTrip({ ...valid, positionChanges: changes }), baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.database.players.find((p) => p.id === player.id)).toMatchObject({ primaryPosition: 'ST', secondaryPositions: ['LW'] });
+    expect(checkSave(roundTrip({ ...valid, positionChanges: { plr_999999: { primaryPosition: 'ST', secondaryPositions: [] } } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+  });
+
+  it('rejects retraining records for players who do not exist or that start in the future', () => {
+    const someone = db.players[0].id;
+    const lesson = { playerId: someone, position: 'ST', kind: 'secondary', started: valid.currentDate, due: '2099-01-01' };
+    expect(checkSave(roundTrip({ ...valid, retraining: [lesson] }), baseFor, FICTIONAL_SEED).ok).toBe(true);
+    expect(checkSave(roundTrip({ ...valid, retraining: [{ ...lesson, playerId: 'plr_999999' }] }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, retraining: [{ ...lesson, started: '2099-01-01' }] }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+  });
+
+  it('rejects scouting trips to countries the world doesn’t have, or that start in the future', () => {
+    const trip = { nation: 'ENG', group: 'all', started: valid.currentDate, due: '2099-01-01' };
+    expect(checkSave(roundTrip({ ...valid, scouting: { ...EMPTY_SCOUTING, regionAssignments: [trip] } }), baseFor, FICTIONAL_SEED).ok).toBe(true);
+    expect(checkSave(roundTrip({ ...valid, scouting: { ...EMPTY_SCOUTING, regionAssignments: [{ ...trip, nation: 'XXX' }] } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+    expect(checkSave(roundTrip({ ...valid, scouting: { ...EMPTY_SCOUTING, regionAssignments: [{ ...trip, started: '2099-01-01' }] } }), baseFor, FICTIONAL_SEED).ok).toBe(false);
+  });
+
+  it('upgrades a version 12 save: scouting gains no trips and an empty shortlist, and nobody is retraining', () => {
+    const { retraining: _r, positionChanges: _p, ...rest } = valid;
+    const v12 = { ...rest, scouting: { assignments: [], knowledge: {} } };
+    const upgraded = migrateSave(roundTrip(v12), 12) as { scouting: unknown };
+    expect(upgraded.scouting).toEqual(EMPTY_SCOUTING);
+    const check = checkSave(upgraded, baseFor, FICTIONAL_SEED);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.save).toEqual(valid);
   });
 
   it('upgrades a version 7 save with no match in progress', () => {

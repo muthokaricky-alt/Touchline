@@ -17,6 +17,7 @@ import {
 } from '@/components/ui';
 import type { PlayerId } from '@/data/schemas';
 import type { MarketFilters, MarketPlayerView, MarketScope } from '@/game/transfers/market';
+import { RegionScoutingCard, type RegionScoutingProps } from '@/features/scouting/RegionScoutingCard';
 import type { AssignmentView } from '@/game/scouting/scouting';
 import type { TransferWindow } from '@/game/transfers/window';
 import type { PositionGroup } from '@/game/positions';
@@ -41,7 +42,9 @@ type TransfersScreenProps = {
   /** "Where" filter choices (the user's country's leagues, abroad…). */
   scopes: readonly { value: MarketScope; label: string }[];
   /** The scouts' current assignments (tap one to open the player). */
-  scouting: { assignments: readonly AssignmentView[]; scouts: number };
+  scouting: { assignments: readonly AssignmentView[]; scouts: number; /** Scouts out on a player or a country. */ busy: number };
+  /** Scouting trips to a country, and the prospects found. */
+  regionScouting: Omit<RegionScoutingProps, 'onPlayerPress'>;
 };
 
 const GROUPS: readonly { value: PositionGroup | 'all'; label: string }[] = [
@@ -64,7 +67,7 @@ const capOf = (maxValue: MarketFilters['maxValue']): ValueCap =>
 const maxValueOf = (cap: ValueCap): MarketFilters['maxValue'] => (cap === 'any' ? null : cap === 'budget' ? 'budget' : Number(cap));
 
 /** Transfer market: window status, budgets, filters and the best matching players. */
-export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack, scopes, scouting }: TransfersScreenProps) {
+export function TransfersScreen({ budget, filters, onFiltersChange, results, onPlayerPress, onBack, scopes, scouting, regionScouting }: TransfersScreenProps) {
   const { window } = budget;
   return (
     <Screen bottomInset>
@@ -96,9 +99,9 @@ export function TransfersScreen({ budget, filters, onFiltersChange, results, onP
         </View>
       </Card>
 
-      <Card title={`Scouts · ${scouting.assignments.length} of ${scouting.scouts} busy`} icon="person">
+      <Card title={`Scouts · ${scouting.busy} of ${scouting.scouts} busy`} icon="person">
         {scouting.assignments.length === 0 ? (
-          <AppText color="textSecondary">Open any player’s profile and tap “Scout player” to learn his real potential.</AppText>
+          <AppText color="textSecondary">Open any player’s profile and tap “Scout player” to learn his real potential, or send a scout to a country below.</AppText>
         ) : (
           scouting.assignments.map((a, index) => (
             <ListRow
@@ -112,6 +115,8 @@ export function TransfersScreen({ budget, filters, onFiltersChange, results, onP
           ))
         )}
       </Card>
+
+      <RegionScoutingCard {...regionScouting} onPlayerPress={onPlayerPress} />
 
       <Card title="Search" icon="squad">
         <TextField

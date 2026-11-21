@@ -11,6 +11,7 @@ import {
   MoneySchema,
   NonNegativeMoneySchema,
   PlayerIdSchema,
+  PositionSchema,
   type AttributeGroup,
   type AttributeKey,
   type GameDatabase,
@@ -23,6 +24,7 @@ import { InboxMessageSchema } from '@/game/inbox/inbox';
 import { LineupSchema } from '@/game/lineup';
 import { LiveMatchSchema } from '@/game/match/live';
 import { EMPTY_SCOUTING, ScoutingStateSchema } from '@/game/scouting/scouting';
+import { RetrainingStateSchema } from '@/game/squad/retraining';
 import { nextFixtureFor } from '@/game/season/season-flow';
 import { TransferOfferSchema } from '@/game/transfers/offers';
 import { SeasonSchema } from '@/game/season/season';
@@ -52,9 +54,11 @@ import { TransferRecordSchema } from '@/game/transfers/complete';
  *        squads' contracts are added to older saves (see migrateSave)
  *  11  season.cups (a list: the National Cup and the cups abroad) replaces season.cupId
  *  12  (same fields) eight Kenyan clubs renamed, so their ids changed (RENAMED_CLUBS)
+ *  13  scouting gained trips to a country (regionAssignments) and the prospects they find (shortlist)
+ *  14  position retraining: `retraining` (under way) and `positionChanges` (completed)
  */
 
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 14;
 
 const ClubFinancesSchema = z.strictObject({
   clubId: ClubIdSchema,
@@ -72,6 +76,9 @@ const AttributeKeySchema = z.enum([...GROUP_OF.keys()] as [AttributeKey, ...Attr
 /** Only attributes that differ from the generated world, e.g. { plr_0007: { finishing: 13 } }. */
 const AttributeChangesSchema = z.record(PlayerIdSchema, z.partialRecord(AttributeKeySchema, AttributeValueSchema));
 export type AttributeChanges = z.infer<typeof AttributeChangesSchema>;
+
+const PositionChangesSchema = z.record(PlayerIdSchema, z.strictObject({ primaryPosition: PositionSchema, secondaryPositions: z.array(PositionSchema).max(4) }));
+export type PositionChanges = z.infer<typeof PositionChangesSchema>;
 
 export const GameSaveSchema = z.strictObject({
   worldSeed: z.int(),
@@ -96,6 +103,10 @@ export const GameSaveSchema = z.strictObject({
   /** A match the user kicked off but hasn't finished (null between matches). */
   liveMatch: LiveMatchSchema.nullable(),
   scouting: ScoutingStateSchema,
+  /** Players the user is teaching a new position. */
+  retraining: RetrainingStateSchema,
+  /** Players whose positions differ from the generated world (retrained), e.g. { plr_0007: { primaryPosition: 'ST', secondaryPositions: ['LW'] } }. */
+  positionChanges: PositionChangesSchema,
 });
 
 export type GameSave = z.infer<typeof GameSaveSchema>;
@@ -107,7 +118,21 @@ export type IncompatibleSave = { incompatibleVersion: number };
 export const isIncompatible = (value: unknown): value is IncompatibleSave =>
   typeof value === 'object' && value !== null && 'incompatibleVersion' in value;
 
-type WorldChanges = Pick<GameSave, 'contracts' | 'clubFinances' | 'attributeChanges' | 'retired'>;
+type WorldChanges = Pick<GameSave, 'contracts' | 'clubFinances' | 'attributeChanges' | 'retired' | 'positionChanges'>;
+
+/** Players whose positions differ from the base world (retrained). */
+export function positionChanges(db: GameDatabase, base: GameDatabase): PositionChanges {
+  const baseById = new Map(base.players.map((p) => [p.id, p]));
+  const changes: PositionChanges = {};
+  for (const p of db.players) {
+    const original = baseById.get(p.id);
+    if (!original) continue;
+    if (p.primaryPosition !== original.primaryPosition || p.secondaryPositions.join() !== original.secondaryPositions.join()) {
+      changes[p.id] = { primaryPosition: p.primaryPosition, secondaryPositions: [...p.secondaryPositions] };
+    }
+  }
+  return changes;
+}
 
 /** Attributes that differ from the base world (players unchanged since generation aren't listed). */
 export function attributeChanges(db: GameDatabase, base: GameDatabase): AttributeChanges {
@@ -133,6 +158,7 @@ export function worldChanges(db: GameDatabase, base: GameDatabase): WorldChanges
     contracts: db.contracts,
     clubFinances: db.clubs.map((c) => ({ clubId: c.id, ...c.finances })),
     attributeChanges: attributeChanges(db, base),
+    positionChanges: positionChanges(db, base),
     retired: base.players.filter((p) => !present.has(p.id)).map((p) => p.id),
   };
 }
@@ -152,7 +178,9 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
   const retired = new Set(save.retired);
   return {
     ...base,
-    players: base.players.filter((p) => !retired.has(p.id)),
+    players: base.players
+      .filter((p) => !retired.has(p.id))
+      .map((p) => (save.positionChanges[p.id] ? { ...p, ...save.positionChanges[p.id] } : p)),
     contracts: save.contracts,
     clubs: base.clubs.map((club) => {
       const f = finances.get(club.id);
@@ -187,6 +215,8 @@ export function applyWorldChanges(base: GameDatabase, save: WorldChanges): GameD
  *            cups abroad start at the next season.
  *   v11 → v12: the renamed Kenyan clubs' ids (and names, e.g. in old inbox
  *            messages) are replaced throughout the save.
+ *   v12 → v13: no scouting trips yet: none out, nobody on the shortlist.
+ *   v13 → v14: nobody has been retrained: no position changes, none under way.
  */
 export function migrateSave(raw: unknown, fromVersion: number): unknown {
   const incompatible = { incompatibleVersion: fromVersion } satisfies IncompatibleSave;
@@ -236,6 +266,11 @@ export function migrateSave(raw: unknown, fromVersion: number): unknown {
     }
     save = JSON.parse(json) as Record<string, unknown>;
   }
+  if (fromVersion < 13) {
+    const old = typeof save.scouting === 'object' && save.scouting !== null ? (save.scouting as Record<string, unknown>) : {};
+    save = { ...save, scouting: { ...old, regionAssignments: old.regionAssignments ?? [], shortlist: old.shortlist ?? [] } };
+  }
+  if (fromVersion < 14) save = { ...save, retraining: save.retraining ?? [], positionChanges: save.positionChanges ?? {} };
   return save;
 }
 
@@ -303,9 +338,17 @@ export function checkSave(raw: unknown, baseFor: (startYear: number) => GameData
     }
   }
 
-  const scoutedIds = [...save.scouting.assignments.map((a) => a.playerId), ...Object.keys(save.scouting.knowledge)];
-  if (scoutedIds.some((id) => !playerIds.has(id)) || save.scouting.assignments.some((a) => a.started > save.currentDate)) {
+  const scoutedIds = [...save.scouting.assignments.map((a) => a.playerId), ...Object.keys(save.scouting.knowledge), ...save.scouting.shortlist];
+  const nations = new Set(db.clubs.map((c) => c.country));
+  if (
+    scoutedIds.some((id) => !playerIds.has(id)) ||
+    save.scouting.assignments.some((a) => a.started > save.currentDate) ||
+    save.scouting.regionAssignments.some((a) => a.started > save.currentDate || !nations.has(a.nation))
+  ) {
     return { ok: false, reason: 'Your save’s scouting records don’t match this world.' };
+  }
+  if (save.retraining.some((r) => !playerIds.has(r.playerId) || r.started > save.currentDate) || Object.keys(save.positionChanges).some((id) => !playerIds.has(id))) {
+    return { ok: false, reason: 'Your save’s position training records don’t match this world.' };
   }
 
   return { ok: true, save, database: db };

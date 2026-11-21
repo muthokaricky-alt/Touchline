@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { AppText, Card } from '@/components/ui';
 import type { TableZone } from '@/game/season/table';
@@ -15,7 +15,10 @@ const ZONE_COLOR: Record<TableZone, string> = {
 
 const ZONE_NAME: Record<TableZone, string> = { champion: 'champions', promotion: 'promotion', relegation: 'relegation' };
 
-const COLUMNS = ['P', 'W', 'D', 'L', 'GD', 'Pts'] as const;
+const COLUMNS = ['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts'] as const;
+
+/** Below this width eight number columns leave no room for a full club name: show the 3-letter code and tighter columns. */
+const COMPACT_BELOW = 520;
 
 /**
  * Full league table. A coloured bar marks zones, with a text legend (colour
@@ -31,6 +34,8 @@ export function LeagueTable({
   rows: readonly TableRowView[];
   zoneNames?: Partial<Record<TableZone, string>>;
 }) {
+  const compact = useWindowDimensions().width < COMPACT_BELOW;
+  const numWidth = { width: compact ? 25 : 32 };
   const zoneName = (z: TableZone) => zoneNames?.[z] ?? ZONE_NAME[z];
   const zones = [...new Set(rows.map((r) => r.zone).filter((z): z is TableZone => z !== null))];
   return (
@@ -40,7 +45,7 @@ export function LeagueTable({
         <AppText variant="overline" color="textMuted" style={styles.pos}>#</AppText>
         <AppText variant="overline" color="textMuted" style={styles.club}>Club</AppText>
         {COLUMNS.map((c) => (
-          <AppText key={c} variant="overline" color="textMuted" style={styles.num}>
+          <AppText key={c} variant="overline" color="textMuted" style={[styles.num, numWidth]}>
             {c}
           </AppText>
         ))}
@@ -50,23 +55,23 @@ export function LeagueTable({
           key={row.clubId}
           style={[styles.row, row.isUser && styles.userRow]}
           accessible
-          accessibilityLabel={`${row.position}, ${row.clubName}, played ${row.played}, ${row.points} points, goal difference ${row.goalDifference}${row.zone ? `, ${zoneName(row.zone)} zone` : ''}${row.isUser ? ', your club' : ''}`}>
+          accessibilityLabel={`${row.position}, ${row.clubName}, played ${row.played}, won ${row.won}, drawn ${row.drawn}, lost ${row.lost}, goals for ${row.goalsFor}, goals against ${row.goalsAgainst}, goal difference ${row.goalDifference}, ${row.points} points${row.zone ? `, ${zoneName(row.zone)} zone` : ''}${row.isUser ? ', your club' : ''}`}>
           <View style={[styles.bar, row.zone && { backgroundColor: ZONE_COLOR[row.zone] }]} />
           <AppText variant="bodyStrong" color={row.isUser ? 'accent' : 'textSecondary'} style={styles.pos}>
             {row.position}
           </AppText>
           <AppText variant={row.isUser ? 'bodyStrong' : 'body'} numberOfLines={1} style={styles.club}>
-            {row.clubName}
+            {compact ? row.shortName : row.clubName}
           </AppText>
-          {[row.played, row.won, row.drawn, row.lost].map((value, i) => (
-            <AppText key={COLUMNS[i]} variant="caption" color="textSecondary" style={styles.num}>
+          {[row.played, row.won, row.drawn, row.lost, row.goalsFor, row.goalsAgainst].map((value, i) => (
+            <AppText key={COLUMNS[i]} variant="caption" color="textSecondary" style={[styles.num, numWidth]}>
               {value}
             </AppText>
           ))}
-          <AppText variant="caption" color="textSecondary" style={styles.num}>
+          <AppText variant="caption" color="textSecondary" style={[styles.num, numWidth]}>
             {formatGoalDifference(row.goalDifference)}
           </AppText>
-          <AppText variant="bodyStrong" style={styles.num}>
+          <AppText variant="bodyStrong" style={[styles.num, numWidth]}>
             {row.points}
           </AppText>
         </View>
