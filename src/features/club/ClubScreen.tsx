@@ -1,5 +1,5 @@
 import { useState, type ComponentProps } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Icon, PageHeader, Pill, Screen, StatTile } from '@/components/ui';
 import { spacing } from '@/theme';
@@ -61,7 +61,13 @@ type ClubScreenProps = {
 };
 
 /** Club facts, transfers and the career save. Staff and detailed finances arrive later. */
+/** How many deals the Transfers card shows until the list is expanded. */
+const COLLAPSED_DEALS = 3;
+
 export function ClubScreen({ club, career, slots, transfers, save, music, onOpenMarket, onStartNewGame, onDismissNotice }: ClubScreenProps) {
+  const [showAllDeals, setShowAllDeals] = useState(false);
+  const canCollapse = transfers.history.length > COLLAPSED_DEALS;
+  const visibleDeals = showAllDeals || !canCollapse ? transfers.history : transfers.history.slice(0, COLLAPSED_DEALS);
   return (
     <Screen>
       <PageHeader overline={club.leagueName} title={club.name} subtitle={`${club.city} · founded ${club.founded}`} />
@@ -94,7 +100,7 @@ export function ClubScreen({ club, career, slots, transfers, save, music, onOpen
               </AppText>
             ) : (
               <View>
-                {transfers.history.map((h) => (
+                {visibleDeals.map((h) => (
                   <View key={h.key} style={styles.history} accessible accessibilityLabel={`${h.incoming ? 'Signed' : 'Sold'}: ${h.title}, ${h.detail}`}>
                     <Icon name={h.incoming ? 'add' : 'remove'} size={16} color={h.incoming ? 'accent' : 'danger'} />
                     <View style={styles.flex}>
@@ -107,6 +113,22 @@ export function ClubScreen({ club, career, slots, transfers, save, music, onOpen
                     </View>
                   </View>
                 ))}
+                {canCollapse ? (
+                  <Pressable
+                    onPress={() => setShowAllDeals((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showAllDeals ? 'Show fewer deals' : `Show all ${transfers.history.length} deals`}
+                    accessibilityState={{ expanded: showAllDeals }}
+                    style={styles.toggle}
+                  >
+                    <AppText variant="bodyStrong" color="accent" style={styles.flex}>
+                      {showAllDeals ? 'Show fewer deals' : `Show all ${transfers.history.length} deals`}
+                    </AppText>
+                    <View style={{ transform: [{ rotate: showAllDeals ? '-90deg' : '90deg' }] }}>
+                      <Icon name="chevronRight" size={16} color="accent" />
+                    </View>
+                  </Pressable>
+                ) : null}
               </View>
             )}
           </Card>
@@ -202,6 +224,7 @@ const styles = StyleSheet.create({
   tiles: { flexDirection: 'row', gap: spacing.sm },
   notice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   history: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
   confirm: { gap: spacing.sm },
   row: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },

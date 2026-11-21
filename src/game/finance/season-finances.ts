@@ -19,7 +19,7 @@ import { computeTable } from '@/game/season/table';
 /** League prize for a champion of the baseline country (Kenya), top division. */
 export const LEAGUE_PRIZE_WINNER = 10_000_000;
 /** Cup prize for the winner of the baseline country's cup. */
-export const CUP_PRIZE_WINNER = 1_000_000;
+export const CUP_PRIZE_WINNER = 3_000_000;
 /** Last place earns this share of the champion's prize; shares fall in a straight line. */
 export const LAST_PLACE_SHARE = 0.05;
 /** Earliest cup exit earns this share of the winner's prize. */

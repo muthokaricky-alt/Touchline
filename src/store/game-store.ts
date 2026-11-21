@@ -66,6 +66,7 @@ import {
   type ScoutingState,
 } from '@/game/scouting/scouting';
 import { cancelRegionAssignment, deliverAllReports, startRegionAssignment } from '@/game/scouting/region-scouting';
+import { clubGrowth, growthMessage } from '@/game/finance/club-growth';
 import { financeMessage, seasonFinances } from '@/game/finance/season-finances';
 import { cancelRetraining, deliverRetraining, EMPTY_RETRAINING, startRetraining, withoutDeparted, type RetrainingState } from '@/game/squad/retraining';
 import { addChange, liveView, type LiveContext, type LiveMatch, type UserChange } from '@/game/match/live';
@@ -613,13 +614,17 @@ export const useGameStore = create<Store>()(
         // The season's prize money, gate and sponsorship reach every club's budget (the user's club gets a message).
         const earnings = seasonFinances(monthly.database, state.season);
         const finance = financeMessage(earnings.lines.get(state.userClubId), state.season.label, `${year}-06-30`);
+        // Then the season's results change each club's standing: titles raise reputation, and stadiums grow with it.
+        const growth = clubGrowth(earnings.db, state.season);
+        const userClub = earnings.db.clubs.find((c) => c.id === state.userClubId);
+        const growing = userClub ? growthMessage(growth.changes.get(state.userClubId), userClub.name, state.season.label, `${year}-06-30`) : null;
         // 30 June: retirements. 1 July: contracts expire (AI clubs refill squads), then the academy intake.
         const retired = retireFromCareer(
           {
             ...transferCareer(state),
             userClubId: summerUser,
-            db: earnings.db,
-            inbox: addMessages(state.inbox, [...monthly.messages, ...(finance ? [finance] : []), ...(closed?.messages ?? [])]),
+            db: growth.db,
+            inbox: addMessages(state.inbox, [...monthly.messages, ...(finance ? [finance] : []), ...(growing ? [growing] : []), ...(closed?.messages ?? [])]),
           },
           FICTIONAL_SEED,
           year,
