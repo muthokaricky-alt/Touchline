@@ -66,6 +66,7 @@ import {
   type ScoutingState,
 } from '@/game/scouting/scouting';
 import { cancelRegionAssignment, deliverAllReports, startRegionAssignment } from '@/game/scouting/region-scouting';
+import { financeMessage, seasonFinances } from '@/game/finance/season-finances';
 import { cancelRetraining, deliverRetraining, EMPTY_RETRAINING, startRetraining, withoutDeparted, type RetrainingState } from '@/game/squad/retraining';
 import { addChange, liveView, type LiveContext, type LiveMatch, type UserChange } from '@/game/match/live';
 import { checkSave, migrateSave, SAVE_VERSION, worldChanges, type GameSave, type SaveCheck } from '@/persistence/save';
@@ -609,13 +610,16 @@ export const useGameStore = create<Store>()(
         // June and July's development happens first (with the finished season's playing time).
         const monthly = monthlyStep(state, state.currentDate, seasonStart, state.season, state.condition);
         const year = state.season.startYear + 1;
+        // The season's prize money, gate and sponsorship reach every club's budget (the user's club gets a message).
+        const earnings = seasonFinances(monthly.database, state.season);
+        const finance = financeMessage(earnings.lines.get(state.userClubId), state.season.label, `${year}-06-30`);
         // 30 June: retirements. 1 July: contracts expire (AI clubs refill squads), then the academy intake.
         const retired = retireFromCareer(
           {
             ...transferCareer(state),
             userClubId: summerUser,
-            db: monthly.database,
-            inbox: addMessages(state.inbox, [...monthly.messages, ...(closed?.messages ?? [])]),
+            db: earnings.db,
+            inbox: addMessages(state.inbox, [...monthly.messages, ...(finance ? [finance] : []), ...(closed?.messages ?? [])]),
           },
           FICTIONAL_SEED,
           year,

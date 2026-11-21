@@ -163,6 +163,20 @@ const KITS: readonly (readonly [string, string])[] = [
   ['#0D47A1', '#FFFFFF'], ['#5D4037', '#FFE0B2'], ['#C62828', '#1565C0'], ['#263238', '#80CBC4'],
 ];
 
+/**
+ * A ground's size: it follows reputation (3,000 + reputation² × 150), but every club's
+ * own ground is 80–130% of that so clubs of equal standing don't share a
+ * capacity. The variation comes from the club's name (no random stream is
+ * used), so it never changes between runs. Kept between 4,000 and 50,000.
+ */
+export function stadiumCapacity(name: string, reputation: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619);
+  const spread = 0.8 + 0.5 * ((h >>> 0) % 1000) / 1000;
+  const size = Math.round(((3000 + reputation * reputation * 150) * spread) / 100) * 100;
+  return Math.min(50_000, Math.max(4_000, size));
+}
+
 /** "Ravensmoor United" → "club_ravensmoor_united" */
 export function clubIdFromName(name: string): string {
   return `club_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`;
@@ -187,7 +201,7 @@ function makeClub([name, shortName, reputation]: ClubSpec, index: number, countr
     reputation,
     stadium: {
       name: `${city} ${STADIUM_SUFFIXES[index % STADIUM_SUFFIXES.length]}`,
-      capacity: Math.round((3000 + reputation * reputation * 150) / 100) * 100,
+      capacity: stadiumCapacity(name, reputation),
     },
     colours: { primary, secondary },
     finances: {
